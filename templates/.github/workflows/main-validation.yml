@@ -1,0 +1,63 @@
+# Extended validation of main: what PR CI cannot afford on every change.
+# Advisory: a red run is a notification, answered the same day by a revert or
+# a P1 queue entry. A missing scheduled run is not a pass. See docs/QUALITY.md.
+name: Main validation
+
+on:
+  schedule:
+    - cron: '23 11 * * *'   # <daily; or weekly '0 3 * * 0'. Off-hour minute avoids the busiest scheduling boundary.>
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/main-validation.yml
+      - scripts/workflow/review-due.sh
+      # <add the scripts the extended checks call, so edits to them run this workflow before landing>
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash   # explicit bash gives `-eo pipefail`, so `cmd | tee` steps can fail
+
+concurrency:
+  group: main-validation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  extended:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: bash scripts/setup.sh
+      - name: Record the commit
+        run: mkdir -p evidence && git rev-parse HEAD | tee evidence/commit.txt
+      - name: Full gates
+        run: bash scripts/check.sh 2>&1 | tee evidence/check.log
+      # <Extended suites: full browser run, long headless or simulation runs over many seeds,
+      #  property tests at 10x examples seeded with ${{ github.run_id }}, build plus
+      #  installed-artifact smoke in a clean environment, recovery drills on synthetic state.>
+      - name: Review cadence
+        run: bash scripts/workflow/review-due.sh --paths "<source dirs>" | tee evidence/review-due.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: main-validation-${{ github.run_attempt }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  determinism:
+    # <Optional: run the same seeded command twice and diff. A mismatch fails this job; the job is not a required PR check.>
+    if: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/setup.sh
+      - run: |
+          bash scripts/smoke.sh > a.txt; bash scripts/smoke.sh > b.txt
+          if diff a.txt b.txt > determinism.diff; then echo "determinism: match"; else echo "determinism: MISMATCH"; cat determinism.diff; exit 1; fi

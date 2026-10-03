@@ -1,0 +1,81 @@
+# Merge-blocking checks. Every job calls the scripts in scripts/, so
+# `bash scripts/check.sh` reproduces the check job locally. See docs/QUALITY.md.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+defaults:
+  run:
+    shell: bash   # explicit bash gives `-eo pipefail`
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Cancel superseded runs on PR branches only. Cancelling runs on main hides
+  # red builds when several PRs merge in quick succession.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # <Replace with the language's setup: pinned toolchain read from a file in the repo, dependency cache, lockfile-exact install.>
+      - run: bash scripts/setup.sh
+      - run: bash scripts/check.sh
+      - run: bash scripts/build.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: check-failure-evidence
+          path: |
+            test-results/
+            coverage*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  e2e:
+    # <Remove if the project has no browser or system suite; or rename to smoke for a headless run.>
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/setup.sh
+      - run: bash scripts/e2e.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-failure-evidence
+          path: |
+            test-results/
+            browser-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  workflow:
+    name: Queue and PR hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: bash scripts/workflow/check-queues.sh --strict
+      - run: bash scripts/workflow/check-links.sh
+      - name: Validate PR markers against the queues
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          gh pr view "$PR" --json body -q .body > /tmp/pr-body.md
+          bash scripts/workflow/check-pr-markers.sh --body /tmp/pr-body.md --base "origin/$BASE" --head HEAD --branch "$HEAD_BRANCH"

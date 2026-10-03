@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent repository workflow"
+  short_description: "Adopt or repair the queue, worktree, paired-review and ledger workflow; coordinate fan-outs; run codebase reviews"
+  default_prompt: "Use $repo-workflow to adopt or audit this repository's agent workflow, or to run a codebase review or triage."
