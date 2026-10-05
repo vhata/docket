@@ -11,6 +11,17 @@ A repository run this way answers four questions from its own files at any momen
 
 The repository's own `AGENTS.md` and guides win wherever they exist and are what an agent reads for everyday work; this skill is for the operations below, and for installing those guides where they are missing (see `references/setup.md`). Loading it for an ordinary implementation task in an already-set-up repository spends context on rules the repository already states.
 
+## Quick start
+
+The user needs only these phrases; this skill works out the rest by inspecting the repository first.
+
+| The user says | What it means |
+| --- | --- |
+| "Use repo-workflow to set up or audit this repo" | Inspect first. A repository with a contract gets an audit and repairs on a branch; one without gets the workflow installed; an empty one gets initialised before any product code. Propose hosting settings, never apply them. If the repository records a policy that conflicts with the default model (for example one queue, no markers), report the conflict and ask which way to go before changing it. |
+| "Use repo-workflow to do a full / incremental review" | The codebase review procedure in [reviews](references/reviews.md), landed as its own PR. |
+| "Use repo-workflow to fan out the ready TODOs" / "run overnight" | The coordinator procedure in [parallel-work](references/parallel-work.md), with the autonomy mode stated up front. |
+| "Grab a TODO" / any single task | Not this skill. The repository's `AGENTS.md` and guides. |
+
 ## Choose the operation
 
 | Operation | Read | Tools |
