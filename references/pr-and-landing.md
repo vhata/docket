@@ -21,7 +21,14 @@ Template: `templates/.github/pull_request_template.md`. Keep the template's head
 - **Eligible to land** is separate: base is the default branch, required checks are green against the current base, every parent in a stack has landed, and no acceptance gate the queue entry carried is outstanding. A remainder entry cannot waive such a gate. A ready PR that is not eligible says why in its body.
 - **Merge** is the user's unless they delegated it for the session or `AGENTS.md` records a standing delegation. Squash. Then confirm the commit body, confirm main's CI run for the push, and clean up (below).
 
-Direct-to-main exceptions, if the repository has them, are listed in `AGENTS.md` with their proportionate check (plans and dated design documents, metadata files such as `.git-blame-ignore-revs`, small factual documentation corrections, explicitly authorised recovery of already-reviewed changes). Anything that describes behaviour, anything CI reads, and all code go through a PR.
+### Direct to main
+
+Two kinds of change go straight to `main` without a branch, a PR or a review:
+
+1. **Documentation that records work to be done** rather than describing behaviour: adding or triaging entries in `TODO.md` or `review/BACKLOG.md`, and plans (dated files under `plans/`). A plan is planning for work, not work; everything it describes still goes through branches, PRs and independent review. Resolving an entry is not in this exception, because resolution happens in the PR that does the work.
+2. **Housekeeping metadata files** such as `.git-blame-ignore-revs`, and only when the user says so for that case. It is a per-case allowance, not a standing rule.
+
+Cases that extrapolate from these without violating the spirit of the rule are a judgement call; state it in the commit message. Everything else goes through a PR: all code, anything CI or the build reads, and any documentation that describes behaviour or policy (decisions, features, architecture, quality, the contract itself). Run the proportionate check before committing (`bash scripts/workflow/check-queues.sh` for queue edits, `bash scripts/workflow/check-links.sh` for plans). Pushing the direct commit follows the session's push authority like any other push: normal in an interactive session, held for the user under an unattended autonomy grant. Branch protection has to permit this (administrator bypass or no required-PR rule), which is why admin enforcement stays off in repositories that use it.
 
 ## Keeping branches current
 

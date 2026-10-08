@@ -84,8 +84,9 @@ entry_block() {
     inblock { print }' "$1"
 }
 
-# Strip HTML comments (template hints) before checking structure.
-sed -e 's/<!--.*-->//g' "$body" > "$tmp/body.clean"
+# Strip Windows line endings (bodies edited on the web) and HTML comments
+# (template hints) before checking structure.
+tr -d '\r' < "$body" | sed -e 's/<!--.*-->//g' > "$tmp/body.clean"
 
 first_heading="$(grep -m1 -E '^## ' "$tmp/body.clean" || true)"
 if [ -z "$first_heading" ]; then

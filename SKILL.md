@@ -7,7 +7,7 @@ description: Use when adopting, repairing, auditing or comparing a repository's 
 
 A repository run this way answers four questions from its own files at any moment: what is being worked on, what is ready to work on, what was decided, and what is known to be broken. Everything below exists to keep those answers true while many agents work at once.
 
-**Core principle:** every unit of work is a branch, a worktree, a draft PR with an exact claim, an independent review, and a cleanup. Every idea that is not that unit of work goes into a queue, immediately, and the current work continues.
+**Core principle:** every unit of work is a branch, a worktree, a draft PR with an exact claim, an independent review, and a cleanup. Every idea that is not that unit of work goes into a queue, immediately, and the current work continues. Two things go straight to `main` without a branch: documentation that records work to be done (queue entries, triage, plans), and housekeeping metadata files when the user says so for that case; see [pr-and-landing](references/pr-and-landing.md#direct-to-main).
 
 The repository's own `AGENTS.md` and guides win wherever they exist and are what an agent reads for everyday work; this skill is for the operations below, and for installing those guides where they are missing (see `references/setup.md`). Loading it for an ordinary implementation task in an already-set-up repository spends context on rules the repository already states.
 
@@ -70,11 +70,11 @@ Autonomy grants cover implementation. These need the user's word in the current 
 | Push a branch, open a draft PR | Interactive sessions: normal, no ask. Unattended autonomy grants: only with the user's word; otherwise branches stay local (see below) |
 | Mark a PR ready | No, once checks and independent review are complete |
 | Merge into main | Yes, in that turn, unless the user delegated it for the session or `AGENTS.md` records a standing delegation |
-| Force-push | Only the PR branch, only `--force-with-lease`, only after a rebase. Never main. |
+| Force-push | Only the PR branch, only `--force-with-lease`, only after a rebase. Never main, even where GitHub allows it; that ability is the owner's, for recovery. |
 | Release tag, deploy, publish | Yes, in that turn or the one before, even under "go wild" |
 | Change CI, branch protection, hooks policy | Yes |
 | Delete a branch with unmerged commits, remove a dirty worktree | Yes |
-| Commit directly to main | Only for exceptions the repo's AGENTS.md enumerates |
+| Commit directly to main | Work-recording documentation (TODO entries, triage, plans): normal. Housekeeping metadata such as `.git-blame-ignore-revs`: only when the user says so for that case. Nothing else; pushing the commit follows the session's push authority |
 
 Under an autonomy grant without push authority, work lands on local branches with the finished PR body saved to `.feral/pr-<slug>.md` and every load-bearing decision appended to `AUDIT.md` with an undo line. See [parallel-work](references/parallel-work.md#autonomy-modes).
 

@@ -41,4 +41,10 @@ git fetch --quiet origin "$base" 2>/dev/null || true
 start="origin/$base"; git rev-parse --verify --quiet "$start" >/dev/null || start="$base"
 git worktree add --quiet -b "$branch" "$path" "$start"
 echo "created branch $branch at $path (from $start)"
-echo "next: cd $path; run the repo's setup script if it exists (scripts/setup.sh); commit early; open a draft PR after the first meaningful commit with 'Claims <queue>: $slug' in the body."
+case "$queue" in
+  todo) marker="Claims TODO: $slug" ;;
+  review) marker="Claims review backlog: $slug" ;;
+  roadmap) marker="Claims roadmap: $slug" ;;
+  *) marker="" ;;
+esac
+echo "next: cd $path; run the repo's setup script if it exists (scripts/setup.sh); commit early; open a draft PR after the first meaningful commit${marker:+ with '$marker' in the body}."

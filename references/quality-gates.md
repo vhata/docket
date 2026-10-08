@@ -66,11 +66,11 @@ gh api repos/{owner}/{repo} --jq '{allow_squash_merge,allow_merge_commit,allow_r
 
 These are recommendations for a repository worked by agents and merged by one person; the repository's own recorded policy wins, and changing hosting settings needs the user's word.
 
-- Required status checks: the PR CI jobs by exact name. `strict: true` (branch up to date with base) when PRs are usually merged one at a time; it forces a rebase before each merge, which the squash-then-rebase flow makes cheap, and it removes the two-green-PRs-make-red-main failure. With many near-simultaneous merges, a merge queue does the same job.
-- Required linear history and conversation resolution. Force pushes and deletions blocked.
+- Required status checks: the PR CI jobs by exact name. "Require branches to be up to date" (`strict`) is a trade: on, it removes the two-green-PRs-make-red-main case at the cost of a rebase and a CI rerun before every merge; off, the push-to-main CI run plus the red-main policy catch the rare bad combination after the fact. Default off: the race is rare and repeated rebasing of many open PRs is the larger cost. Turn it on only where main breaking is expensive to repair.
+- Required linear history. Conversation resolution optional. Force pushes and deletions on main: blocked for agents by this workflow regardless of the setting (the authorisation ladder makes them one-way doors), so the GitHub toggle is about whether the owner keeps the ability for recovery; keeping it on is a legitimate choice.
 - Repository merge settings: squash only; squash title from PR title; squash message from PR body; delete head branch on merge.
 - Required approving reviews: zero is acceptable when the reviewers are agents, because the forge cannot see them; the `## Review` section in the PR body is the record. Say so in the quality doc.
-- Administrator enforcement: on, if the repository has no direct-to-main exceptions. Off only when `AGENTS.md` enumerates the exceptions (plans, housekeeping files, authorised recovery), and then the bypass is a deliberate click with the reason stated in the commit.
+- Administrator enforcement: off, because the standard direct-to-main rule (queue entries, triage and plans; housekeeping metadata on the user's say-so, see pr-and-landing.md) needs the owner to bypass the required-PR rule, and the owner may want to merge a red PR deliberately. On only if the user narrows the rule to no exceptions. Either way the rules bind agents through this workflow, not through GitHub.
 - Scheduled workflows are not required checks.
 
 Two of the three studied repositories had protection at all; one had none, so a red main CI and zero reviews blocked nothing. Hosting settings are a one-way door: confirm with the user before changing them.

@@ -34,7 +34,7 @@ Every file in this table except the optional ones has a template under `template
 
 ## 3. Install order
 
-1. **Contract.** `AGENTS.md` from `templates/AGENTS.md`. Fill in the project line, the area list, the concurrency cap, the direct-to-main exceptions (default: none), the autonomy defaults, and which optional pieces are in force. Create `CLAUDE.md` containing `@AGENTS.md`.
+1. **Contract.** `AGENTS.md` from `templates/AGENTS.md`. Fill in the project line, the area list, the concurrency cap, the autonomy defaults, and which optional pieces are in force. The direct-to-main rule in the template (work-recording documentation; housekeeping metadata on the user's say-so) is the standard one; narrow it only if the user asks. Create `CLAUDE.md` containing `@AGENTS.md`.
 2. **Scripts.** `scripts/setup.sh`, `scripts/check.sh` and the per-check scripts for the repository's language (see quality-gates.md). Copy the skill's `scripts/*.sh` into `scripts/workflow/` so hooks, CI and agents without the skill can run them.
 3. **Hooks.** One manager, config tracked, installed by `scripts/setup.sh`. Measure the pre-commit time; move anything slow to pre-push. Add `.worktrees/` and the evidence and cache directories to `.gitignore` in the install PR; until it lands, `start-work.sh` excludes `.worktrees/` locally through `.git/info/exclude`.
 4. **Queues.** `TODO.md` and `docs/TODO_GUIDE.md`. Bring known deferred work in with sources; everything starts Unprioritized in Needs triage unless evidence says otherwise. Run `bash scripts/check-queues.sh --strict`.
