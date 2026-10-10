@@ -68,8 +68,9 @@ done
 if [ "$exact" -eq 0 ]; then
   echo "verdict: BASELINE LOST. Either compare the reviewed tree exactly (git diff <reviewed-tree> $base, with the tree retrieved from a bundle or the PR) and record the correspondence, or reset with a FULL review. Figures below, if any, are merge-base approximations only."
   # Fall through with merge-base so the reader still sees the size of the problem.
-  if git cat-file -e "$rev^{commit}" 2>/dev/null; then rev="$(git merge-base "$rev" "$base")"; else exit 0; fi
-  if [ -n "$full_rev" ] && git cat-file -e "$full_rev^{commit}" 2>/dev/null; then full_rev="$(git merge-base "$full_rev" "$base")"; else full_rev=""; fi
+  git cat-file -e "$rev^{commit}" 2>/dev/null || exit 0
+  rev="$(git merge-base "$rev" "$base")" || { echo "reviewed commit shares no history with $base: no approximation is possible."; exit 0; }
+  if [ -n "$full_rev" ] && git cat-file -e "$full_rev^{commit}" 2>/dev/null; then full_rev="$(git merge-base "$full_rev" "$base")" || full_rev=""; else full_rev=""; fi
 fi
 
 commits="$(git rev-list --count "$rev..$base")"
@@ -88,9 +89,10 @@ fi
 src_files="$(echo "$list" | grep -Ev '(^|/)(docs|review|plans|\.github)/|\.md$|\.lock$|lock\.(json|yaml)$|\.sum$|\.svg$|\.png$|\.jpg$' || true)"
 src_lines=0
 if [ -n "$src_files" ]; then
-  src_lines="$(echo "$src_files" | tr '\n' '\0' | xargs -0 cat 2>/dev/null | wc -l | tr -d ' ')"
+  src_lines="$(echo "$src_files" | tr '\n' '\0' | { xargs -0 cat 2>/dev/null || true; } | wc -l | tr -d ' ')"
 fi
-churn_since() { git diff --numstat "$1" "$base" -- $( [ -n "$paths" ] && echo "$paths" ) | grep -Ev '(^|/)(docs|review|plans|\.github)/|\.md$|\.lock$|lock\.(json|yaml)$|\.sum$' | awk '{ if ($1 != "-") s += $1 } END { print s + 0 }'; }
+# grep exits 1 when no source file changed; under pipefail that would abort the script.
+churn_since() { git diff --numstat "$1" "$base" -- $( [ -n "$paths" ] && echo "$paths" ) | { grep -Ev '(^|/)(docs|review|plans|\.github)/|\.md$|\.lock$|lock\.(json|yaml)$|\.sum$' || true; } | awk '{ if ($1 != "-") s += $1 } END { print s + 0 }'; }
 changed_src="$(churn_since "$rev")"
 changed_since_full="$changed_src"; [ -n "$full_rev" ] && changed_since_full="$(churn_since "$full_rev")"
 
