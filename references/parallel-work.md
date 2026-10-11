@@ -15,14 +15,14 @@ Split along files or components, never along a shared mutable surface. Before di
 1. Name the shared interfaces (types, schemas, protocol, scripts, config) that more than one task touches. Land them first, in their own PR, or stack dependents on that branch explicitly.
 2. Pick tasks whose file sets are disjoint. If two tasks must touch the same file, one owner does both or one feeds the other a patch through the coordinator.
 3. Hold back items that would confound another task's measurements (a behaviour change while someone is baselining behaviour).
-4. Cap concurrency for heavy builds or simulations. Four concurrent agents is a reasonable default where each fresh worktree compiles the project; write the repository's own cap into `AGENTS.md`. One session recorded a load average near 150 before a cap existed.
+4. Cap concurrency for heavy builds or simulations. Four concurrent agents is a reasonable default where each fresh worktree compiles the project; write the repository's own cap into the Docket section of `AGENTS.md`. One session recorded a load average near 150 before a cap existed.
 5. Decide what runs where. Expensive processes get an explicit limit per agent, and tests that share ports, caches, databases or browser profiles need per-worktree paths (see Isolation).
 
 ## Worktrees and branches
 
 - Branch: `<queue>/<slug>` for queued work (`todo/`, `review/`, `roadmap/`), `fix/<slug>` for directly requested fixes, `task/<slug>` for other direct requests. The slug appears verbatim so claim checks find it.
 - Worktree: use the harness's native tool when it has one (it owns placement and cleanup), naming the branch `<queue>/<slug>` and running the claim check first. Otherwise `.worktrees/<queue>-<slug>` under the repository root, ignored by git. A repository-local ignored directory survives temp-directory cleaning; worktrees under `/tmp` left twelve prunable registrations and fifteen orphaned branches in one repository.
-- Create the branch and worktree before investigating. `bash scripts/workflow/start-work.sh <queue> <slug>` does the claim check and creation.
+- Create the branch and worktree before investigating. `bash docket/scripts/start-work.sh <queue> <slug>` does the claim check and creation.
 - Run the repository's setup script in the new worktree (dependencies, hooks). Hooks installed into the shared `.git/hooks` cover every worktree; hooks managed through `core.hooksPath` pointing at a tracked directory also do.
 - Baseline before changing anything: run the check entrypoint once so later failures are attributable.
 
@@ -87,13 +87,13 @@ Which mode is in force is said at the top of the session and written to the audi
 | --- | --- | --- | --- | --- |
 | Interactive | yes | yes, after first commit | user, or agent when told in that turn | ready PRs with review sections |
 | Fan-out with PRs ("put PRs up while I'm away") | yes | yes | user | ready PRs, one per item, plus a summary |
-| Unattended without push authority ("I'm going to bed") | no | no | no | local branches, `.feral/pr-<slug>.md` bodies, `AUDIT.md`, a report |
+| Unattended without push authority ("I'm going to bed") | no | no | no | local branches, `.docket/pr-<slug>.md` bodies, `.docket/AUDIT.md`, a report |
 
-In the unattended mode, claims are not globally visible. Say so in the audit log. Stack dependent plan steps branch on branch rather than waiting for merges, and record the merge order in the report. Publishing in the morning is one command per branch: `git push -u origin <branch> && gh pr create --head <branch> --title "<title>" --body-file .feral/pr-<slug>.md`.
+In the unattended mode, claims are not globally visible. Say so in the audit log. Stack dependent plan steps branch on branch rather than waiting for merges, and record the merge order in the report. Publishing in the morning is one command per branch: `git push -u origin <branch> && gh pr create --head <branch> --title "<title>" --body-file .docket/pr-<slug>.md`.
 
 ### Audit log
 
-`AUDIT.md` at the repository root, excluded from git through `.git/info/exclude` (so it never reaches a PR; the exclusion is added at install, see [setup](setup.md#3-install-order) step 3), append-only. Each session opens with a scope entry stating what is authorised. Each load-bearing decision (interface change, approach chosen over alternatives, dependency added, behaviour changed, work held back) gets:
+`.docket/AUDIT.md`, under the local `.docket/` directory that `install.sh` excludes from git through `.git/info/exclude` (so it never reaches a PR; see [setup](setup.md#3-install-order) steps 2 and 3), append-only. Each session opens with a scope entry stating what is authorised. Each load-bearing decision (interface change, approach chosen over alternatives, dependency added, behaviour changed, work held back) gets:
 
 ```markdown
 ## 2026-09-23 00:12 — <title>
@@ -109,7 +109,7 @@ End every fan-out or unattended run with: branches and their state in merge orde
 
 ## Harness pitfalls seen in practice
 
-- Placeholder branches (`worktree-agent-*`) accumulate with no commits; `bash scripts/workflow/cleanup-landed.sh --apply --empty` removes them (without `--apply` the script only lists them).
+- Placeholder branches (`worktree-agent-*`) accumulate with no commits; `bash docket/scripts/cleanup-landed.sh --apply --empty` removes them (without `--apply` the script only lists them).
 - Agents in worktrees cannot write into the main checkout; have them leave PR bodies and reports in their own worktree and let the coordinator copy them.
 - Watchdog timeouts kill long single commands; prefer several shorter commands and incremental commits.
 - Concurrency groups that cancel in-progress runs on pushes to main hide red main builds when several PRs merge quickly; see quality-gates.

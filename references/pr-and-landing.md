@@ -28,7 +28,7 @@ Two kinds of change go straight to `main` without a branch, a PR or a review:
 1. **Documentation that records work to be done** rather than describing behaviour: adding, triaging or splitting entries in `TODO.md` or `review/BACKLOG.md`, and plans (dated files under `plans/`). A plan is planning for work, not work; everything it describes still goes through branches, PRs and independent review. Resolving an entry is not in this exception, because resolution happens in the PR that does the work. A discovery entry committed this way takes no `Files TODO` marker in the PR that found it; that marker is for entries added on the branch.
 2. **Housekeeping metadata files** such as `.git-blame-ignore-revs`, and only when the user says so for that case. It is a per-case allowance, not a standing rule.
 
-Cases that extrapolate from these without violating the spirit of the rule are a judgement call; state it in the commit message. Everything else goes through a PR: all code, anything CI or the build reads, and any documentation that describes behaviour or policy (decisions, features, architecture, quality, the contract itself). Run the proportionate check before committing (`bash scripts/workflow/check-queues.sh` for queue edits, `bash scripts/workflow/check-links.sh` for plans). Pushing the direct commit follows the session's push authority like any other push: normal in an interactive session, held for the user under an unattended autonomy grant. Branch protection has to permit this (administrator bypass or no required-PR rule), which is why admin enforcement stays off in repositories that use it.
+Cases that extrapolate from these without violating the spirit of the rule are a judgement call; state it in the commit message. Everything else goes through a PR: all code, anything CI or the build reads, and any documentation that describes behaviour or policy (decisions, features, architecture, quality, the contract itself). Run the proportionate check before committing (`bash docket/scripts/check-queues.sh` for queue edits, `bash docket/scripts/check-links.sh` for plans). Pushing the direct commit follows the session's push authority like any other push: normal in an interactive session, held for the user under an unattended autonomy grant. Branch protection has to permit this (administrator bypass or no required-PR rule), which is why admin enforcement stays off in repositories that use it.
 
 ## Keeping branches current
 
@@ -60,12 +60,12 @@ Stack when step N+1 cannot start until step N's code exists and waiting for N to
 Run after every merge, or at least at the end of every session:
 
 ```bash
-bash scripts/workflow/cleanup-landed.sh                  # dry run: lists branches whose PRs merged and their worktrees
-bash scripts/workflow/cleanup-landed.sh --apply          # removes clean worktrees, deletes those branches, prunes stale worktree registrations, fetches with --prune
-bash scripts/workflow/cleanup-landed.sh --apply --empty  # also deletes placeholder branches with no commits, no PR, no worktree
+bash docket/scripts/cleanup-landed.sh                  # dry run: lists branches whose PRs merged and their worktrees
+bash docket/scripts/cleanup-landed.sh --apply          # removes clean worktrees, deletes those branches, prunes stale worktree registrations, fetches with --prune
+bash docket/scripts/cleanup-landed.sh --apply --empty  # also deletes placeholder branches with no commits, no PR, no worktree
 ```
 
-The script deletes a branch only when its tip is the exact commit a merged PR landed; a branch with commits after that is kept and reported. Dirty worktrees are never removed; worktrees holding ignored files (evidence, `.feral/`) are kept unless `--discard-ignored` is passed. Look at what is in them (`git -C <path> status --porcelain --ignored -uall`) and either commit, move or, with the user's word, discard. Branches with unmerged, unpushed commits are reported, not deleted; one repository carried an unpushed capacity-measurement branch for days that nobody knew about. Rebase stacked children onto the new main as part of the same cleanup. Then check the push CI run on main (`gh run list --branch main --limit 3`) and apply the red-main policy if needed.
+The script deletes a branch only when its tip is the exact commit a merged PR landed; a branch with commits after that is kept and reported. Dirty worktrees are never removed; worktrees holding ignored files (evidence, `.docket/`) are kept unless `--discard-ignored` is passed. Look at what is in them (`git -C <path> status --porcelain --ignored -uall`) and either commit, move or, with the user's word, discard. Branches with unmerged, unpushed commits are reported, not deleted; one repository carried an unpushed capacity-measurement branch for days that nobody knew about. Rebase stacked children onto the new main as part of the same cleanup. Then check the push CI run on main (`gh run list --branch main --limit 3`) and apply the red-main policy if needed.
 
 ## Releases
 
