@@ -18,7 +18,8 @@
 # or pass refs explicitly. In CI on a pull_request event use --base
 # "origin/$GITHUB_BASE_REF" and --head HEAD (the merge commit).
 #
-# Marker vocabulary (one per line, no backticks, no trailing punctuation):
+# Marker vocabulary (one per line, at the start of the line rather than in a
+# list or quote; no backticks, no trailing punctuation):
 #   Claims TODO: <slug>                    Resolves TODO: <slug>
 #   Partially resolves TODO: <slug>        Remaining TODO: <slug>
 #   Files TODO: <slug>                     (a discovery captured by this PR)
@@ -46,7 +47,7 @@ while [ $# -gt 0 ]; do
     --todo) todo="$2"; shift 2 ;;
     --backlog) backlog="$2"; shift 2 ;;
     --branch) branch="$2"; shift 2 ;;
-    -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "check-pr-markers: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -113,16 +114,26 @@ tr -d '\r' < "$body" | awk '
 
 first_heading="$(grep -m1 -E '^## ' "$tmp/body.clean" || true)"
 if [ -z "$first_heading" ]; then
-  warn "description has no \"## \" headings; the convention is \"## Why\" first, then changes, markers and validation"
+  err "description has no \"## \" headings; the convention is \"## Why\" first, then changes, markers and validation"
 elif ! echo "$first_heading" | grep -Eq '^## Why\b'; then
   err "first heading is \"$first_heading\"; the description must open with \"## Why\""
 fi
 
 # Exact markers.
 grep -E '^(Claims|Resolves|Partially resolves|Remaining|Files) (TODO|review backlog|review finding|roadmap): [a-z0-9][a-z0-9-]*$' "$tmp/body.clean" > "$tmp/markers" || true
-# Near misses: looks like a marker but is not exact (backticks, bold, case, punctuation, several slugs, a list bullet).
-grep -Ei '^[-+*_ ]*(claims|resolves|partially resolves|remaining|files)[*_ ]*(todo|review backlog|review finding|roadmap)' "$tmp/body.clean" \
-  | grep -Ev '^(Claims|Resolves|Partially resolves|Remaining|Files) (TODO|review backlog|review finding|roadmap): [a-z0-9][a-z0-9-]*$' > "$tmp/nearmiss" || true
+# Markers written as list items, task-list items, numbered items or quotes
+# ("- Resolves TODO: x", "- [ ] ...", "1. ...", "> ..."): rejected, not ignored,
+# so the PR cannot silently lose its claim. The colon after the namespace keeps
+# prose list items ("- Files TODO entries later") out of this rule.
+listed_re='^[[:space:]]*(([-+*]|[0-9]+[.)])[[:space:]]+(\[[ xX]\][[:space:]]+)?|>[[:space:]]*)+[*_`]*(claims|resolves|partially resolves|remaining|files)[*_` ]+(todo|review backlog|review finding|roadmap)[*_` ]*:'
+grep -Ei "$listed_re" "$tmp/body.clean" > "$tmp/listed" || true
+while IFS= read -r line; do
+  [ -n "$line" ] && err "marker \"$line\" is written as a list item or quote; markers start the line with no bullet, number or \">\" (exact form: \"Resolves TODO: my-slug\")"
+done < "$tmp/listed"
+# Near misses: looks like a marker but is not exact (backticks, bold, case, punctuation, several slugs).
+grep -Ei '^[*_` ]*(claims|resolves|partially resolves|remaining|files)[*_` ]*(todo|review backlog|review finding|roadmap)' "$tmp/body.clean" \
+  | grep -Ev '^(Claims|Resolves|Partially resolves|Remaining|Files) (TODO|review backlog|review finding|roadmap): [a-z0-9][a-z0-9-]*$' \
+  | { grep -Eiv "$listed_re" || true; } > "$tmp/nearmiss" || true
 while IFS= read -r line; do
   [ -n "$line" ] && err "malformed marker \"$line\" (exact form: \"Resolves TODO: my-slug\"; one slug per line, nothing after the slug, no backticks or bold; put explanations in the prose above)"
 done < "$tmp/nearmiss"
@@ -221,7 +232,13 @@ if [ -f "$tmp/late-errors" ]; then cat "$tmp/late-errors"; errors=$((errors + $(
 case "$branch" in
   todo/*|review/*|roadmap/*)
     bslug="${branch#*/}"
-    grep -qE "^(Claims|Resolves|Partially resolves) (TODO|review backlog|review finding|roadmap): $bslug$" "$tmp/markers" \
+    # The prefix names the queue, so a marker for another queue does not count.
+    case "$branch" in
+      todo/*) namespace="TODO" ;;
+      review/*) namespace="review backlog" ;;
+      roadmap/*) namespace="roadmap" ;;
+    esac
+    grep -qE "^(Claims|Resolves|Partially resolves) $namespace: $bslug$" "$tmp/markers" \
       || err "branch $branch names queued work but no marker claims or resolves \`$bslug\`" ;;
 esac
 

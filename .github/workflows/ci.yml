@@ -1,0 +1,27 @@
+# Checks for the skill repository itself: the vendored scripts parse and pass
+# their regression fixtures under both bash 5 (Linux) and bash 3.2 (macOS), and
+# every relative link in the Markdown resolves.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax
+        run: for f in templates/docket/scripts/*.sh install.sh tests/scripts.sh; do /bin/bash -n "$f"; done
+      - name: Regression fixtures
+        run: /bin/bash tests/scripts.sh
+      - name: Links
+        run: /bin/bash templates/docket/scripts/check-links.sh

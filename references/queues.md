@@ -50,13 +50,13 @@ Review-close triage of findings is a separate step owned by codebase reviews (se
 
 1. Follow the user's selection. Otherwise take the highest-priority suitable unclaimed entry in the Ready section of the named queue. If none is suitable, say so; do not pick from Needs triage or another queue.
 2. `bash docket/scripts/claim-check.sh <slug>`: open PRs whose body carries a marker for the slug or whose head branch contains it, merged PRs that already resolved it, branches and worktrees containing it. For a backlog entry the script also checks every slug in its `Findings:` line, because a raw finding can be explicitly assigned without the batch being claimed.
-3. Create the branch and worktree immediately (`bash docket/scripts/start-work.sh <queue> <slug>`), then recheck once; two agents can take the same slug within seconds. Search-then-create is not a lock: within one team the coordinator is the single dispatcher and no two writers are given overlapping slugs; across independent sessions or machines, the draft PR is the only shared record, so publish it early or accept the race.
+3. Create the branch and worktree immediately (`bash docket/scripts/start-work.sh <queue> <slug>`), then recheck once from inside the worktree with `bash docket/scripts/claim-check.sh --self <slug>`, which ignores the worker's own branch, worktree and pushed copy but still reports another worker's push or a fork PR under the same name; two agents can take the same slug within seconds. Search-then-create is not a lock: within one team the coordinator is the single dispatcher and no two writers are given overlapping slugs; across independent sessions or machines, the draft PR is the only shared record, so publish it early or accept the race.
 4. After the first meaningful commit, open a draft PR with the claim marker. The entry stays in the queue while work is underway. If no PR can be created (no remote, no forge access, no push authority), write the finished body to `.docket/pr-<slug>.md` (excluded from git), say so in the report (and in the audit log when one is in use) so the user knows the claim is local-only, and leave the branch and worktree for the user to publish with `git push -u origin <branch> && gh pr create --head <branch> --title "<title>" --body-file .docket/pr-<slug>.md`.
 5. Abandoning the work releases the claim: close the draft, remove the worktree and branch, leave the entry untouched.
 
 ## Markers
 
-One marker per line in the PR body, exact text, no backticks, nothing after the slug (the validator rejects both because exact-match searches miss them):
+One marker per line in the PR body, at the start of the line, exact text, no backticks, nothing after the slug (the validator rejects a marker inside a list item, task-list item, numbered item or quote, and a marker with backticks or trailing text, because exact-match searches miss them):
 
 ```text
 Claims TODO: <slug>                        Claims review backlog: <slug>

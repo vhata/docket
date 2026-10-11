@@ -87,7 +87,7 @@ All scripts are portable shell (bash 3.2) and need only git, plus `gh` where PRs
 | `ci.sh` | Runs `check-queues.sh --strict`, `check-links.sh` and, on pull requests, `check-pr-markers.sh` (reads `PR`, `BASE`, `HEAD_BRANCH` and `GH_TOKEN` from the environment). The one hygiene step CI calls. |
 | `check-queues.sh [--strict]` | Validates TODO.md and review/BACKLOG.md: entry format, unique slugs, Source lines, resolvable `Related`/`Depends on`, no Ready entry blocked by unresolved work, one finding per backlog entry. Run in CI. |
 | `check-pr-markers.sh --body FILE \| --pr N` | Validates PR markers against the queues at base and head, fails a body whose first heading is not `## Why`, and requires a Validation section for finding fixes. Run in CI on pull requests. |
-| `claim-check.sh <slug>...` | Finds existing claims across PRs, branches and worktrees, following backlog findings. |
+| `claim-check.sh [--self] <slug>...` | Finds existing claims across PRs, branches and worktrees, following backlog findings. `--self` is the recheck from inside the claimed worktree: it ignores the worker's own branch and pushed copy but not another worker's. |
 | `start-work.sh <queue> <slug>` | Claim check, then branch plus worktree with the repository's naming. |
 | `review-due.sh [--paths ...]` | Reads the review index, measures drift since the reviewed commit, says whether an incremental or full review is due. |
 | `cleanup-landed.sh [--apply] [--empty]` | Removes worktrees and branches whose PRs merged, and empty harness placeholder branches. Dry run by default. |

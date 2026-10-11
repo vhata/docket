@@ -61,7 +61,7 @@ holds two kinds of content:
 | `scripts/check-queues.sh` | Validates the structure of `TODO.md` and `review/BACKLOG.md`: entry format, unique slugs, `Source` lines, cross-references and dependencies. |
 | `scripts/check-pr-markers.sh` | Validates a pull request description's markers against the queues at the base and head commits. |
 | `scripts/check-links.sh` | Checks that relative Markdown links, images and `#anchors` resolve to existing files and headings. |
-| `scripts/claim-check.sh` | Looks for existing claims on a slug: open and merged pull requests, branches and worktrees. |
+| `scripts/claim-check.sh` | Looks for existing claims on a slug: open and merged pull requests, branches and worktrees. `--self` rechecks from inside the claimed worktree, ignoring the worker's own branch. |
 | `scripts/start-work.sh` | Runs the claim check, then creates the `<queue>/<slug>` branch and its worktree. |
 | `scripts/cleanup-landed.sh` | Removes branches and worktrees whose pull requests have merged; a dry run unless `--apply` is given. |
 | `scripts/review-due.sh` | Measures movement since the last recorded codebase review and says whether an incremental or full review is due. |

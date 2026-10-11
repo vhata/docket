@@ -37,13 +37,13 @@ Triage runs when the user asks, when Needs triage holds more than about a dozen 
 
 1. Follow the user's selection. Otherwise take the highest-priority suitable unclaimed entry in **Ready for separate work** of the named queue. If nothing suitable is ready, say so; do not take a triage or proof-of-concept item, and do not switch queues.
 2. Run `bash docket/scripts/claim-check.sh <slug>`. For a backlog entry it also checks every finding slug. A branch or worktree containing the slug is a provisional claim; an open PR with a marker for it is a claim; a merged PR that resolved it means the entry is stale. Stop and coordinate on any hit.
-3. Create the branch and worktree immediately: `bash docket/scripts/start-work.sh <queue> <slug>` (branch `<queue>/<slug>`). Recheck claims once after creating it.
+3. Create the branch and worktree immediately: `bash docket/scripts/start-work.sh <queue> <slug>` (branch `<queue>/<slug>`). Recheck claims once after creating it, from inside the new worktree: `bash docket/scripts/claim-check.sh --self <slug>` ignores your own branch and its worktree, and a remote copy or same-repository open PR of that branch only when its tip is your own work (in your branch, not in main). Any remaining hit, including another worker's push or a fork PR under the same branch name, is a competing claim. From elsewhere, name the branch with `--exclude-branch <queue>/<slug>`.
 4. After the first meaningful commit, open a draft PR with the claim marker. Leave the entry in the queue while work is underway. If no PR can be opened, save the body as `.docket/pr-<slug>.md` (excluded from git), say so where the user will see it, and leave the branch and worktree for the user; the claim is then local only.
 5. Abandoned work: close the draft, remove the worktree and branch, leave the entry untouched.
 
 ## Markers
 
-One per line in the PR body, exact text, no backticks, nothing after the slug:
+One per line in the PR body, at the start of the line (not a list item, task-list item, numbered item or quote), exact text, no backticks, nothing after the slug:
 
 ```text
 Claims TODO: <slug>                      Claims review backlog: <slug>
