@@ -33,7 +33,7 @@ When an idea, improvement, bug or alternative surfaces, from the user or from in
 
 1. Search all queues for an existing entry (`grep -rn "keyword" TODO.md review/BACKLOG.md`); update rather than duplicate.
 2. Write the entry first, with `Source:` and the evidence gathered so far, before asking whether to do it now. The in-conversation trade-off is the most valuable thing to preserve.
-3. Add `Files TODO: <slug>` to the current PR body so the capture is auditable; a follow-up mentioned only in PR prose went missing from the queue in one repository.
+3. If the entry was added on the current branch, add `Files TODO: <slug>` to the PR body so the capture is auditable; a follow-up mentioned only in PR prose went missing from the queue in one repository. If the entry was instead committed directly to `main` (see [pr-and-landing](pr-and-landing.md#direct-to-main)), use no marker; the validator warns when `Files TODO` names an entry that already exists at the base.
 4. Continue the original task. Pulling the entry forward is a second, deliberate decision, normally the user's.
 
 Exceptions: work required for the requested outcome, its correctness or its verification stays in scope without a queue entry. An unrelated P0 is recorded, reported prominently, and work pauses for direction.
@@ -42,7 +42,7 @@ Who edits the queue file: in a fan-out, writers report discoveries and the coord
 
 ## Triage
 
-Triage is a scheduled ritual, not something that happens when an agent trips over the triage section. Run it when the user asks, when Needs triage exceeds roughly a dozen entries, or at least every few weeks. For each entry in Needs triage: decide the stage (or that a proof of concept is needed), set a priority, add or verify `Depends on:`, merge duplicates, and remove obsolete entries with the reason in the PR. Triage lands as its own queue-only PR ("Triage TODO.md, YYYY-MM-DD"); it uses no resolution markers because nothing was implemented.
+Triage is a scheduled ritual, not something that happens when an agent trips over the triage section. Run it when the user asks, when Needs triage exceeds roughly a dozen entries, or at least every few weeks. For each entry in Needs triage: decide the stage (or that a proof of concept is needed), set a priority, add or verify `Depends on:`, merge duplicates, and remove obsolete entries with the reason in the commit message. Triage records work rather than doing it, so it lands as a direct commit to `main` (subject "Triage TODO.md, YYYY-MM-DD"; see [pr-and-landing](pr-and-landing.md#direct-to-main)); it uses no resolution markers because nothing was implemented.
 
 Review-close triage of findings is a separate step owned by codebase reviews (see reviews.md).
 
@@ -75,7 +75,7 @@ Before marking the PR ready, verify the implementation against the complete entr
 
 - **Full**: remove the entry in the PR; change `Claims` to `Resolves`. Search every queue for the slug and repair `Related:` and `Depends on:` lines that named it.
 - **Partial**: remove the original; add a remainder with a new slug, reassessed stage, priority and area, and `Remaining from: <original>`. Use the `Partially resolves` and `Remaining` pair. For review work the remainder lists only the still-open findings; never mark the others resolved. A remainder records what is left; it cannot waive an acceptance condition the original carried, so a PR that delivers a subset is ready only if the entry or the user allows separate delivery of that subset.
-- **Split for parallel subsets**: land a queue-only PR first. Keep the original slug on one narrowed entry; give the other subsets new slugs with `Split from: <original>`. Only then can several agents claim subsets. Splitting is bookkeeping, not resolution.
+- **Split for parallel subsets**: land the split as a direct commit to `main` first (bookkeeping, see [pr-and-landing](pr-and-landing.md#direct-to-main)). Keep the original slug on one narrowed entry; give the other subsets new slugs with `Split from: <original>`. Only then can several agents claim subsets. Splitting is bookkeeping, not resolution.
 - **Rejected or obsolete**: remove with the reason stated in the PR.
 
 A review finding is not closed by its fix PR. The fix PR supplies evidence (code, validation scenario, reviewer confirmation); the next incremental review records closure. Review backlog entries, which are scheduling units, are removed by the fix PR like any other entry.
