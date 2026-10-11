@@ -44,7 +44,7 @@ if [ -z "$rows" ]; then
 fi
 latest="$(echo "$rows" | head -1)"
 latest_full="$(echo "$rows" | grep -iE '\|[[:space:]]*full[[:space:]]*\|' | head -1 || true)"
-field() { echo "$1" | grep -oE '`[0-9a-f]{7,40}`' | head -1 | tr -d '\`'; }
+field() { echo "$1" | { grep -oE '`[0-9a-f]{7,40}`' || true; } | head -1 | tr -d '\`'; }
 datef() { echo "$1" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1 || true; }
 rev="$(field "$latest")"; date="$(datef "$latest")"
 type="$(echo "$latest" | grep -oiE '\b(full|incremental)\b' | head -1 || echo unknown)"
