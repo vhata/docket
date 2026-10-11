@@ -39,26 +39,49 @@ set -euo pipefail
 
 skill="$(cd "$(dirname "$0")" && pwd)"
 src="$skill/templates/docket"
-check=0; target=""
+check=0
+target=""
 for arg in "$@"; do
   case "$arg" in
-    --check) check=1 ;;
-    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
-    -*) echo "install: unknown option $arg" >&2; exit 2 ;;
-    *) [ -z "$target" ] || { echo "install: only one target may be given" >&2; exit 2; }; target="$arg" ;;
+  --check) check=1 ;;
+  -h | --help)
+    sed -n '2,37p' "$0"
+    exit 0
+    ;;
+  -*)
+    echo "install: unknown option $arg" >&2
+    exit 2
+    ;;
+  *)
+    [ -z "$target" ] || {
+      echo "install: only one target may be given" >&2
+      exit 2
+    }
+    target="$arg"
+    ;;
   esac
 done
 fragment="$skill/templates/AGENTS.md"
-[ -d "$src" ] && [ -f "$fragment" ] || { echo "install: $src or $fragment is missing; the skill checkout is incomplete" >&2; exit 2; }
+[ -d "$src" ] && [ -f "$fragment" ] || {
+  echo "install: $src or $fragment is missing; the skill checkout is incomplete" >&2
+  exit 2
+}
 
 : "${target:=.}"
-[ -d "$target" ] || { echo "install: $target is not a directory" >&2; exit 2; }
-top="$(git -C "$target" rev-parse --show-toplevel 2>/dev/null)" || { echo "install: $target is not inside a git repository" >&2; exit 2; }
+[ -d "$target" ] || {
+  echo "install: $target is not a directory" >&2
+  exit 2
+}
+top="$(git -C "$target" rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "install: $target is not inside a git repository" >&2
+  exit 2
+}
 skill_top="$(git -C "$skill" rev-parse --show-toplevel 2>/dev/null || echo "$skill")"
 common="$(cd "$top" && cd "$(git rev-parse --git-common-dir)" && pwd -P)"
 skill_common="$(cd "$skill" && cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .)" && pwd -P)"
 if [ "$top" = "$skill_top" ] || [ "$common" = "$skill_common" ]; then
-  echo "install: refusing to install the skill into its own repository ($top)" >&2; exit 2
+  echo "install: refusing to install the skill into its own repository ($top)" >&2
+  exit 2
 fi
 dst="$top/docket"
 
@@ -67,13 +90,15 @@ sha=unknown
 [ "$head_sha" = unknown ] || sha="$(git -C "$skill" rev-parse --short=12 HEAD)"
 if [ "$sha" != unknown ] && [ -n "$(git -C "$skill" status --porcelain 2>/dev/null)" ]; then sha="$sha-dirty"; fi
 
-begin='<!-- docket:begin -->'; end='<!-- docket:end -->'
+begin='<!-- docket:begin -->'
+end='<!-- docket:end -->'
 agents="$top/AGENTS.md"
 claude="$top/CLAUDE.md"
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/docket-install.XXXXXX")"; trap 'rm -rf "$tmp"' EXIT
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/docket-install.XXXXXX")"
+trap 'rm -rf "$tmp"' EXIT
 # Print the lines from the begin marker to the end marker, inclusive.
 block() { awk -v b="$begin" -v e="$end" '$0 == b { p = 1 } p { print } $0 == e { p = 0 }' "$1"; }
-block "$fragment" > "$tmp/template"
+block "$fragment" >"$tmp/template"
 # The section a project should have, given the section it has now ($1): the
 # template's text verbatim (blank lines included, so a formatter that pads the
 # markers changes nothing); for each template bullet the project's line with
@@ -96,7 +121,8 @@ expected() {
 # Names of template settings whose line in $1 is missing or still a placeholder.
 unfilled() {
   while IFS= read -r l; do
-    k="${l#- }"; k="${k%%:*}"
+    k="${l#- }"
+    k="${k%%:*}"
     if ! grep -q "^- $k:" "$1"; then echo "$k (missing)"; elif grep "^- $k:" "$1" | grep -q '<[^>]*>'; then echo "$k (placeholder)"; fi
   done < <(grep '^- ' "$tmp/template")
 }
@@ -104,7 +130,8 @@ unfilled() {
 agents_state() {
   [ -f "$agents" ] || return 1
   local nb ne
-  nb="$(grep -cxF "$begin" "$agents" || true)"; ne="$(grep -cxF "$end" "$agents" || true)"
+  nb="$(grep -cxF "$begin" "$agents" || true)"
+  ne="$(grep -cxF "$end" "$agents" || true)"
   if [ "$nb" -eq 0 ] && [ "$ne" -eq 0 ]; then return 1; fi
   if [ "$nb" -ne 1 ] || [ "$ne" -ne 1 ]; then return 2; fi
   [ "$(grep -nxF "$begin" "$agents" | cut -d: -f1)" -lt "$(grep -nxF "$end" "$agents" | cut -d: -f1)" ] || return 2
@@ -117,7 +144,10 @@ realpath_of() {
     p="$(readlink "$p")"
     case "$p" in /*) ;; *) p="$d/$p" ;; esac
   done
-  d="$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)" || { printf '%s\n' "$p"; return; }
+  d="$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)" || {
+    printf '%s\n' "$p"
+    return
+  }
   printf '%s/%s\n' "$d" "$(basename "$p")"
 }
 # 0 when CLAUDE.md is a symlink that resolves to AGENTS.md.
@@ -141,14 +171,17 @@ case "$exclude" in /*) ;; *) exclude="$top/$exclude" ;; esac
 if [ "$check" -eq 1 ]; then
   status=0
   if [ ! -d "$dst" ]; then
-    echo "install: $dst does not exist; nothing is installed" >&2; exit 1
+    echo "install: $dst does not exist; nothing is installed" >&2
+    exit 1
   fi
   installed=""
   if [ -f "$dst/VERSION" ]; then
     echo "installed: $(cat "$dst/VERSION")"
-    installed="$(cut -d' ' -f1 "$dst/VERSION")"; installed="${installed%-dirty}"
+    installed="$(cut -d' ' -f1 "$dst/VERSION")"
+    installed="${installed%-dirty}"
   else
-    echo "installed: VERSION file missing" >&2; status=1
+    echo "installed: VERSION file missing" >&2
+    status=1
   fi
   echo "skill:     $sha"
   # Compare the installed commit with this checkout's HEAD before diffing: a
@@ -168,29 +201,43 @@ if [ "$check" -eq 1 ]; then
       echo "install: the installed commit ($installed) and this skill checkout ($sha) have diverged; comparing the files anyway" >&2
     fi
   fi
-  diff -r -x VERSION "$src" "$dst" || status=1
+  diff -u -r -x VERSION "$src" "$dst" || status=1
   # diff -r ignores modes; start-work.sh runs claim-check.sh directly, so a
   # lost executable bit is drift too, on disk and in the committed mode.
   for f in "$dst"/scripts/*.sh; do
-    [ -x "$f" ] || { echo "install: $f is not executable (chmod +x it)" >&2; status=1; }
+    [ -x "$f" ] || {
+      echo "install: $f is not executable (chmod +x it)" >&2
+      status=1
+    }
   done
   modes="$(git -C "$top" ls-files -s -- docket/scripts 2>/dev/null | awk '$4 ~ /\.sh$/ && $1 != "100755" { print $4 " (" $1 ")" }')"
-  [ -z "$modes" ] || { echo "install: committed as other than 100755: $(echo "$modes" | paste -sd, - | sed 's/,/, /g') (git update-index --chmod=+x)" >&2; status=1; }
+  [ -z "$modes" ] || {
+    echo "install: committed as other than 100755: $(echo "$modes" | paste -sd, - | sed 's/,/, /g') (git update-index --chmod=+x)" >&2
+    status=1
+  }
   if agents_state; then
-    block "$agents" > "$tmp/have"
-    expected "$tmp/have" > "$tmp/want"
+    block "$agents" >"$tmp/have"
+    expected "$tmp/have" >"$tmp/want"
     diff -u --label "expected Docket section" --label "$agents" "$tmp/want" "$tmp/have" || status=1
-    unfilled "$tmp/have" > "$tmp/unfilled"
-    if [ -s "$tmp/unfilled" ]; then echo "install: settings not filled in $agents: $(paste -sd, "$tmp/unfilled" | sed 's/,/, /g')" >&2; status=1; fi
+    unfilled "$tmp/have" >"$tmp/unfilled"
+    if [ -s "$tmp/unfilled" ]; then
+      echo "install: settings not filled in $agents: $(paste -sd, "$tmp/unfilled" | sed 's/,/, /g')" >&2
+      status=1
+    fi
   elif [ $? -eq 1 ]; then
-    echo "install: $agents has no Docket section ($begin ... $end)" >&2; status=1
+    echo "install: $agents has no Docket section ($begin ... $end)" >&2
+    status=1
   else
-    echo "install: $agents has malformed docket markers; expected exactly one $begin before one $end" >&2; status=1
+    echo "install: $agents has malformed docket markers; expected exactly one $begin before one $end" >&2
+    status=1
   fi
   if [ -e "$claude" ] || [ -L "$claude" ]; then
-    if claude_links_agents; then :
-    elif [ -L "$claude" ]; then echo "install: warning: $claude is a symlink to $(readlink "$claude"), not to AGENTS.md; make sure it imports AGENTS.md" >&2
-    elif ! grep -qx '@AGENTS.md' "$claude"; then echo "install: warning: $claude lacks the line '@AGENTS.md'; rerun install.sh to append it" >&2
+    if claude_links_agents; then
+      :
+    elif [ -L "$claude" ]; then
+      echo "install: warning: $claude is a symlink to $(readlink "$claude"), not to AGENTS.md; make sure it imports AGENTS.md" >&2
+    elif ! grep -qx '@AGENTS.md' "$claude"; then
+      echo "install: warning: $claude lacks the line '@AGENTS.md'; rerun install.sh to append it" >&2
     fi
   fi
   { grep -qxF '.feral/' "$exclude" 2>/dev/null; } && echo "install: warning: stale '.feral/' line in $exclude; rerun install.sh to remove it" >&2
@@ -214,16 +261,21 @@ while IFS= read -r rel; do
   copied=$((copied + 1))
 done < <(cd "$src" && find . -type f | sort)
 chmod +x "$dst"/scripts/*.sh
-printf '%s %s\n' "$sha" "$(date -u +%Y-%m-%d)" > "$dst/VERSION"
+printf '%s %s\n' "$sha" "$(date -u +%Y-%m-%d)" >"$dst/VERSION"
 
 # Local, uncommitted docket state lives in .docket/; keep it out of git. The
 # layout before docket/ used .feral/ for the same purpose; drop its line.
 mkdir -p "$(dirname "$exclude")"
-added_exclude=0; removed_exclude=0
-if ! { grep -qxF '.docket/' "$exclude" 2>/dev/null; }; then printf '.docket/\n' >> "$exclude"; added_exclude=1; fi
+added_exclude=0
+removed_exclude=0
+if ! { grep -qxF '.docket/' "$exclude" 2>/dev/null; }; then
+  printf '.docket/\n' >>"$exclude"
+  added_exclude=1
+fi
 if { grep -qxF '.feral/' "$exclude" 2>/dev/null; }; then
-  { grep -vxF '.feral/' "$exclude" || true; } > "$tmp/exclude"
-  cp "$tmp/exclude" "$exclude"; removed_exclude=1
+  { grep -vxF '.feral/' "$exclude" || true; } >"$tmp/exclude"
+  cp "$tmp/exclude" "$exclude"
+  removed_exclude=1
 fi
 
 # Report, but never remove, files the skill no longer ships.
@@ -235,21 +287,22 @@ done < <(cd "$dst" && find . -type f | sort)
 
 # The project points its agents at the vendored contract through the Docket
 # section of AGENTS.md. Only that section is written; the rest is left alone.
-status=0; agents_note=""
+status=0
+agents_note=""
 if agents_state; then
-  block "$agents" > "$tmp/have"
-  expected "$tmp/have" > "$tmp/want"
+  block "$agents" >"$tmp/have"
+  expected "$tmp/have" >"$tmp/want"
   if cmp -s "$tmp/want" "$tmp/have"; then
     agents_note="Docket section of $agents is current"
   else
     awk -v b="$begin" -v e="$end" -v f="$tmp/want" '
       $0 == b { while ((getline l < f) > 0) print l; skip = 1; next }
       skip { if ($0 == e) skip = 0; next }
-      { print }' "$agents" > "$tmp/agents"
+      { print }' "$agents" >"$tmp/agents"
     cp "$tmp/agents" "$agents"
     agents_note="rewrote the Docket section of $agents, keeping its settings"
   fi
-  unfilled "$tmp/want" > "$tmp/unfilled"
+  unfilled "$tmp/want" >"$tmp/unfilled"
 elif [ $? -eq 1 ]; then
   if [ -f "$agents" ]; then
     # Insert before the first "## " heading outside fenced code, so the section
@@ -259,20 +312,22 @@ elif [ $? -eq 1 ]; then
       /^(```|~~~)/ { fence = !fence }
       !fence && !done && /^## / { if (NR > 1 && prev != "") print ""; insert(); print "" }
       { print; prev = $0 }
-      END { if (!done) { if (NR > 0 && prev != "") print ""; insert() } }' "$agents" > "$tmp/agents"
+      END { if (!done) { if (NR > 0 && prev != "") print ""; insert() } }' "$agents" >"$tmp/agents"
     cp "$tmp/agents" "$agents"
     where="$(grep -nxF "$begin" "$agents" | cut -d: -f1)"
-    after="$(sed -n "$(( $(grep -nxF "$end" "$agents" | cut -d: -f1) + 2 ))p" "$agents")"
-    if [ -n "$after" ]; then agents_note="inserted the Docket section into $agents at line $where, before '$after' (moving it is safe)"
+    after="$(sed -n "$(($(grep -nxF "$end" "$agents" | cut -d: -f1) + 2))p" "$agents")"
+    if [ -n "$after" ]; then
+      agents_note="inserted the Docket section into $agents at line $where, before '$after' (moving it is safe)"
     else agents_note="appended the Docket section to $agents (moving it is safe)"; fi
   else
     cp "$fragment" "$agents"
     agents_note="created $agents with the Docket section"
   fi
-  unfilled "$tmp/template" > "$tmp/unfilled"
+  unfilled "$tmp/template" >"$tmp/unfilled"
 else
-  echo "install: $agents has malformed docket markers; expected exactly one $begin before one $end; fix it by hand" >&2; status=1
-  : > "$tmp/unfilled"
+  echo "install: $agents has malformed docket markers; expected exactly one $begin before one $end; fix it by hand" >&2
+  status=1
+  : >"$tmp/unfilled"
 fi
 if [ -s "$tmp/unfilled" ]; then agents_note="$agents_note; settings to fill in: $(paste -sd, "$tmp/unfilled" | sed 's/,/, /g')"; fi
 # Claude Code reads CLAUDE.md, so an existing one needs the import line. The
@@ -280,11 +335,12 @@ if [ -s "$tmp/unfilled" ]; then agents_note="$agents_note; settings to fill in: 
 # is created. A symlink to AGENTS.md already imports it.
 claude_note=""
 if [ -L "$claude" ]; then
-  if claude_links_agents; then claude_note="$claude is a symlink to AGENTS.md; nothing to add"
+  if claude_links_agents; then
+    claude_note="$claude is a symlink to AGENTS.md; nothing to add"
   else echo "install: warning: $claude is a symlink to $(readlink "$claude"), not to AGENTS.md; not writing through it, add '@AGENTS.md' to the target by hand" >&2; fi
 elif [ -f "$claude" ] && ! grep -qx '@AGENTS.md' "$claude"; then
-  [ -z "$(tail -c 1 "$claude")" ] || printf '\n' >> "$claude"
-  printf '\n@AGENTS.md\n' >> "$claude"
+  [ -z "$(tail -c 1 "$claude")" ] || printf '\n' >>"$claude"
+  printf '\n@AGENTS.md\n' >>"$claude"
   claude_note="appended @AGENTS.md to $claude"
 fi
 
