@@ -48,9 +48,22 @@ for requested in "$@"; do
         --jq ".[] | select((.body | test(\"$done_re\")) or (.headRefName | contains(\"$slug\"))) | \"  merged PR #\\(.number) (\\(.mergedAt[0:10])) resolved or carried this slug: \\(.title)\"" 2>/dev/null || true)"
       if [ -n "$done_line" ]; then echo "$done_line"; echo "  -> confirm the queue entry is still current (a remainder may have been filed) before claiming"; claims=$((claims + 1)); fi
     fi
-    branches="$(git branch -a --list "*${slug}*" --format '%(refname:short)' 2>/dev/null || true)"
+    # Branches whose last path component is the slug (todo/<slug>, origin/fix/<slug>, <slug>).
+    # Whole-component matching: a slug that is a substring of another branch name is not a claim.
+    branches="$(git for-each-ref --format='%(refname:short)' refs/heads refs/remotes 2>/dev/null | { grep -E "(^|/)${slug}\$" || true; })"
     if [ -n "$branches" ]; then echo "$branches" | sed 's/^/  branch: /'; claims=$((claims + 1)); fi
-    wts="$(git worktree list | grep -F -- "$slug" || true)"
+    # Worktrees checked out on such a branch, or whose directory is named <queue>-<slug> or <slug>.
+    # The main worktree is never a task worktree: it matches only through its branch, never its directory name.
+    wts="$(git worktree list --porcelain | awk -v brre="^refs/heads/([^/]+/)?${slug}\$" -v dirre="^((todo|review|roadmap|fix|task)-)?${slug}\$" '
+      function flush(   n, parts) {
+        if (p == "") return
+        n = split(p, parts, "/")
+        if (b ~ brre || (!ismain && parts[n] ~ dirre)) print p (b != "" ? " [" substr(b, 12) "]" : " (detached)")
+        p = ""; b = ""
+      }
+      /^worktree / { flush(); p = substr($0, 10); ismain = (++count == 1) }
+      /^branch / { b = substr($0, 8) }
+      END { flush() }')"
     if [ -n "$wts" ]; then echo "$wts" | sed 's/^/  worktree: /'; claims=$((claims + 1)); fi
   done
 done

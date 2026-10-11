@@ -3,7 +3,7 @@
 # worktree so the provisional claim is visible to other workers immediately.
 #
 # Usage: start-work.sh <queue> <slug> [--base main] [--dir .worktrees] [--no-check]
-#   queue: todo | review | roadmap | fix | feature (becomes the branch prefix)
+#   queue: todo | review | roadmap | fix | task (becomes the branch prefix)
 #   The branch is "<queue>/<slug>" and the worktree "<dir>/<queue>-<slug>".
 #
 # Prints the worktree path and the next steps. Does not push anything.

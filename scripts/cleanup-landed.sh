@@ -37,6 +37,8 @@ if [ "$have_gh" -eq 0 ]; then
   [ "$empty" -eq 1 ] || { echo "cleanup-landed: nothing to do without gh; pass --empty to remove placeholder branches"; exit 0; }
 fi
 current="$(git branch --show-current || true)"
+# The main worktree is listed first; it can never be removed, so a branch checked out there is only reported.
+main_wt="$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')"
 
 wt_for() {
   git worktree list --porcelain | awk -v b="refs/heads/$1" '
@@ -74,6 +76,10 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   [ -n "$reason" ] || continue
 
   path="$(wt_for "$br")"
+  if [ -n "$path" ] && [ "$path" = "$main_wt" ]; then
+    echo "keep $br: $reason, but it is checked out in the main worktree $path (switch it to $base there, then rerun)"
+    kept=$((kept + 1)); continue
+  fi
   if [ -n "$path" ]; then
     if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then
       echo "keep $br: $reason, but worktree $path has modified or untracked files"
