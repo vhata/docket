@@ -1,5 +1,7 @@
 # Templates: where each file goes
 
+This file is an index of the templates; do not copy it into the target repository.
+
 Copy, then replace every `<placeholder>`. Keep headings and marker vocabulary intact; the bundled scripts parse them.
 
 | Template | Install at | Notes |
@@ -14,7 +16,7 @@ Copy, then replace every `<placeholder>`. Keep headings and marker vocabulary in
 | `docs/QUALITY.md` | `docs/QUALITY.md` | Fill in after the gates exist; current state only. |
 | `review/README.md`, `review/BACKLOG.md` | same paths | Empty ledger. |
 | `.github/pull_request_template.md` | same path | |
-| `.github/workflows/ci.yml` | same path | Replace the setup steps for the language. |
+| `.github/workflows/ci.yml` | same path | Replace the setup steps for the language. Also expects `scripts/build.sh` and `scripts/e2e.sh`: add them or remove those steps. |
 | `.github/workflows/main-validation.yml` | same path | Replace the extended checks. |
-| `scripts/check.sh`, `scripts/setup.sh` | `scripts/` | Skeletons; add the per-check scripts they call. |
+| `scripts/check.sh`, `scripts/setup.sh` | `scripts/` | Skeletons; add the per-check scripts they call. Gate scripts need the exec bit (`chmod +x scripts/*.sh`). |
 | `../scripts/*.sh` (the skill's tools) | `scripts/workflow/` | So hooks, CI and skill-less agents can run them. |
