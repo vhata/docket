@@ -53,15 +53,15 @@ for requested in "$@"; do
     branches="$(git for-each-ref --format='%(refname:short)' refs/heads refs/remotes 2>/dev/null | { grep -E "(^|/)${slug}\$" || true; })"
     if [ -n "$branches" ]; then echo "$branches" | sed 's/^/  branch: /'; claims=$((claims + 1)); fi
     # Worktrees checked out on such a branch, or whose directory is named <queue>-<slug> or <slug>.
-    # The main worktree's path is never matched as a substring (a repo at /x/repo-workflow is not a claim on "workflow").
+    # The main worktree is never a task worktree: it matches only through its branch, never its directory name.
     wts="$(git worktree list --porcelain | awk -v brre="^refs/heads/([^/]+/)?${slug}\$" -v dirre="^((todo|review|roadmap|fix|task)-)?${slug}\$" '
       function flush(   n, parts) {
         if (p == "") return
         n = split(p, parts, "/")
-        if (b ~ brre || parts[n] ~ dirre) print p (b != "" ? " [" substr(b, 12) "]" : " (detached)")
+        if (b ~ brre || (!ismain && parts[n] ~ dirre)) print p (b != "" ? " [" substr(b, 12) "]" : " (detached)")
         p = ""; b = ""
       }
-      /^worktree / { flush(); p = substr($0, 10) }
+      /^worktree / { flush(); p = substr($0, 10); ismain = (++count == 1) }
       /^branch / { b = substr($0, 8) }
       END { flush() }')"
     if [ -n "$wts" ]; then echo "$wts" | sed 's/^/  worktree: /'; claims=$((claims + 1)); fi
