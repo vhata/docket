@@ -52,8 +52,9 @@ recording the host repository's own commit. A `-dirty` suffix means the
 skill's directory had uncommitted changes when it was installed; resync from a
 clean checkout before relying on it.
 
-`--check` compares `VERSION` with the skill checkout's `HEAD` before diffing
-any file. Run it from a checkout at or beyond the installed commit: when the
+`--check` compares `VERSION` with the skill commit of the checkout it runs
+from (`HEAD` in a clone of the skill, the subtree's upstream commit in a
+subtree host) before diffing any file. Run it from a checkout at or beyond the installed commit: when the
 installed commit is newer, it prints "the installed copy (<sha>) is newer than
 this skill checkout (<head>); update the skill checkout before resyncing" and
 exits 1 without a file diff, because a stale checkout would otherwise report

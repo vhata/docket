@@ -98,22 +98,39 @@ dst="$top/docket"
 
 # VERSION records the docket commit, not the commit of whatever repository
 # holds this copy of the skill. A squashed subtree (git subtree add --squash)
-# has commit ids of its own; the newest "git-subtree-split:" line for the
+# has commit ids of its own; the newest "git-subtree-split:" trailer for the
 # subtree's prefix names the upstream commit, so that is used when the skill
-# lives in a subdirectory of a larger repository, and HEAD otherwise.
-prefix=""
-[ "$skill_top" = "$skill" ] || prefix="${skill#"$skill_top"/}"
+# lives in a subdirectory of a larger repository, and HEAD otherwise. The
+# prefix comes from git so a path reached through a symlink still resolves.
+prefix="$(git -C "$skill" rev-parse --show-prefix 2>/dev/null || true)"; prefix="${prefix%/}"
+# Newest git-subtree-split for prefix $2 in repository $1, from the commits
+# that touched the prefix; exact line matches, so no regex metacharacters.
+split_for_prefix() {
+  git -C "$1" log --format='%n@@docket-commit@@%n%b' -- "$2" 2>/dev/null | awk -v want="git-subtree-dir: $2" '
+    $0 == "@@docket-commit@@" { dir = 0; next }
+    $0 == want { dir = 1; next }
+    dir && index($0, "git-subtree-split: ") == 1 { print substr($0, 20, 40); exit }'
+}
 head_sha=""
-if [ -n "$prefix" ]; then
-  head_sha="$(git -C "$skill_top" log -1 -E --grep="^git-subtree-dir: $prefix\$" --format=%b 2>/dev/null \
-    | sed -n 's/^git-subtree-split: \([0-9a-f]\{40\}\).*/\1/p' | head -1)"
-fi
+[ -z "$prefix" ] || head_sha="$(split_for_prefix "$skill_top" "$prefix")"
+case "$head_sha" in [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;; *) head_sha="" ;; esac
 [ -n "$head_sha" ] || head_sha="$(git -C "$skill" rev-parse HEAD 2>/dev/null || echo unknown)"
 sha=unknown
 [ "$head_sha" = unknown ] || sha="$(printf '%.12s' "$head_sha")"
-# Only changes under the skill's own directory make it dirty; a host repository
-# may carry unrelated work.
-if [ "$sha" != unknown ] && [ -n "$(git -C "$skill" status --porcelain -- . 2>/dev/null)" ]; then sha="$sha-dirty"; fi
+# Dirty means the skill's own directory differs from the commit VERSION will
+# name: uncommitted changes under it, or, in a subtree host, a tree that no
+# longer matches the upstream commit (committed local edits, or a subtree pull
+# made without --squash, which leaves no new trailer). Unrelated work elsewhere
+# in a host repository is not dirt.
+if [ "$sha" != unknown ]; then
+  if [ -n "$(git -C "$skill" status --porcelain -- . 2>/dev/null)" ]; then
+    sha="$sha-dirty"
+  elif [ -n "$prefix" ] && git -C "$skill_top" cat-file -e "$head_sha^{commit}" 2>/dev/null \
+    && ! git -C "$skill_top" diff --quiet "$head_sha" "HEAD:$prefix" -- 2>/dev/null; then
+    echo "install: the skill directory $skill differs from upstream commit $sha (committed local edits, or a subtree pull without --squash); recording it as dirty" >&2
+    sha="$sha-dirty"
+  fi
+fi
 
 begin='<!-- docket:begin -->'
 end='<!-- docket:end -->'

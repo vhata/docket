@@ -11,7 +11,9 @@
 # content drift and executable bits; CLAUDE.md as a symlink, as a regular file
 # and absent; the stale .feral/ exclude line; hand-copied layout and missing
 # Review inputs warnings; VERSION newer than, behind, or unknown to the
-# checkout; a template with blank lines inside the markers; self-install.
+# checkout; a template with blank lines inside the markers; self-install;
+# a squashed-subtree host, reached directly and through a symlink, with an
+# unrelated host change (clean) and a committed edit under the skill (dirty).
 #
 # Usage: bash tests/install.sh   (from anywhere; needs git and bash 3.2+)
 set -euo pipefail
@@ -283,4 +285,17 @@ fill "$p"
 run 0 '--check from a subtree host' bash "$host/skills/docket/install.sh" --check "$p"
 grep -q 'not in this skill checkout' "$log" && { echo 'install-test: --check from a subtree host did not recognise the upstream commit' >&2; exit 1; }
 expect 'subtree host --check did not report a match' 'match the skill'
+# The same host reached through a symlink: the prefix still resolves.
+ln -s "$host" "$work/hostlink"
+newproj nine; p="$work/nine"
+run 0 'install from a subtree host through a symlink' bash "$work/hostlink/skills/docket/install.sh" "$p"
+[ "$(cut -d' ' -f1 "$p/docket/VERSION")" = "$(printf '%.12s' "$upstream")" ] || { echo "install-test: VERSION through a symlinked host is $(cat "$p/docket/VERSION"), expected the upstream commit" >&2; exit 1; }
+# A committed edit under the skill directory makes the install dirty, since
+# the files no longer match the commit VERSION names.
+echo 'local edit' >> "$host/skills/docket/README.md"
+git -C "$host" commit --quiet -am 'Edit the vendored skill locally'
+newproj ten; p="$work/ten"
+run 0 'install from a subtree host with a committed local edit' bash "$host/skills/docket/install.sh" "$p"
+grep -q -- "$(printf '%.12s' "$upstream")-dirty" "$p/docket/VERSION" || { echo "install-test: a committed edit under the skill did not mark VERSION dirty: $(cat "$p/docket/VERSION")" >&2; exit 1; }
+expect 'committed edit under the skill was not explained' 'differs from upstream commit'
 echo 'install-test: all checks passed'
