@@ -29,7 +29,7 @@ An entry with a `Depends on:` naming unresolved queued work, or any `Blocked by:
 
 ## Triage
 
-Triage runs when the user asks, when Needs triage holds more than about a dozen entries, or every few weeks. For each entry: decide the stage, set a priority, add or verify `Depends on:`, merge duplicates, remove obsolete entries with the reason in the PR. Triage lands as its own queue-only PR with no resolution markers.
+Triage runs when the user asks, when Needs triage holds more than about a dozen entries, or every few weeks. For each entry: decide the stage, set a priority, add or verify `Depends on:`, merge duplicates, remove obsolete entries with the reason in the commit message. Triage records work rather than doing it, so it lands as a direct commit to `main` (see `AGENTS.md`) with no resolution markers.
 
 ## Selecting and claiming
 
@@ -59,7 +59,7 @@ Verify the implementation against the complete entry before marking the PR ready
 
 - **Full:** remove the entry in the PR; change `Claims` to `Resolves`. Search both queues for the slug and repair `Related:` and `Depends on:` lines that name it.
 - **Partial:** remove the original; add a remainder with a new slug, reassessed stage, priority and area, and `Remaining from: <original-slug>`. Use `Partially resolves` plus `Remaining`. For review work the remainder lists only the still-open findings.
-- **Parallel subsets of a batch:** first land a queue-only PR that keeps the original slug on one narrowed entry and adds new entries with `Split from: <original-slug>`. Then each subset is claimed separately. Splitting is not resolution.
+- **Parallel subsets of a batch:** first land a direct commit to `main` that keeps the original slug on one narrowed entry and adds new entries with `Split from: <original-slug>`. Then each subset is claimed separately. Splitting is not resolution.
 - **Rejected or obsolete:** remove with the reason in the PR.
 
 Merging a fix PR removes the backlog entry but does not close a review finding; the next incremental review verifies and records closure (see [CODE_REVIEW_GUIDE.md](CODE_REVIEW_GUIDE.md)). Implementation PRs never edit review snapshots.
