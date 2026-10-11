@@ -46,7 +46,7 @@ A PR link alone is not a closure. Historical locations are read with `git show <
 3. Reproduce the serious bugs and mark them Verified; the rest stay Read.
 4. Review-close triage (below) for every Open or Moved finding.
 5. Write the snapshot, amend the invariants, add the index row.
-6. Land the review as its own PR from a `task/<slug>` branch (for example `task/review-2026-03-01`); the `review/` branch prefix is reserved for claims on `review/BACKLOG.md` entries and CI rejects a `review/*` branch without a matching marker. A review PR never carries a code fix. Small factual documentation fixes found during the review may be separate commits on the review branch, each recorded as Fixed with its commit.
+6. Land the review as its own PR from a `task/<slug>` branch (for example `task/review-2026-03-01`) with `Type: review` in the body; the `review/` branch prefix is reserved for claims on `review/BACKLOG.md` entries and CI rejects a `review/*` branch without a matching marker. A review PR never carries a code fix. Small factual documentation fixes found during the review may be separate commits on the review branch, each recorded as Fixed with its commit.
 
 ## Performing an incremental review
 

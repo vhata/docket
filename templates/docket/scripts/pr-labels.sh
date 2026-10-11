@@ -46,6 +46,9 @@ types="feature fix refactor perf docs test tooling review"
 
 body=""; pr=""; base=""; head=""; branch=""; apply=0; todo="TODO.md"; backlog="review/BACKLOG.md"
 while [ $# -gt 0 ]; do
+  case "$1" in --body|--pr|--base|--head|--branch|--todo|--backlog)
+    [ $# -ge 2 ] || { echo "pr-labels: $1 needs a value" >&2; exit 2; } ;;
+  esac
   case "$1" in
     --body) body="$(abs "$2")"; shift 2 ;;
     --pr) pr="$2"; shift 2 ;;
@@ -72,7 +75,11 @@ if [ -n "$pr" ]; then
   pr_base="${refs%% *}"; pr_head="${refs#* }"
   [ -n "$base" ] || base="origin/$pr_base"
   if [ -z "$head" ]; then
-    if git rev-parse --verify --quiet "origin/$pr_head^{commit}" >/dev/null; then head="origin/$pr_head"; else head="HEAD"; fi
+    if git rev-parse --verify --quiet "origin/$pr_head^{commit}" >/dev/null; then head="origin/$pr_head"
+    else
+      head="HEAD"
+      echo "pr-labels: note: origin/$pr_head is not fetched; reading entries filed in the PR from HEAD ($(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached))" >&2
+    fi
   fi
   [ -n "$branch" ] || branch="$pr_head"
 fi
@@ -89,7 +96,8 @@ for ref in "$base" "$head"; do
 done
 [ -n "$branch" ] || branch="$(git rev-parse --abbrev-ref "$head" 2>/dev/null || true)"
 
-# Windows line endings and HTML comments (template hints) never count.
+# Windows line endings, HTML comments (template hints) and fenced code blocks
+# (examples and pasted output) never count.
 tr -d '\r' < "$body" | awk '
   {
     line = $0; out = ""
@@ -104,7 +112,8 @@ tr -d '\r' < "$body" | awk '
         out = out substr(line, 1, p - 1); line = substr(line, p + 4); incomment = 1
       }
     }
-    print out
+    if (out ~ /^[[:space:]]*(```|~~~)/) { fence = !fence; print ""; next }
+    print (fence ? "" : out)
   }' > "$tmp/body.clean"
 
 # entry_meta FILE SLUG -> "AREA PRIORITY" for the entry, the priority empty
@@ -187,7 +196,8 @@ describe() {
 
 gh label list --limit 1000 --json name -q '.[].name' > "$tmp/existing" || { echo "pr-labels: could not list the repository's labels" >&2; exit 1; }
 while IFS= read -r label; do
-  grep -qxF "$label" "$tmp/existing" && continue
+  # GitHub label names are case-insensitive.
+  grep -qixF "$label" "$tmp/existing" && continue
   gh label create "$label" --color "$(colour "$label")" --description "$(describe "$label")" >/dev/null \
     || { echo "pr-labels: could not create label $label" >&2; exit 1; }
   echo "pr-labels: created label $label"
@@ -195,8 +205,8 @@ done < "$tmp/labels"
 
 gh pr view "$pr" --json labels -q '.labels[].name' > "$tmp/current" || { echo "pr-labels: could not read the labels of PR $pr" >&2; exit 1; }
 managed="^(type:($(echo "$types" | tr ' ' '|'))|queue:(todo|review|roadmap)|area:[a-z0-9_-]+|priority:p[0-3])\$"
-{ grep -E "$managed" "$tmp/current" || true; } | { grep -vxF -f "$tmp/labels" || true; } > "$tmp/stale"
-{ grep -vxF -f "$tmp/current" "$tmp/labels" || true; } > "$tmp/new"
+{ grep -E "$managed" "$tmp/current" || true; } | { grep -vixF -f "$tmp/labels" || true; } > "$tmp/stale"
+{ grep -vixF -f "$tmp/current" "$tmp/labels" || true; } > "$tmp/new"
 
 add="$(paste -sd, "$tmp/new")"; remove="$(paste -sd, "$tmp/stale")"
 if [ -z "$add" ] && [ -z "$remove" ]; then

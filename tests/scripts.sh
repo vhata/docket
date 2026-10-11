@@ -161,12 +161,17 @@ expect 'missing type line was not warned' 'no "Type: <kind>" line'
 printf '## Why\n\nTyped.\n\n- `type:` labels are mentioned in prose\n\nType: refactor\n' > body.md
 pass 'exact type line' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
 grep -Fq 'Type: <kind>' "$fixture/result.log" && { echo 'scripts-test: exact type line was warned as missing' >&2; exit 1; }
-for item in 'Type: Feature' 'type: fix' '**Type:** fix' '- Type: fix' '> Type: docs' 'Type: fix.' 'Type: chore'; do
+for item in 'Type: Feature' 'type: fix' '**Type:** fix' '- Type: fix' '> Type: docs' 'Type: fix.' 'Type: chore' '`Type: fix`' ' Type: fix' '- [ ] Type: fix'; do
   printf '## Why\n\nNear miss.\n\n%s\n' "$item" > body.md
   reject "type near miss $item" 'malformed type line' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
 done
 printf '## Why\n\nTwo kinds.\n\nType: fix\nType: docs\n' > body.md
 reject 'two type lines' '2 Type lines' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
+printf '## Why\n\nProse.\n\n- type: fix and docs both work now\n\nType: fix\n' > body.md
+pass 'list prose after a kind' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
+# Fenced code blocks (examples, pasted YAML) are not part of the description's structure.
+printf '## Why\n\nFenced.\n\n```yaml\ntype: Opaque\nType: docs\n```\n\n~~~\n- Claims TODO: not-real\n~~~\n\nType: fix\n' > body.md
+pass 'fenced code blocks' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
 
 # pr-labels.sh: labels from the branch, the type line and the claimed or
 # resolved entries, looked up at base and then at head.
@@ -225,7 +230,7 @@ labels_are 'labels for a fix branch without a type line' 'docket type:fix queue:
 printf '## Why\n\nTriage spike.\n\n<!-- Claims TODO: urgent-task -->\nType: refactor\nClaims TODO: triage-task\nClaims TODO: filed-here\nFiles TODO: loose-task\n' > body.md
 labels_are 'labels ignore comments and Files markers, read head-only entries' 'docket type:refactor queue:todo area:tools area:web priority:p0' \
   bash "$labels" --body body.md --base "$labels_base" --head HEAD --branch todo/triage-task
-printf '## Why\n\nDirect request.\n\nType: docs\n' > body.md
+printf '## Why\n\nFenced example.\n\n```\nType: perf\n```\n\nType: docs\n' > body.md
 labels_are 'labels for directly requested work' 'docket type:docs' \
   bash "$labels" --body body.md --base "$labels_base" --head HEAD --branch task/direct
 printf '## Why\n\nNo type.\n\nClaims roadmap: big-theme\n' > body.md
@@ -233,6 +238,7 @@ labels_are 'labels without a type line' 'docket queue:roadmap' \
   bash "$labels" --body body.md --base "$labels_base" --head HEAD --branch roadmap/big-theme
 grep -Fq 'no "Type: <kind>" line' "$fixture/stderr.log" || { echo 'scripts-test: pr-labels did not warn about the missing type line' >&2; exit 1; }
 reject 'pr-labels --apply without --pr' 'needs --pr' bash "$labels" --body body.md --apply
+reject 'pr-labels option without a value' 'needs a value' bash "$labels" --body
 
 # --apply against a fake forge: creates only missing labels, adds what applies,
 # removes stale labels of the managed forms and leaves every other label alone.
@@ -247,7 +253,7 @@ case "$1 $2" in
       labels) printf 'docket\ntype:fix\narea:old\nbug\npriority:high\n' ;;
       *) exit 2 ;;
     esac ;;
-  'label list') printf 'docket\nbug\ntype:feature\n' ;;
+  'label list') printf 'Docket\nbug\ntype:feature\n' ;;
   'label create'|'pr edit') exit 0 ;;
   *) exit 2 ;;
 esac

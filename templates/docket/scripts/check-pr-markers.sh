@@ -95,10 +95,11 @@ entry_block() {
     inblock { print }' "$1"
 }
 
-# Strip Windows line endings (bodies edited on the web) and HTML comments
-# (template hints, which may span several lines) before checking structure.
-# A line that lies entirely inside a comment becomes an empty line, so line
-# numbers are preserved.
+# Strip Windows line endings (bodies edited on the web), HTML comments
+# (template hints, which may span several lines) and fenced code blocks
+# (examples and pasted output) before checking structure. A line that lies
+# entirely inside a comment or a fence becomes an empty line, so line numbers
+# are preserved.
 tr -d '\r' < "$body" | awk '
   {
     line = $0; out = ""
@@ -113,7 +114,8 @@ tr -d '\r' < "$body" | awk '
         out = out substr(line, 1, p - 1); line = substr(line, p + 4); incomment = 1
       }
     }
-    print out
+    if (out ~ /^[[:space:]]*(```|~~~)/) { fence = !fence; print ""; next }
+    print (fence ? "" : out)
   }' > "$tmp/body.clean"
 
 first_heading="$(grep -m1 -E '^## ' "$tmp/body.clean" || true)"
@@ -149,10 +151,11 @@ done < "$tmp/nearmiss"
 types_re='feature|fix|refactor|perf|docs|test|tooling|review'
 grep -Ex "Type: ($types_re)" "$tmp/body.clean" > "$tmp/types" || true
 # Near misses: a line that starts with "Type:" in any case or emphasis but is
-# not exact, or a list item, quote or bold form naming one of the kinds.
+# not exact, or a line that is only a type line dressed as a list item,
+# task-list item, quote, indented or backticked text.
 { grep -Ei '^[*_]*type[*_]*:' "$tmp/body.clean" || true
-  grep -Ei "^[[:space:]]*(([-+*]|[0-9]+[.)])[[:space:]]+|>[[:space:]]*)+[*_]*type[*_]*:[*_ ]*($types_re)([^a-z]|\$)" "$tmp/body.clean" || true
-} | { grep -Exv "Type: ($types_re)" || true; } > "$tmp/badtypes"
+  grep -Ei "^[[:space:]]*(([-+*]|[0-9]+[.)])[[:space:]]+(\[[ xX]\][[:space:]]+)?|>[[:space:]]*)*[*_\`]*type[*_\`]*:[*_\` ]*($types_re)[*_\`]*[[:space:]]*\$" "$tmp/body.clean" || true
+} | sort -u | { grep -Exv "Type: ($types_re)" || true; } > "$tmp/badtypes"
 while IFS= read -r line; do
   [ -n "$line" ] && err "malformed type line \"$line\" (exact form: \"Type: fix\", at the start of the line, one of: ${types_re//|/, })"
 done < "$tmp/badtypes"
