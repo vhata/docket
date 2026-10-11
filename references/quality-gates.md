@@ -18,6 +18,8 @@ Every check is a standalone executable in `scripts/`, runnable with no arguments
 | `scripts/build.sh` | Production or release build and packaging. |
 | `scripts/check.sh` | Runs format check, lint, typecheck, test, in that order, stopping at the first failure and naming it. The thing an agent runs before presenting a PR. |
 
+`scripts/check.sh` runs the project's gates; hooks and `docket/scripts/ci.sh` run the vendored validators (`check-queues.sh`, `check-links.sh`, `check-pr-markers.sh`), and including them in `check.sh` is optional.
+
 Timings decide placement: anything under a couple of seconds with a warm cache can run on commit; compilation-heavy tests run on push; browser and release builds run in CI only.
 
 ## Hooks
@@ -26,6 +28,7 @@ Timings decide placement: anything under a couple of seconds with a warm cache c
 - **pre-push**: typecheck and the unit suite. A docs-only skip is allowed only through a wrapper that diffs the refs actually being pushed against their remote tips, allowlists specific documentation paths, and refuses to skip when any source file reads an allowlisted file at compile time (`include_str!`, `embed`, `go:embed`, `readFileSync` of a doc). One repository had a README-only push skip the test that CI then failed, because the README was embedded in a test.
 - Hook manager: a single tracked config that calls the scripts. Lefthook (one binary, polyglot), the `pre-commit` framework (Python), simple-git-hooks or husky (Node), or a tracked `.githooks/` directory wired with `git config core.hooksPath .githooks` all work; the scripts are what matter. Hooks installed by `scripts/setup.sh` cover every worktree when they live in the shared `.git/hooks` or in a tracked hooks path.
 - Bypass (`--no-verify`, `LEFTHOOK=0`, `SKIP=`) is for a broken toolchain, not a deferred fix. Every bypass is stated in the PR with the equivalent checks run by hand.
+- A Markdown formatter hook (Prettier, mdformat) must exclude `docket/`: the directory is vendored byte-for-byte and `install.sh --check` reports any reformatting as drift. The Docket section of `AGENTS.md` ships with blank lines inside its markers so Prettier leaves it unchanged.
 
 ## CI on pull requests and on main
 
@@ -41,7 +44,7 @@ Timings decide placement: anything under a couple of seconds with a warm cache c
 
 - Timeouts on every job. Upload failure evidence (test results, traces, logs, coverage) with `if: failure()` and a short retention.
 - No automatic retries. One deliberate diagnostic rerun is allowed and both results are kept; rerunning until green is not. A flaky test is a finding: record it in the queue with the evidence directory, fix the flake or quarantine it with a named reason, never widen a timeout silently. Traces configured "on first retry" with retries at zero are never captured; configure them "retain on failure".
-- Add the hygiene job: one call to `bash docket/scripts/ci.sh`, which runs `check-queues.sh --strict` and `check-links.sh` on every PR and push to main and `check-pr-markers.sh` on pull_request events, reading `PR`, `BASE`, `HEAD_BRANCH` and `GH_TOKEN` from the environment. The PR and push workflow calls nothing else under `docket/scripts/`.
+- Add the hygiene job: one call to `bash docket/scripts/ci.sh`, which runs `check-queues.sh --strict` and `check-links.sh` on every PR and push to main and `check-pr-markers.sh` on pull_request events, reading `PR`, `BASE`, `HEAD_BRANCH` and `GH_TOKEN` from the environment. On pull_request events it reads the PR body from the event payload when `GITHUB_EVENT_PATH` carries one and falls back to `gh pr view`, which needs `pull-requests: read` on the token (the template grants it); the marker check compares the queues at `origin/$BASE`, the base tip at run time, with `HEAD`, the checked-out merge commit. The PR and push workflow calls nothing else under `docket/scripts/`.
 - PR runs of a scheduled workflow: give the scheduled workflow a `pull_request` trigger filtered to its own paths so edits to it are exercised before they land.
 
 ## Empty suites and weakened gates

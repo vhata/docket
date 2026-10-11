@@ -1,6 +1,6 @@
 # Queues: capture, triage, claim, resolve
 
-Two Markdown queues by default. `TODO.md` holds ordinary deferred work, including bugs found during feature work. `review/BACKLOG.md` holds only work promoted from whole-codebase reviews. A repository may add a third prose queue for vision-sized themes (a roadmap); its items are claimed by a slug derived from the heading. The rule text an agent needs when touching a queue is the repository's `docket/TODO_GUIDE.md` (vendored verbatim from the skill's `templates/docket/TODO_GUIDE.md`); this reference explains how to apply it and why.
+Two Markdown queues by default. `TODO.md` holds ordinary deferred work, including bugs found during feature work. `review/BACKLOG.md` holds only work promoted from whole-codebase reviews. A repository may add a third prose queue for vision-sized themes (a roadmap; see [Roadmap queue](#roadmap-queue) below). The rule text an agent needs when touching a queue is the repository's `docket/TODO_GUIDE.md` (vendored verbatim from the skill's `templates/docket/TODO_GUIDE.md`); this reference explains how to apply it and why.
 
 Natural-language selection follows the file boundary: "grab a TODO" means `TODO.md` only; "grab a review finding" means `review/BACKLOG.md`; "grab something from the roadmap" means the roadmap. State the queue, section and slug before claiming. Never switch queues because the named one has nothing suitable.
 
@@ -25,7 +25,7 @@ TODO stages, as `##` sections: **Needs triage** (outcome, value or dependencies 
 
 **Ready means available now.** Available is the conjunction of: Ready stage, no unresolved `Depends on:`, no `Blocked by:` (a product decision, a human playtest, an external service), no live claim, and inside the scope the user asked for. An entry with a `Depends on:` naming unresolved queued work or any `Blocked by:` is not ready, whatever its section; the validator fails it. Eligible to land is a third thing again, decided at the PR (see pr-and-landing.md). Two repositories had ready items whose own text said they were blocked, and readers had to interpret. When the dependency lands, the resolving PR drops the `Depends on:` line and moves the dependent to Ready if nothing else blocks it.
 
-New entries are Unprioritized unless the user assigned a priority or the item objectively qualifies as P0 (active data loss, security exposure, release blocker). Do not guess urgency to promote a distraction.
+New entries are Unprioritized unless the user assigned a priority or the item objectively qualifies as P0 (active data loss, security exposure, release blocker; a project may extend that definition in the Docket section of `AGENTS.md`). Do not guess urgency to promote a distraction.
 
 ## Capture: the discovery rule
 
@@ -36,7 +36,7 @@ When an idea, improvement, bug or alternative surfaces, from the user or from in
 3. If the entry was added on the current branch, add `Files TODO: <slug>` to the PR body so the capture is auditable; a follow-up mentioned only in PR prose went missing from the queue in one repository. If the entry was instead committed directly to `main` (see [pr-and-landing](pr-and-landing.md#direct-to-main)), use no marker; the validator warns when `Files TODO` names an entry that already exists at the base.
 4. Continue the original task. Pulling the entry forward is a second, deliberate decision, normally the user's.
 
-Exceptions: work required for the requested outcome, its correctness or its verification stays in scope without a queue entry. An unrelated P0 is recorded, reported prominently, and work pauses for direction.
+Exceptions: work required for the requested outcome, its correctness or its verification stays in scope without a queue entry; when the boundary is ambiguous, ask the user rather than deciding alone. An unrelated P0 is recorded, reported prominently, and work pauses for direction.
 
 Who edits the queue file: in a fan-out, writers report discoveries and the coordinator files them, serialising edits, and acknowledges each one back to the writer with its slug; until that acknowledgement the discovery is pending, and the coordinator reconciles pending discoveries against the queue before any handoff or ready flag. Alone, the agent files them in its own PR.
 
@@ -52,7 +52,7 @@ Review-close triage of findings is a separate step owned by codebase reviews (se
 2. `bash docket/scripts/claim-check.sh <slug>`: open PRs whose body carries a marker for the slug or whose head branch contains it, merged PRs that already resolved it, branches and worktrees containing it. For a backlog entry the script also checks every slug in its `Findings:` line, because a raw finding can be explicitly assigned without the batch being claimed.
 3. Create the branch and worktree immediately (`bash docket/scripts/start-work.sh <queue> <slug>`), then recheck once from inside the worktree with `bash docket/scripts/claim-check.sh --self <slug>`, which ignores the worker's own branch, worktree and pushed copy but still reports another worker's push or a fork PR under the same name; two agents can take the same slug within seconds. Search-then-create is not a lock: within one team the coordinator is the single dispatcher and no two writers are given overlapping slugs; across independent sessions or machines, the draft PR is the only shared record, so publish it early or accept the race.
 4. After the first meaningful commit, open a draft PR with the claim marker. The entry stays in the queue while work is underway. If no PR can be created (no remote, no forge access, no push authority), write the finished body to `.docket/pr-<slug>.md` (excluded from git), say so in the report (and in the audit log when one is in use) so the user knows the claim is local-only, and leave the branch and worktree for the user to publish with `git push -u origin <branch> && gh pr create --head <branch> --title "<title>" --body-file .docket/pr-<slug>.md`.
-5. Abandoning the work releases the claim: close the draft, remove the worktree and branch, leave the entry untouched.
+5. Abandoning the work releases the claim: close the draft and leave the entry untouched. Remove the worktree and branch only when the worktree is clean and the branch holds no unmerged work; otherwise ask, because deleting unmerged work is the user's call.
 
 ## Markers
 
@@ -67,7 +67,7 @@ Files TODO: <slug>                         Claims review finding: <slug> / Resol
 Claims roadmap: <slug>                     Resolves roadmap: <slug>
 ```
 
-Directly requested work needs no invented entry and no marker; its branch is `task/<slug>` or `fix/<slug>`. That includes review snapshots and every other PR that is not queue work. The `todo/`, `review/` and `roadmap/` branch prefixes are claims: the validator fails a branch with one of them whose body carries no marker for the slug, and `review/` as a branch prefix means a claim on a `review/BACKLOG.md` entry, unrelated to the `review/` directory. A review batch claims its backlog slug plus each finding actually in scope. `bash docket/scripts/check-pr-markers.sh --body <file> --base origin/main --head HEAD` checks every marker against the queue files at base and head, so it belongs in CI.
+Directly requested work needs no invented entry and no marker; its branch is `task/<slug>` or `fix/<slug>`. That includes review snapshots and every other PR that is not queue work. The `todo/`, `review/` and `roadmap/` branch prefixes are claims: the validator fails a branch with one of them whose body carries no `Claims`, `Resolves` or `Partially resolves` marker in that queue's namespace for the slug (a `Claims TODO` marker does not satisfy a `review/` branch), and `review/` as a branch prefix means a claim on a `review/BACKLOG.md` entry, unrelated to the `review/` directory. Other prefixes need no marker. A review batch claims its backlog slug plus each finding actually in scope. `bash docket/scripts/check-pr-markers.sh --body <file> --base origin/main --head HEAD` checks every marker against the queue files at base and head, so it belongs in CI.
 
 ## Resolving
 
@@ -83,3 +83,7 @@ A review finding is not closed by its fix PR. The fix PR supplies evidence (code
 ## Doing without the full machinery
 
 A repository that deliberately keeps one queue and no claim markers (as one of the studied repositories does) still needs: stable slugs so entries can be referenced, a Ready/blocked distinction, a source on each entry, and the discovery rule. Markers and the review backlog can be added when parallel sessions make overlap real. Write the choice down in the Docket section of `AGENTS.md`.
+
+## Roadmap queue
+
+A roadmap (`docs/ROADMAP.md` by default) is prose: themes and direction, not entries. Enabling it as a queue, recorded under Optional pieces in the Docket section of `AGENTS.md`, makes those themes claimable without forcing them into the entry format. The slug is the kebab-case form of the section heading, so it is stable as long as the heading is. Work on a theme runs on `roadmap/<slug>` with `Claims roadmap: <slug>`; `claim-check.sh` and `start-work.sh` treat the slug like any other. The landing PR edits the roadmap section itself (what shipped, what the theme now means) and carries `Resolves roadmap: <slug>`; a theme that is finished is removed or marked done in that same PR. Bounded follow-ups that fall out of a theme are ordinary `TODO.md` entries with `Source:` naming the theme, so the roadmap stays prose and the TODO stays the place where work is picked up. `check-queues.sh` does not parse the roadmap, and `check-pr-markers.sh` accepts roadmap markers without checking them against the file; the heading is the only structure the queue has.

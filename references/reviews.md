@@ -1,6 +1,6 @@
 # Codebase reviews: ledger, findings, closure, cadence
 
-PR review checks one change. A codebase review checks the properties no single change shows: duplicated rules drifting apart, helpers gone dead, documented controls with no code behind them, invariants that hold only by accident. A **full review** reads everything and resets the baseline. An **incremental review** starts from the previous reviewed commit, re-checks every standing finding, reads the delta, and runs cheap whole-repository checks. Incremental is the default; full is a periodic reset. The rule text lives in the repository's `docket/CODE_REVIEW_GUIDE.md` (vendored verbatim from the skill's `templates/docket/CODE_REVIEW_GUIDE.md`); the project's own review inputs (focus areas, extra baseline commands, drift checks) live in `docs/QUALITY.md` under "Review inputs", which the guide points to.
+PR review checks one change. A codebase review checks the properties no single change shows: duplicated rules drifting apart, helpers gone dead, documented controls with no code behind them, invariants that hold only by accident. A **full review** reads everything and resets the baseline. An **incremental review** starts from the previous reviewed commit, re-checks every standing finding, reads the delta, and runs cheap whole-repository checks. Incremental is the default; full is a periodic reset. A routine PR review creates no snapshot; the ledger records codebase reviews the user requested. The rule text lives in the repository's `docket/CODE_REVIEW_GUIDE.md` (vendored verbatim from the skill's `templates/docket/CODE_REVIEW_GUIDE.md`); the project's own review inputs (focus areas, extra baseline commands, drift checks) live in `docs/QUALITY.md` under "Review inputs", which the guide points to.
 
 ## Artifacts
 
@@ -37,7 +37,7 @@ Statuses: **Open**; **Moved** (open at a new location, counts as open); **Fixed*
 - `finding-slug` — Fixed in #45 (f10a8e2). `path:line` (`symbol`): what the code now does. Original reproduction rerun; no longer reproduces.
 ```
 
-A PR link alone is not a closure. Historical locations are read with `git show <reviewed-commit>:<path>`.
+A PR link alone is not a closure. Historical locations are read with `git show <reviewed-commit>:<path>`; `git blame -L <start>,<end> <path>` shows which commit moved or removed the lines since, which is usually enough to decide between Moved and Fixed.
 
 ## Performing a full review
 
@@ -67,15 +67,16 @@ Keep to checks that need only git, the shell and the repository's own tooling.
 
 ```bash
 git diff --stat <base>..HEAD | tail -1                     # size of the delta
-git ls-files | xargs wc -l | sort -rn | head               # largest files, compare with last review
+git ls-files | xargs wc -l | sort -rn | head               # largest files, as evidence, not a threshold; compare with last review
 grep -rnE 'TODO|FIXME|HACK|XXX' <source dirs>              # deferred work hiding in code instead of the queue
 grep -rnE '<lint-suppression-pattern>' <source dirs>       # #[allow(, eslint-disable, noqa, nolint: count must not drift up unexplained
 git ls-files | grep -vE '<expected extensions and paths>'   # stray files committed by accident (one repo shipped a shell error log)
+git status --porcelain --ignored                           # stray files not yet committed, and ignored directories that should not be there
 bash docket/scripts/check-links.sh                        # documentation link rot
 bash docket/scripts/check-queues.sh --strict              # queue hygiene
 ```
 
-Add the repository's own drift checks from the Review inputs section of `docs/QUALITY.md`: documented CLI flags against the parser, documented controls against the handlers, a features list against the code, plan status against what has merged, the quality doc against what hooks and CI actually run. Each is a Docs finding when it disagrees, fixed on the spot when it is a small edit.
+The vendored guide lists the language-neutral subset of these; everything that depends on the language (the lint-suppression pattern, the expected extensions) belongs in the repository's Review inputs rather than in the guide. Add the repository's own drift checks from the Review inputs section of `docs/QUALITY.md`: documented CLI flags against the parser, documented controls against the handlers, a features list against the code, plan status against what has merged, the quality doc against what hooks and CI actually run. Each is a Docs finding when it disagrees, fixed on the spot when it is a small edit.
 
 ## Review-close triage
 

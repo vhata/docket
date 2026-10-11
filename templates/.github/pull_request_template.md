@@ -5,7 +5,7 @@
 <!-- Behaviour and structure, not a file list. -->
 
 ## Markers
-<!-- Exact text, one marker per line, no backticks, no bullets. Vocabulary: docket/TODO_GUIDE.md#markers. Delete this section if none apply. -->
+<!-- Exact text, one marker per line, at the start of the line; no bullets, numbers or quotes, no backticks. Vocabulary: docket/TODO_GUIDE.md#markers. Delete this section if none apply. -->
 
 ## Validation
 <!-- Commands actually run and their results. For behaviour changes, a reproducible scenario with before and after. For review-finding fixes, a human-runnable scenario: setup, actions, old failure, expected result. State what was not checked and why. -->

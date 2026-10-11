@@ -23,7 +23,7 @@ Each check is a standalone script in `scripts/` or `docket/scripts/`, runnable f
 | `docket/scripts/review-due.sh` | review cadence report | | | | | yes |
 | `scripts/check.sh` | fmt-check, lint, typecheck, test, in order | | | yes | yes | yes |
 
-`scripts/check.sh` is the composite entry point: `ci.yml` and `main-validation.yml` run it rather than the four gates individually, so its CI columns are those of the gates it runs.
+`scripts/check.sh` is the composite entry point: `ci.yml` and `main-validation.yml` run it rather than the four gates individually, so its CI columns are those of the gates it runs. `scripts/check.sh` runs the project's gates; hooks and `docket/scripts/ci.sh` run the vendored validators, and including them in `check.sh` is optional.
 
 Hooks are managed by <manager> from <config file> and installed by `bash scripts/setup.sh`. Pre-commit <checks only | rewrites staged files>. Measured pre-commit time: <n> s warm. Bypassing a hook is for a broken toolchain only; state the bypass and the equivalent checks in the PR.
 
@@ -39,18 +39,20 @@ Toolchain pins: <files>. Bumping a pin is its own PR.
 
 ## Review inputs
 
-Read by `docket/CODE_REVIEW_GUIDE.md`; a codebase review runs and records exactly what is listed here.
+Read by `docket/CODE_REVIEW_GUIDE.md`, which links this section by its heading, so keep the heading as it is; a codebase review runs and records exactly what is listed here.
 
+- Focus areas: the correctness boundaries under [What quality means here](#what-quality-means-here) and the invariants in <`ARCHITECTURE.md` or `docs/ARCHITECTURE.md`>.
 - Baseline commands beyond `bash scripts/check.sh`: <e2e, smoke, headless or installed-package commands, each with the result format to record>.
-- Drift checks for an incremental review: <documented CLI, controls and features against the code; plan status against merged work; this document against the hooks and CI workflows>.
+- Drift checks for an incremental review: <documented CLI, controls and features against the code; plan status against merged work; this document against the hooks and CI workflows; lint-suppression counts and other language-specific checks>.
+- Source paths for `bash docket/scripts/review-due.sh --paths "<source dirs>"`, the same value the scheduled workflow passes.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pull requests and on pushes to `main`. Jobs: <names>. Superseded runs are cancelled on PR branches only, never on `main`. Failure evidence is uploaded for <n> days.
+`.github/workflows/ci.yml` runs on pull requests and on pushes to `main`. Jobs: <names>. The hygiene job runs `bash docket/scripts/ci.sh`; on pull requests its marker check compares the queues at the base branch tip with the checked-out merge commit. Superseded runs are cancelled on PR branches only, never on `main`. Failure evidence is uploaded for <n> days.
 
 ## Scheduled validation of main
 
-`.github/workflows/main-validation.yml` runs <daily at HH:MM UTC | weekly> and on demand. It runs <extended checks>, uploads evidence for <n> days, and reports whether a codebase review is due. A red main, from the push run or the schedule, is reverted or filed as a P1 (P0 if release-blocking) the same day. A missing scheduled run is not a pass.
+The scheduled workflow (`main-validation.yml` in the template) runs <daily at HH:MM UTC | weekly> and on demand. It runs <extended checks>, uploads evidence for <n> days, and reports whether a codebase review is due. A red main, from the push run or the schedule, is reverted or filed as a P1 (P0 if release-blocking) the same day. A missing scheduled run is not a pass.
 
 ## Branch protection (as configured on <date>)
 
