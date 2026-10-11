@@ -25,9 +25,9 @@
 # readable pull_request event payload for PR and jq is installed, the body is
 # read from it with `jq -r`; this needs no token. A re-run reuses the original
 # payload, so the workflow must also trigger on `edited` for a changed body to
-# be re-validated. Otherwise it is fetched with
-# `gh pr view`, which needs GH_TOKEN with `pull-requests: read` (the default
-# GITHUB_TOKEN has it only when the workflow's permissions block grants it).
+# be re-validated. Otherwise it is fetched with `gh pr view`, which needs
+# GH_TOKEN with `pull-requests: read` (the default GITHUB_TOKEN has it only
+# when the workflow's permissions block grants it).
 # On a pull_request event the checkout is the merge commit, so --head HEAD is
 # the base-plus-PR tree, and --base "origin/$BASE" is the base branch tip at
 # the time the job runs; fetch it with enough depth (fetch-depth: 0) for the

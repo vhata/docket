@@ -45,6 +45,7 @@ Read by `docket/CODE_REVIEW_GUIDE.md`, which links this section by its heading, 
 - Baseline commands beyond `bash scripts/check.sh`: <e2e, smoke, headless or installed-package commands, each with the result format to record>.
 - Drift checks for an incremental review: <documented CLI, controls and features against the code; plan status against merged work; this document against the hooks and CI workflows; lint-suppression counts and other language-specific checks>.
 - Source paths for `bash docket/scripts/review-due.sh --paths "<source dirs>"`, the same value the scheduled workflow passes.
+- Expected tracked files: <the extensions and paths a tracked file may have>, so a review can read `git ls-files` for committed strays.
 
 ## CI
 
