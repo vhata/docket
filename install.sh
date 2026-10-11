@@ -12,7 +12,9 @@
 #            executable (on disk, or committed as other than 100755), or an
 #            installed commit newer than this skill checkout (update the
 #            checkout before resyncing). Run it from a checkout at or beyond
-#            the commit named in docket/VERSION.
+#            the commit named in docket/VERSION. That commit is always a
+#            docket commit: from a squashed subtree the installer reads the
+#            upstream commit in the subtree's git-subtree-split trailer.
 #
 # The same command performs the first install and every later update. Files
 # present in the project's docket/ but absent from the skill are reported,
@@ -54,7 +56,7 @@ for arg in "$@"; do
   case "$arg" in
   --check) check=1 ;;
   -h | --help)
-    sed -n '2,37p' "$0"
+    sed -n '2,39p' "$0"
     exit 0
     ;;
   -*)
@@ -94,10 +96,47 @@ if [ "$top" = "$skill_top" ] || [ "$common" = "$skill_common" ]; then
 fi
 dst="$top/docket"
 
-head_sha="$(git -C "$skill" rev-parse HEAD 2>/dev/null || echo unknown)"
+# VERSION records the docket commit, not the commit of whatever repository
+# holds this copy of the skill. A squashed subtree (git subtree add --squash)
+# has commit ids of its own; the newest "git-subtree-split:" trailer for the
+# subtree's prefix names the upstream commit, so that is used when the skill
+# lives in a subdirectory of a larger repository, and HEAD otherwise. The
+# prefix comes from git so a path reached through a symlink still resolves.
+prefix="$(git -C "$skill" rev-parse --show-prefix 2>/dev/null || true)"; prefix="${prefix%/}"
+# Newest git-subtree-split for prefix $2 in repository $1. The trailers sit on
+# the squash commit, whose tree holds the skill at its root and so never
+# touches the prefix, so the whole history is read (no path filter); exact
+# line matches, so no regex metacharacters. awk stops at the first hit and
+# git may then die of SIGPIPE, which is not an error here.
+split_for_prefix() {
+  git -C "$1" log --format='%n@@docket-commit@@%n%b' 2>/dev/null | awk -v want="git-subtree-dir: $2" '
+    $0 == "@@docket-commit@@" { dir = 0; next }
+    $0 == want { dir = 1; next }
+    dir && index($0, "git-subtree-split: ") == 1 { print substr($0, 20, 40); exit }' || true
+}
+head_sha=""; from_subtree=0
+[ -z "$prefix" ] || head_sha="$(split_for_prefix "$skill_top" "$prefix")"
+case "$head_sha" in [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) from_subtree=1 ;; *) head_sha="" ;; esac
+if [ -z "$head_sha" ]; then
+  [ -z "$prefix" ] || echo "install: $skill is a subdirectory of $skill_top with no git-subtree-split trailer for it; recording that repository's HEAD" >&2
+  head_sha="$(git -C "$skill" rev-parse HEAD 2>/dev/null || echo unknown)"
+fi
 sha=unknown
-[ "$head_sha" = unknown ] || sha="$(git -C "$skill" rev-parse --short=12 HEAD)"
-if [ "$sha" != unknown ] && [ -n "$(git -C "$skill" status --porcelain 2>/dev/null)" ]; then sha="$sha-dirty"; fi
+[ "$head_sha" = unknown ] || sha="$(printf '%.12s' "$head_sha")"
+# Dirty means the skill's own directory differs from the commit VERSION will
+# name: uncommitted changes under it, or, in a subtree host, a tree that no
+# longer matches the upstream commit (committed local edits, or a subtree pull
+# made without --squash, which leaves no new trailer). Unrelated work elsewhere
+# in a host repository is not dirt.
+if [ "$sha" != unknown ]; then
+  if [ -n "$(git -C "$skill" status --porcelain -- . 2>/dev/null)" ]; then
+    sha="$sha-dirty"
+  elif [ "$from_subtree" -eq 1 ] && git -C "$skill_top" cat-file -e "$head_sha^{commit}" 2>/dev/null \
+    && ! git -C "$skill_top" diff --quiet "$head_sha" "HEAD:$prefix" -- 2>/dev/null; then
+    echo "install: the skill directory $skill differs from upstream commit $sha (committed local edits, or a subtree pull without --squash); recording it as dirty" >&2
+    sha="$sha-dirty"
+  fi
+fi
 
 begin='<!-- docket:begin -->'
 end='<!-- docket:end -->'

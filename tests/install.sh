@@ -11,7 +11,9 @@
 # content drift and executable bits; CLAUDE.md as a symlink, as a regular file
 # and absent; the stale .feral/ exclude line; hand-copied layout and missing
 # Review inputs warnings; VERSION newer than, behind, or unknown to the
-# checkout; a template with blank lines inside the markers; self-install.
+# checkout; a template with blank lines inside the markers; self-install;
+# a squashed-subtree host, reached directly and through a symlink, with an
+# unrelated host change (clean) and a committed edit under the skill (dirty).
 #
 # Usage: bash tests/install.sh   (from anywhere; needs git and bash 3.2+)
 set -euo pipefail
@@ -259,4 +261,60 @@ newproj seven; p="$work/seven"
 run 0 'first install from the padded template' bash "$inst" "$p"
 fill "$p"
 run 0 '--check after a first install from the padded template' bash "$inst" --check "$p"
+# The skill vendored into another repository as a squashed subtree: VERSION
+# records the upstream docket commit, not the host repository's HEAD, and
+# changes elsewhere in the host do not make the skill dirty.
+host="$work/host"
+git init --quiet "$host"; git -C "$host" symbolic-ref HEAD refs/heads/main
+git -C "$host" config user.name 'Host fixture'; git -C "$host" config user.email 'host-fixture@example.invalid'
+echo host > "$host/README.md"; git -C "$host" add README.md; git -C "$host" commit --quiet -m 'Host repository'
+upstream="$(git -C "$skill" rev-parse HEAD)"
+# Built the way `git subtree add --squash` builds it, without needing the
+# git-subtree command: a squash commit with no parent whose tree is the skill
+# at its root and whose message carries the git-subtree-dir and
+# git-subtree-split trailers, then a two-parent merge of it into the host with
+# the tree placed under the prefix and no trailer. The fetch brings the
+# upstream objects into the host, as a subtree pull does.
+git -C "$host" fetch --quiet "$skill" HEAD
+subtree_squash() { # $1 upstream commit, $2 message; prints the squash commit and merges it under skills/docket
+  local squash
+  squash="$(printf '%s\n\ngit-subtree-dir: skills/docket\ngit-subtree-split: %s\n' "$2" "$1" | git -C "$host" commit-tree "$1^{tree}")"
+  git -C "$host" rm -r -q --cached skills/docket 2>/dev/null || true
+  rm -rf "$host/skills/docket"
+  git -C "$host" read-tree --prefix=skills/docket/ -u "$squash"
+  git -C "$host" update-ref HEAD "$(printf 'Merge the docket skill (%s)\n' "$2" | git -C "$host" commit-tree "$(git -C "$host" write-tree)" -p HEAD -p "$squash")"
+  git -C "$host" reset -q --hard HEAD
+}
+subtree_squash "$upstream" 'Add the docket skill'
+echo scratch > "$host/scratch.txt"
+newproj eight; p="$work/eight"
+run 0 'install from a subtree host' bash "$host/skills/docket/install.sh" "$p"
+[ "$(cut -d' ' -f1 "$p/docket/VERSION")" = "$(printf '%.12s' "$upstream")" ] || { echo "install-test: VERSION from a subtree host is $(cat "$p/docket/VERSION"), expected the upstream commit $upstream" >&2; exit 1; }
+grep -q -- '-dirty' "$p/docket/VERSION" && { echo 'install-test: an unrelated change in the host made the skill dirty' >&2; exit 1; }
+fill "$p"
+run 0 '--check from a subtree host' bash "$host/skills/docket/install.sh" --check "$p"
+grep -q 'not in this skill checkout' "$log" && { echo 'install-test: --check from a subtree host did not recognise the upstream commit' >&2; exit 1; }
+expect 'subtree host --check did not report a match' 'match the skill'
+# A later pull --squash adds a second trailer-bearing squash commit; the newest wins.
+git -C "$skill" commit --quiet --allow-empty -m 'Upstream moved on'
+upstream2="$(git -C "$skill" rev-parse HEAD)"
+git -C "$host" fetch --quiet "$skill" HEAD
+subtree_squash "$upstream2" 'Update the docket skill'
+upstream="$upstream2"
+newproj eight-b; p="$work/eight-b"
+run 0 'install from a subtree host after a pull' bash "$host/skills/docket/install.sh" "$p"
+[ "$(cut -d' ' -f1 "$p/docket/VERSION")" = "$(printf '%.12s' "$upstream2")" ] || { echo "install-test: after a second squash VERSION is $(cat "$p/docket/VERSION"), expected $upstream2" >&2; exit 1; }
+# The same host reached through a symlink: the prefix still resolves.
+ln -s "$host" "$work/hostlink"
+newproj nine; p="$work/nine"
+run 0 'install from a subtree host through a symlink' bash "$work/hostlink/skills/docket/install.sh" "$p"
+[ "$(cut -d' ' -f1 "$p/docket/VERSION")" = "$(printf '%.12s' "$upstream")" ] || { echo "install-test: VERSION through a symlinked host is $(cat "$p/docket/VERSION"), expected the upstream commit" >&2; exit 1; }
+# A committed edit under the skill directory makes the install dirty, since
+# the files no longer match the commit VERSION names.
+echo 'local edit' >> "$host/skills/docket/README.md"
+git -C "$host" commit --quiet -am 'Edit the vendored skill locally'
+newproj ten; p="$work/ten"
+run 0 'install from a subtree host with a committed local edit' bash "$host/skills/docket/install.sh" "$p"
+grep -q -- "$(printf '%.12s' "$upstream")-dirty" "$p/docket/VERSION" || { echo "install-test: a committed edit under the skill did not mark VERSION dirty: $(cat "$p/docket/VERSION")" >&2; exit 1; }
+expect 'committed edit under the skill was not explained' 'differs from upstream commit'
 echo 'install-test: all checks passed'

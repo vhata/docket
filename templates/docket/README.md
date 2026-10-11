@@ -45,11 +45,16 @@ refreshes the Docket section of `AGENTS.md`, and reports (but does not
 delete) files here that the skill no longer ships. Commit the result.
 
 `VERSION` holds the skill commit the files came from, as `<sha> <date>`
-(UTC). A `-dirty` suffix means the skill checkout had uncommitted changes
-when it was installed; resync from a clean checkout before relying on it.
+(UTC). It is always a commit of the docket repository: when the skill is
+installed as a squashed subtree of another repository, the installer reads the
+upstream commit from the subtree's `git-subtree-split` trailer rather than
+recording the host repository's own commit. A `-dirty` suffix means the
+skill's directory had uncommitted changes when it was installed; resync from a
+clean checkout before relying on it.
 
-`--check` compares `VERSION` with the skill checkout's `HEAD` before diffing
-any file. Run it from a checkout at or beyond the installed commit: when the
+`--check` compares `VERSION` with the skill commit of the checkout it runs
+from (`HEAD` in a clone of the skill, the subtree's upstream commit in a
+subtree host) before diffing any file. Run it from a checkout at or beyond the installed commit: when the
 installed commit is newer, it prints "the installed copy (<sha>) is newer than
 this skill checkout (<head>); update the skill checkout before resyncing" and
 exits 1 without a file diff, because a stale checkout would otherwise report

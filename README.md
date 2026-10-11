@@ -25,17 +25,26 @@ The user stays in charge of the one-way doors: merging, force-pushing, tagging, 
 
 ## Installing the skill
 
-Copy or clone this directory into your agent's skills directory so that `SKILL.md` sits at the top of it:
+The skill is a directory with `SKILL.md` at its top, placed where your agent looks for skills: `~/.claude/skills/<name>` for Claude Code, `~/.codex/skills/<name>` for Codex, `~/.agents/skills/<name>` for harnesses that read the shared location. Three ways to put it there:
 
 ```bash
-# Claude Code
+# 1. A clone, when the skills directory is not itself a repository.
 git clone git@github.com:vhata/docket.git ~/.claude/skills/docket
 
-# Codex
-git clone git@github.com:vhata/docket.git ~/.codex/skills/docket
+# 2. A squashed subtree, when your skills directory is a repository you version.
+cd ~/.claude/skills
+git remote add docket git@github.com:vhata/docket.git
+git subtree add --prefix=docket docket main --squash -m 'Add the docket skill'
+#    Later, to update (-m replaces the "Merge commit 'abc123'" message git would write):
+git subtree pull --prefix=docket docket main --squash -m 'Update the docket skill'
+
+# 3. A symlink from the other harnesses' skill directories to one copy.
+ln -s ~/.claude/skills/docket ~/.codex/skills/docket
 ```
 
 Restart the agent, or start a new session, and the skill is available as `docket`.
+
+Two things follow from how it is installed. `install.sh --check` compares a project against the copy it runs from, so update the clone or pull the subtree before resyncing a project, or the project's newer files are reported as drift (the installer stops with "the installed copy is newer than this skill checkout" when it can tell). And `docket/VERSION` always names a commit of this repository: from a subtree the installer reads the upstream commit from the subtree's `git-subtree-split` trailer, so copies installed from a clone and from a subtree compare correctly. A subtree pulled without `--squash` leaves no trailer, so the installer records the last squashed commit it can find and marks the install dirty.
 
 ## Using it
 
