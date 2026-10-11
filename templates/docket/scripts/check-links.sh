@@ -4,7 +4,7 @@
 # Catches the documentation link rot that otherwise waits for a codebase
 # review.
 #
-# Usage: check-links.sh [FILE_OR_DIR ...]
+# Usage: docket/scripts/check-links.sh [FILE_OR_DIR ...]
 #   Default: every tracked or untracked-but-not-ignored *.md file.
 # Exit 1 when any link or anchor is broken.
 #

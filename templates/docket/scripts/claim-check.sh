@@ -4,7 +4,7 @@
 # (already done). For a review backlog slug, also checks every finding slug
 # it maps.
 #
-# Usage: claim-check.sh <slug> [slug...]
+# Usage: docket/scripts/claim-check.sh <slug> [slug...]
 # Exit 1 when any claim or prior completion is found, 0 when all are free.
 # Needs git; uses gh when available and says so when it is not.
 set -euo pipefail

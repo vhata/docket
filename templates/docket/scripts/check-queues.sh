@@ -4,7 +4,7 @@
 # lines, resolvable cross-references, explicit dependencies, and the
 # one-finding-one-backlog-entry rule.
 #
-# Usage: check-queues.sh [--todo PATH] [--backlog PATH] [--strict]
+# Usage: docket/scripts/check-queues.sh [--todo PATH] [--backlog PATH] [--strict]
 #   Defaults: TODO.md and review/BACKLOG.md relative to the repo root when
 #   they exist. --strict turns warnings into errors.
 #

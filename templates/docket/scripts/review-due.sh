@@ -2,7 +2,7 @@
 # Report how far the codebase has moved since the last recorded codebase
 # review and say whether an incremental or full review is due.
 #
-# Usage: review-due.sh [--index review/README.md] [--paths "src crates"] [--base main]
+# Usage: docket/scripts/review-due.sh [--index review/README.md] [--paths "src crates"] [--base main]
 #
 # Reads the review index for the latest review and the latest FULL review
 # (first table rows with a backticked commit), measures commits, changed files
