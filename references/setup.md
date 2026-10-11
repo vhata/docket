@@ -26,11 +26,12 @@ Also check what lives outside the repository: harness memory files and the user'
 | Roadmap (optional) | `docs/ROADMAP.md` | Themes and direction in prose. A third queue when the repository wants vision-sized items claimable. |
 | Deferred work | `TODO.md`, `docs/TODO_GUIDE.md` | Stages, priorities, entry format, claims, markers, resolution. |
 | Review ledger | `review/README.md`, `review/BACKLOG.md`, `review/<timestamp>-<type>.md`, `docs/CODE_REVIEW_GUIDE.md` | Snapshots, inventory, promoted work, closure rules. |
-| Quality | `docs/QUALITY.md`, `scripts/*.sh`, hook config, `.github/workflows/ci.yml`, `.github/workflows/main-validation.yml` | What runs where, current state only. |
+| Quality | `docs/QUALITY.md`, `scripts/*.sh`, hook config (no template; see quality-gates.md), `.github/workflows/ci.yml`, `.github/workflows/main-validation.yml` | What runs where, current state only. |
 | PR shape | `.github/pull_request_template.md` | Why, what changed, markers, validation, review. |
 | Audit (unattended runs) | `AUDIT.md` excluded via `.git/info/exclude`; `.feral/` likewise | Append-only decisions with undo lines; prepared PR bodies. |
+| Plans | `plans/YYYY-MM-DD-<slug>.md` | Dated plans for work; committed direct to main (see pr-and-landing.md). |
 
-Every file in this table except the optional ones has a template under `templates/`, with placeholders in angle brackets; `ARCHITECTURE.md` and `docs/DECISIONS.md` templates are skeletons to fill from the code and the conversation, never from guesswork. Copy, then edit every placeholder; a template left with placeholders is a Docs finding at the next review.
+Every file in this table has a template under `templates/`, with placeholders in angle brackets, except the optional records, the hook config, plans and the audit files; `ARCHITECTURE.md` and `docs/DECISIONS.md` templates are skeletons to fill from the code and the conversation, never from guesswork. Copy, then edit every placeholder; a template left with placeholders is a Docs finding at the next review.
 
 ## 3. Install order
 

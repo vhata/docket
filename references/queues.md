@@ -67,7 +67,7 @@ Files TODO: <slug>                         Claims review finding: <slug> / Resol
 Claims roadmap: <slug>                     Resolves roadmap: <slug>
 ```
 
-Directly requested work needs no invented entry and no marker. A review batch claims its backlog slug plus each finding actually in scope. `bash scripts/workflow/check-pr-markers.sh --body <file> --base origin/main --head HEAD` checks every marker against the queue files at base and head, so it belongs in CI.
+Directly requested work needs no invented entry and no marker; its branch is `task/<slug>` or `fix/<slug>`. That includes review snapshots and every other PR that is not queue work. The `todo/`, `review/` and `roadmap/` branch prefixes are claims: the validator fails a branch with one of them whose body carries no marker for the slug, and `review/` as a branch prefix means a claim on a `review/BACKLOG.md` entry, unrelated to the `review/` directory. A review batch claims its backlog slug plus each finding actually in scope. `bash scripts/workflow/check-pr-markers.sh --body <file> --base origin/main --head HEAD` checks every marker against the queue files at base and head, so it belongs in CI.
 
 ## Resolving
 

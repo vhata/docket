@@ -4,7 +4,7 @@ PR review checks one change. A codebase review checks the properties no single c
 
 ## Artifacts
 
-- `review/README.md`: index, newest first, with type, reviewed commit and open count at close. The top row is the baseline for the next incremental review; the newest Full row is the baseline for cumulative churn, so a run of small incrementals cannot hide a large total change. Below the table, a short **Pending reconciliation** list: findings whose fix PR has landed with independent verification but whose closure the next review has not yet recorded (finding, fix PR and commit, reviewer, evidence). An empty index means no review has happened, not that nothing is wrong.
+- `review/README.md`: index, newest first, with type, reviewed commit and open count at close. The top row is the baseline for the next incremental review; the newest Full row is the baseline for cumulative churn, so a run of small incrementals cannot hide a large total change. Below the table, a short **Pending reconciliation** table: findings whose fix PR has landed with independent verification but whose closure the next review has not yet recorded (finding, fix PR and commit, reviewer, evidence). An empty index means no review has happened, not that nothing is wrong.
 - `review/YYYY-MM-DD-HHMM-{full,incremental}.md`: one immutable snapshot per review, UTC timestamp. Edited after merge only to correct a factual error in the review itself. Status changes belong to the next snapshot, never to the PR that fixes a finding.
 - `review/BACKLOG.md`: the mutable queue of findings promoted into work (see queues.md).
 
@@ -46,7 +46,7 @@ A PR link alone is not a closure. Historical locations are read with `git show <
 3. Reproduce the serious bugs and mark them Verified; the rest stay Read.
 4. Review-close triage (below) for every Open or Moved finding.
 5. Write the snapshot, amend the invariants, add the index row.
-6. Land the review as its own PR. A review PR never carries a code fix. Small factual documentation fixes found during the review may be separate commits on the review branch, each recorded as Fixed with its commit.
+6. Land the review as its own PR from a `task/<slug>` branch (for example `task/review-2026-03-01`); the `review/` branch prefix is reserved for claims on `review/BACKLOG.md` entries and CI rejects a `review/*` branch without a matching marker. A review PR never carries a code fix. Small factual documentation fixes found during the review may be separate commits on the review branch, each recorded as Fixed with its commit.
 
 ## Performing an incremental review
 
@@ -92,7 +92,7 @@ Promotion is not authorisation. Review completion never licenses fixing all the 
 
 A PR resolving a finding claims its backlog slug and each finding slug in scope, opens with `## Why`, and includes a human-runnable validation scenario in `## Validation`: setup, actions, the old failure, the expected corrected result. For tooling or documentation findings, give the command or inspection and define success. "Tests pass" or a CI link is not a scenario; the marker validator fails a `Resolves review finding` without a Validation section. The independent reviewer verifies the fix against the original failure before the PR is ready.
 
-When the fix PR lands, add the finding to the index's Pending reconciliation list with the fix commit, the reviewer and the evidence, so verified work is visible between reviews. Closure itself is recorded by the next incremental review, as above, which also clears the pending list. When tools prevent re-running the original reproduction, say so in the snapshot rather than treating the merged fix as verified.
+When the fix PR lands, add the finding to the index's Pending reconciliation table with the fix commit, the reviewer and the evidence, so verified work is visible between reviews. Closure itself is recorded by the next incremental review, as above, which also clears the pending table. When tools prevent re-running the original reproduction, say so in the snapshot rather than treating the merged fix as verified.
 
 ## When a review is due
 
