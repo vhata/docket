@@ -71,6 +71,8 @@ Independent review by <agent/model> at <commit>: <verdict>. Verified: <claims re
 
 A fix agent writes the review section only after reading the review itself; one wrote a section without having seen the review and the coordinator had to redo it.
 
+Review depth follows risk. A routine change gets one careful reviewer who runs the brief above; specialist passes (security, performance, accessibility) are for changes that touch those surfaces, not a stack applied to every PR. When several writers contributed to one PR, keep each author's work in its own commits so the reviewer can name whose change a finding concerns. When no reviewer can be dispatched (no capacity, no budget), the PR body says so and the PR stays pending review; a PR without an independent review is never marked ready. A PR already marked ready goes back to draft when a rebase or a fix reopens a gate.
+
 Why the pair is mandatory: in one repository a single post-merge pass over 25 self-checked overnight PRs found three real bugs the authors' own checks had missed. On the forge, all three repositories studied show zero review records; the PR body section is what makes the review auditable later.
 
 ## Integration
@@ -81,7 +83,7 @@ Keep linear history: rebase, never merge main into a branch. The squash-then-reb
 
 ## Autonomy modes
 
-Which mode is in force is said at the top of the session and written to the audit log.
+Which mode is in force is said at the top of the session and written to the audit log, `.docket/AUDIT.md` in the worktree where the work happens (below).
 
 | Mode | Push | Draft PRs | Merge | What the user finds |
 | --- | --- | --- | --- | --- |
@@ -110,6 +112,6 @@ End every fan-out or unattended run with: branches and their state in merge orde
 ## Harness pitfalls seen in practice
 
 - Placeholder branches (`worktree-agent-*`) accumulate with no commits; `bash docket/scripts/cleanup-landed.sh --apply --empty` removes them (without `--apply` the script only lists them).
-- Agents in worktrees cannot write into the main checkout; have them leave PR bodies and reports in their own worktree and let the coordinator copy them.
+- Agents in worktrees cannot write into the main checkout; have them leave PR bodies and reports in their own worktree and let the coordinator copy them. Prepared PR bodies and per-agent scratch files go under `.docket/` in the agent's own worktree, never a shared temp path: two PRs were once opened with each other's bodies because both agents wrote to the same `/tmp` file.
 - Watchdog timeouts kill long single commands; prefer several shorter commands and incremental commits.
 - Concurrency groups that cancel in-progress runs on pushes to main hide red main builds when several PRs merge quickly; see quality-gates.
