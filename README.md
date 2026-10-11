@@ -18,8 +18,8 @@ The user stays in charge of the one-way doors: merging, force-pushing, tagging, 
 | --- | --- |
 | `SKILL.md` | The skill itself. The entry point an agent reads, with the quick-start phrases, the unit-of-work procedure, the authorisation ladder and the red flags. |
 | `references/` | The deeper documents: `setup.md` (installing and auditing), `queues.md`, `parallel-work.md` (including paired review), `reviews.md`, `quality-gates.md` and `pr-and-landing.md` (PRs, stacking, landing, cleanup). |
-| `scripts/` | Portable bash tools (bash 3.2, git, and `gh` where PRs are involved): queue validation, PR marker checks, claim checks, branch and worktree creation, review drift, and post-merge cleanup. |
-| `templates/` | Files the skill installs into a repository: `AGENTS.md`, `CLAUDE.md`, queue and review guides, CI workflows, a PR template, and `scripts/check.sh` and `scripts/setup.sh` skeletons. See `templates/README.md` for where each one goes. |
+| `install.sh` | Copies `templates/docket/` into a project as `docket/`, verbatim, and with `--check` reports any drift between the two. The same command is first install and update. |
+| `templates/` | Files the skill installs into a repository, laid out as they land there. `templates/docket/` is vendored as `docket/` and never edited in the project: the generic contract, the queue and review guides, and portable bash tools (bash 3.2, git, and `gh` where PRs are involved) for queue validation, PR marker checks, claim checks, branch and worktree creation, review drift, post-merge cleanup, and the CI entry point. The rest are starting points edited per project: the Docket section the installer adds to `AGENTS.md`, CI workflows, a PR template, and `scripts/check.sh` and `scripts/setup.sh` skeletons. See `templates/README.md` for where each one goes. |
 | `agents/openai.yaml` | Display metadata so the skill shows up in Codex. |
 
 ## Installing the skill
@@ -51,23 +51,28 @@ You do not need to know the internals. Open a session in the repository you want
 
 Branch protection settings are proposed, never applied; you apply them yourself on the hosting side.
 
-Once a repository has been set up, ordinary single-task work does not need this skill. The installed `AGENTS.md` and guides carry the rules, and the scripts are copied into `scripts/workflow/` so agents without the skill run the same tools. Just say "grab a TODO" or describe the task.
+Once a repository has been set up, ordinary single-task work does not need this skill. `AGENTS.md`, `docket/CONTRACT.md` and the vendored guides carry the rules, and the scripts are vendored into `docket/scripts/` so agents without the skill run the same tools. Just say "grab a TODO" or describe the task.
+
+## Installing into a project
+
+From inside the project, run `bash ~/.claude/skills/docket/install.sh` (or let the agent do it as part of "Use docket to set up this project"). It copies `templates/docket/` to `docket/` at the project root, writes `docket/VERSION`, excludes the local `.docket/` working directory from git, and adds a `## Docket` section, delimited by `<!-- docket:begin -->` and `<!-- docket:end -->`, to the project's `AGENTS.md` (creating the file if there is none). Fill in the settings bullets in that section (queue areas, concurrency cap, merge delegation, optional pieces in force, environment rules); later runs rewrite the section's text, keep the settings by name and re-add any that went missing. Everything outside the markers is the project's and the installer never touches it. If the project has a `CLAUDE.md`, the installer appends the line `@AGENTS.md` when it is missing and leaves the rest of that file alone; it never creates or replaces `CLAUDE.md`. Rerun the same command whenever the skill changes; it resyncs `docket/` and the Docket section, and `--check` reports drift in either, including a setting left as a placeholder.
 
 ## Running the scripts by hand
 
-In a repository where the workflow is installed, the scripts live under `scripts/workflow/`, which is the path agents, hooks and CI use:
+In a project where docket is installed, the scripts live under `docket/scripts/`, which is the path agents, hooks and CI use:
 
 ```bash
-bash scripts/workflow/check-queues.sh --strict      # validate TODO.md and review/BACKLOG.md
-bash scripts/workflow/claim-check.sh <slug>         # who already claims this entry?
-bash scripts/workflow/start-work.sh <queue> <slug>  # branch + worktree for a task
-bash scripts/workflow/check-pr-markers.sh --pr N    # validate Claims/Resolves markers on a PR
-bash scripts/workflow/review-due.sh                 # is a review due?
-bash scripts/workflow/cleanup-landed.sh --apply     # remove worktrees and branches for merged PRs
-bash scripts/workflow/check-links.sh                # relative Markdown links resolve
+bash docket/scripts/check-queues.sh --strict      # validate TODO.md and review/BACKLOG.md
+bash docket/scripts/claim-check.sh <slug>         # who already claims this entry?
+bash docket/scripts/start-work.sh <queue> <slug>  # branch + worktree for a task
+bash docket/scripts/check-pr-markers.sh --pr N    # validate Claims/Resolves markers on a PR
+bash docket/scripts/review-due.sh                 # is a review due?
+bash docket/scripts/cleanup-landed.sh --apply     # remove worktrees and branches for merged PRs
+bash docket/scripts/check-links.sh                # relative Markdown links resolve
+bash docket/scripts/ci.sh                         # what CI runs: check-queues --strict, check-links, and check-pr-markers on PRs
 ```
 
-The copies in this repository's `scripts/` are the source for that install step and are what you edit when developing the skill. When one has to run against a repository that does not have the installed copies yet (the install itself, or an audit), run it from inside that repository by its path in the skill directory, for example `bash ~/.claude/skills/docket/scripts/check-queues.sh --strict`. The scripts act on the repository of the current directory, so do not `cd` into the skill directory to run them.
+The copies in this repository's `templates/docket/scripts/` are what you edit when developing the skill; they reach a project only through `install.sh`, and `bash ~/.claude/skills/docket/install.sh --check` shows where a project's `docket/` has drifted from them. The scripts act on the repository of the current directory, so run them from inside the project.
 
 ## Licence
 

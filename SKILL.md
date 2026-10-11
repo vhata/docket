@@ -26,13 +26,13 @@ The user needs only these phrases; this skill works out the rest by inspecting t
 
 | Operation | Read | Tools |
 | --- | --- | --- |
-| Adopt, repair, audit or compare the workflow in a repository | [setup](references/setup.md), then the pillar references it points to | `check-queues`, `check-links`, `review-due`, `gh api` protection inspection |
+| Adopt, repair, audit or compare the workflow in a repository | [setup](references/setup.md), then the pillar references it points to | `install.sh [--check]`, `check-queues`, `check-links`, `review-due`, `gh api` protection inspection |
 | Coordinate a fan-out of writers and reviewers, or an unattended run | [parallel-work](references/parallel-work.md), [pr-and-landing](references/pr-and-landing.md) | `claim-check`, `start-work`, `check-pr-markers` |
 | Triage the queues, split a batch, or reconcile claims | [queues](references/queues.md) | `check-queues`, `claim-check` |
 | Run a full or incremental codebase review, or reconcile finding closure | [reviews](references/reviews.md) | `review-due` |
-| Define or repair gates, respond to a red main, change protection | [quality-gates](references/quality-gates.md) | templates under `templates/.github/` |
+| Define or repair gates, respond to a red main, change protection | [quality-gates](references/quality-gates.md) | `ci.sh`, templates under `templates/.github/` |
 | Land a stack, clean up after merges | [pr-and-landing](references/pr-and-landing.md) | `cleanup-landed` |
-| Implement one queued or requested task in a set-up repository | the repository's `AGENTS.md` and guides; not this skill | the repository's `scripts/workflow/` copies |
+| Implement one queued or requested task in a set-up repository | the repository's `AGENTS.md`, `docket/CONTRACT.md` and guides; not this skill | the repository's `docket/scripts/` |
 
 ## Five pillars
 
@@ -48,18 +48,18 @@ PRs, stacking, landing and cleanup are in [pr-and-landing](references/pr-and-lan
 
 ## The unit of work, start to finish
 
-Script paths below are the installed paths (`scripts/workflow/`), the only ones agents and CI use; the skill's own `scripts/` copies are for install and audit only (see Bundled tools).
+Script paths below are the installed paths (`docket/scripts/`), the only ones anyone runs; the skill's `templates/docket/scripts/` copies reach a repository only through `install.sh` (see Bundled tools).
 
 1. **Select.** Follow the user's selection, or take the highest-priority unclaimed entry from the named queue in its Ready section. Never switch queues or stages because the requested one is empty; report that instead.
-2. **Check claims.** `bash scripts/workflow/claim-check.sh <slug>` (open and merged PRs, branches, worktrees, mapped findings). A matching branch or worktree is a provisional claim. Overlap means stop and coordinate, not race.
-3. **Branch and worktree first.** `bash scripts/workflow/start-work.sh <queue> <slug>` creates `<queue>/<slug>` in an ignored `.worktrees/` directory before any investigation, so the claim is visible immediately. If the harness has its own worktree tool, use it instead for the worktree, but keep the claim check and the `<queue>/<slug>` branch name; the name is what later claim checks find.
-4. **Commit early, draft early.** After the first meaningful commit, open a draft PR whose body starts with `## Why` and carries `Claims <queue>: <slug>`. Keep the queue entry in place while the work is underway. When no PR can be opened (no remote, no forge access, no push authority), save the body as `.feral/pr-<slug>.md`, record in the report that the claim is local-only, and leave the branch and worktree in place for the user.
+2. **Check claims.** `bash docket/scripts/claim-check.sh <slug>` (open and merged PRs, branches, worktrees, mapped findings). A matching branch or worktree is a provisional claim. Overlap means stop and coordinate, not race.
+3. **Branch and worktree first.** `bash docket/scripts/start-work.sh <queue> <slug>` creates `<queue>/<slug>` in an ignored `.worktrees/` directory before any investigation, so the claim is visible immediately. If the harness has its own worktree tool, use it instead for the worktree, but keep the claim check and the `<queue>/<slug>` branch name; the name is what later claim checks find.
+4. **Commit early, draft early.** After the first meaningful commit, open a draft PR whose body starts with `## Why` and carries `Claims <queue>: <slug>`. Keep the queue entry in place while the work is underway. When no PR can be opened (no remote, no forge access, no push authority), save the body as `.docket/pr-<slug>.md`, record in the report that the claim is local-only, and leave the branch and worktree in place for the user.
 5. **Stay on task.** Fixes needed for the requested outcome, its correctness or its verification are in scope. Anything separately shippable gets a queue entry with a `Source:` line and, when the entry is added on the branch rather than committed to `main`, a `Files TODO: <slug>` marker in the PR; then the work continues. An unrelated P0 (data loss, security, release blocker) is reported immediately and work pauses for direction.
 6. **Verify.** Run the repository's check entrypoint (`scripts/check.sh` by convention) plus whatever the change needs beyond it. Record what was run and what was not.
 7. **Independent review.** A reviewer agent that did not write the code reads the diff against the PR's claims, reruns the decisive checks, and reports findings. Authors fix; the reviewer confirms the fixes. The PR body gains a `## Review` section naming reviewer, commit reviewed, and dispositions.
-8. **Resolve the queue.** Remove the entry in the same PR and change the marker to `Resolves <queue>: <slug>`, or file a remainder with a new slug and `Remaining from:` for partial work. `bash scripts/workflow/check-pr-markers.sh --body <file>` validates the markers against the queue files (compares `origin/main` to `HEAD` by default; pass `--base`/`--head` for anything else).
+8. **Resolve the queue.** Remove the entry in the same PR and change the marker to `Resolves <queue>: <slug>`, or file a remainder with a new slug and `Remaining from:` for partial work. `bash docket/scripts/check-pr-markers.sh --body <file>` validates the markers against the queue files (compares `origin/main` to `HEAD` by default; pass `--base`/`--head` for anything else).
 9. **Ready, then the user merges.** Ready means checks and independent review are complete for this PR's own scope. Eligible to land is separate: base is main, required checks are green on the current base, any parent in a stack has landed. A remainder entry never waives an acceptance gate the original entry carried. Merge only when told to in that turn or under a recorded delegation: squash, PR title as subject, PR body as commit body.
-10. **Clean up.** After landing: `bash scripts/workflow/cleanup-landed.sh --apply` removes the worktree and branch, rebase any stacked children onto main and retarget them, and re-check main's CI. Nothing of the task survives except the commit and the queue change.
+10. **Clean up.** After landing: `bash docket/scripts/cleanup-landed.sh --apply` removes the worktree and branch, rebase any stacked children onto main and retarget them, and re-check main's CI. Nothing of the task survives except the commit and the queue change.
 
 ## Authorisation ladder
 
@@ -76,14 +76,15 @@ Autonomy grants cover implementation. Which other actions need the user's word, 
 | Delete a branch with unmerged commits, remove a dirty worktree | Yes |
 | Commit directly to main | Work-recording documentation (TODO entries, triage, plans): normal. Housekeeping metadata such as `.git-blame-ignore-revs`: only when the user says so for that case. Nothing else; pushing the commit follows the session's push authority |
 
-Under an autonomy grant without push authority, work lands on local branches with the finished PR body saved to `.feral/pr-<slug>.md` and every load-bearing decision appended to `AUDIT.md` with an undo line. See [parallel-work](references/parallel-work.md#autonomy-modes).
+Under an autonomy grant without push authority, work lands on local branches with the finished PR body saved to `.docket/pr-<slug>.md` and every load-bearing decision appended to `.docket/AUDIT.md` with an undo line. See [parallel-work](references/parallel-work.md#autonomy-modes).
 
 ## Bundled tools
 
-All scripts are portable shell (bash 3.2) and need only git, plus `gh` where PRs are involved. In an installed repository run them as `bash scripts/workflow/<name>.sh`; the install copies them there, and that is the path the templates, the repository's guides and CI use, so agents without this skill run the same tools. The skill's own `scripts/<name>.sh` copies are used only during install or audit, before the installed copies exist or while they are being checked: run them from inside the target repository by their path in the skill directory (`bash <skill-dir>/scripts/check-queues.sh --strict`). Never `cd` into the skill directory to run them; every script acts on the repository of the current directory, and the skill directory may itself be a git repository.
+All scripts are portable shell (bash 3.2) and need only git, plus `gh` where PRs are involved. They live in the skill under `templates/docket/scripts/` and reach a repository only through `bash ~/.claude/skills/docket/install.sh`, run from inside that repository, which copies the whole `templates/docket/` directory to `docket/` verbatim; `install.sh --check` reports drift without writing. Run the installed copies as `bash docket/scripts/<name>.sh`; that is the path the contract, the guides and CI use, so agents without this skill run the same tools. Nobody runs the skill's copies against a repository directly: when `docket/` is missing or stale, install first. Every script acts on the repository of the current directory.
 
 | Script | Purpose |
 | --- | --- |
+| `ci.sh` | Runs `check-queues.sh --strict`, `check-links.sh` and, on pull requests, `check-pr-markers.sh` (reads `PR`, `BASE`, `HEAD_BRANCH` and `GH_TOKEN` from the environment). The one hygiene step CI calls. |
 | `check-queues.sh [--strict]` | Validates TODO.md and review/BACKLOG.md: entry format, unique slugs, Source lines, resolvable `Related`/`Depends on`, no Ready entry blocked by unresolved work, one finding per backlog entry. Run in CI. |
 | `check-pr-markers.sh --body FILE \| --pr N` | Validates PR markers against the queues at base and head, fails a body whose first heading is not `## Why`, and requires a Validation section for finding fixes. Run in CI on pull requests. |
 | `claim-check.sh <slug>...` | Finds existing claims across PRs, branches and worktrees, following backlog findings. |
@@ -111,4 +112,4 @@ Any of these thoughts means stop and do the step you were about to skip.
 
 ## Scaling the ceremony
 
-Claims, markers and the review ledger pay for themselves when more than one agent works at once or when sessions hand work to each other. A solo, interactive session in a small repo still keeps: branch and PR per unit of work, the discovery rule, the independent reviewer, the check entrypoint, CI on PRs and main. It may defer: the review ledger (until the first codebase review is requested), stacked PRs, and the scheduled extended run (until main has something expensive to validate). Record which pieces are in force in the repository's `AGENTS.md`; silence is read as "all of it".
+Claims, markers and the review ledger pay for themselves when more than one agent works at once or when sessions hand work to each other. A solo, interactive session in a small repo still keeps: branch and PR per unit of work, the discovery rule, the independent reviewer, the check entrypoint, CI on PRs and main. It may defer: the review ledger (until the first codebase review is requested), stacked PRs, and the scheduled extended run (until main has something expensive to validate). Record which pieces are in force in the Docket section of the repository's `AGENTS.md`; silence is read as "all of it".

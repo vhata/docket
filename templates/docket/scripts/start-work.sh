@@ -2,7 +2,7 @@
 # Claim a queue entry: run the claim check, then create the branch and its
 # worktree so the provisional claim is visible to other workers immediately.
 #
-# Usage: start-work.sh <queue> <slug> [--base main] [--dir .worktrees] [--no-check]
+# Usage: docket/scripts/start-work.sh <queue> <slug> [--base main] [--dir .worktrees] [--no-check]
 #   queue: todo | review | roadmap | fix | task (becomes the branch prefix)
 #   The branch is "<queue>/<slug>" and the worktree "<dir>/<queue>-<slug>".
 #
@@ -31,12 +31,17 @@ fi
 
 branch="$queue/$slug"
 path="$dir/$queue-$slug"
-if ! git check-ignore -q "$dir/probe" 2>/dev/null; then
-  exclude="$(git rev-parse --git-common-dir)/info/exclude"
-  mkdir -p "$(dirname "$exclude")"
-  printf '%s/\n' "$dir" >> "$exclude"
-  echo "start-work: $dir was not ignored; added it to the local git exclude file ($exclude). Add '$dir/' to .gitignore in your next PR."
-fi
+# Make sure the worktree directory and the local docket state directory are
+# ignored. Only directories git does not already ignore are appended, so
+# repeated runs never duplicate a line.
+exclude="$(git rev-parse --git-path info/exclude)"
+for ignored in "$dir" ".docket"; do
+  if ! git check-ignore -q "$ignored/probe" 2>/dev/null; then
+    mkdir -p "$(dirname "$exclude")"
+    printf '%s/\n' "$ignored" >> "$exclude"
+    echo "start-work: $ignored was not ignored; added it to the local git exclude file ($exclude). Add '$ignored/' to .gitignore in your next PR."
+  fi
+done
 git fetch --quiet origin "$base" 2>/dev/null || true
 start="origin/$base"; git rev-parse --verify --quiet "$start" >/dev/null || start="$base"
 git worktree add --quiet -b "$branch" "$path" "$start"

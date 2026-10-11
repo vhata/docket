@@ -1,6 +1,7 @@
-# Merge-blocking checks. Every job calls the scripts in scripts/, so
-# `bash scripts/check.sh && bash scripts/build.sh` reproduces the check job
-# locally. See docs/QUALITY.md.
+# Merge-blocking checks. Every job calls a script in scripts/ or
+# docket/scripts/, so `bash scripts/check.sh && bash scripts/build.sh`
+# reproduces the check job locally and `bash docket/scripts/ci.sh` the
+# workflow job. See docs/QUALITY.md.
 name: CI
 
 on:
@@ -69,15 +70,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: bash scripts/workflow/check-queues.sh --strict
-      - run: bash scripts/workflow/check-links.sh
-      - name: Validate PR markers against the queues
-        if: github.event_name == 'pull_request'
-        env:
+      # Queue hygiene, Markdown links and, on pull requests, the PR markers.
+      # The PR variables are empty on push events and ci.sh then skips the
+      # marker check.
+      - env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           BASE: ${{ github.event.pull_request.base.ref }}
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          gh pr view "$PR" --json body -q .body > /tmp/pr-body.md
-          bash scripts/workflow/check-pr-markers.sh --body /tmp/pr-body.md --base "origin/$BASE" --head HEAD --branch "$HEAD_BRANCH"
+        run: bash docket/scripts/ci.sh

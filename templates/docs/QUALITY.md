@@ -8,7 +8,7 @@ Read when changing code or preparing a PR. This document describes the gates as 
 
 ## Gates
 
-Each check is a standalone script in `scripts/`, runnable from any directory, exiting non-zero on failure. Hooks, CI and agents run the same scripts.
+Each check is a standalone script in `scripts/` or `docket/scripts/`, runnable from any directory, exiting non-zero on failure. Hooks, CI and agents run the same scripts.
 
 | Script | Runs | Pre-commit | Pre-push | CI on PR | CI on main | Scheduled |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -19,10 +19,8 @@ Each check is a standalone script in `scripts/`, runnable from any directory, ex
 | `scripts/build.sh` | <release build / packaging> | | | yes | yes | yes |
 | `scripts/e2e.sh` | <browser or system tests; unique evidence dir per run> | | | yes | yes | yes |
 | `scripts/smoke.sh` | <cheapest end-to-end exercise of the built product> | | | yes | yes | yes |
-| `scripts/workflow/check-queues.sh --strict` | queue hygiene | | | yes | yes | |
-| `scripts/workflow/check-pr-markers.sh` | PR markers against queues | | | yes | | |
-| `scripts/workflow/check-links.sh` | relative Markdown links | | | yes | yes | |
-| `scripts/workflow/review-due.sh` | review cadence report | | | | | yes |
+| `docket/scripts/ci.sh` | queue hygiene, Markdown links, PR markers against the queues | | | yes | yes | |
+| `docket/scripts/review-due.sh` | review cadence report | | | | | yes |
 | `scripts/check.sh` | fmt-check, lint, typecheck, test, in order | | | yes | yes | yes |
 
 `scripts/check.sh` is the composite entry point: `ci.yml` and `main-validation.yml` run it rather than the four gates individually, so its CI columns are those of the gates it runs.
@@ -38,6 +36,13 @@ Toolchain pins: <files>. Bumping a pin is its own PR.
 - <Rules for goldens, seeds, property tests, determinism.>
 - An empty or skipped suite is a failed gate. Coverage gates, if any, measure the exact claim: <threshold and scope>.
 - No automatic retries. A flaky test is filed in `TODO.md` with its evidence directory and fixed or quarantined by name.
+
+## Review inputs
+
+Read by `docket/CODE_REVIEW_GUIDE.md`; a codebase review runs and records exactly what is listed here.
+
+- Baseline commands beyond `bash scripts/check.sh`: <e2e, smoke, headless or installed-package commands, each with the result format to record>.
+- Drift checks for an incremental review: <documented CLI, controls and features against the code; plan status against merged work; this document against the hooks and CI workflows>.
 
 ## CI
 
@@ -57,4 +62,4 @@ Toolchain pins: <files>. Bumping a pin is its own PR.
 
 ## PR evidence
 
-Every PR lists the commands run and their results, a reproducible scenario for behaviour changes, what was not run and why, and the independent review. See [CODE_REVIEW_GUIDE.md](CODE_REVIEW_GUIDE.md).
+Every PR lists the commands run and their results, a reproducible scenario for behaviour changes, what was not run and why, and the independent review. See [docket/CODE_REVIEW_GUIDE.md](../docket/CODE_REVIEW_GUIDE.md).

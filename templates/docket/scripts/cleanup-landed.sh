@@ -3,14 +3,14 @@
 # placeholder branches. Dry run by default and the dry run changes nothing;
 # pass --apply to act.
 #
-# Usage: cleanup-landed.sh [--apply] [--base main] [--empty] [--discard-ignored]
+# Usage: docket/scripts/cleanup-landed.sh [--apply] [--base main] [--empty] [--discard-ignored]
 #   A branch is "landed" only when gh finds a merged PR whose head was this
 #   branch AND the branch's current tip is the commit that PR merged. A branch
 #   with commits after the merged head is kept and reported.
 #   --empty also removes branches with no commits beyond the base, no PR and no
 #   worktree (harness placeholders such as worktree-agent-*).
 #   Worktrees with modified or untracked files are never removed. Worktrees
-#   with ignored files (caches, evidence, .feral/) are kept unless
+#   with ignored files (caches, evidence, .docket/) are kept unless
 #   --discard-ignored is given. Nothing is pushed; remote branches are untouched.
 set -euo pipefail
 

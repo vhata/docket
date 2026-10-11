@@ -8,8 +8,8 @@
 # head; review-finding resolutions carry a Validation section.
 #
 # Usage:
-#   check-pr-markers.sh --body FILE [--base REF] [--head REF] [--todo PATH] [--backlog PATH]
-#   check-pr-markers.sh --pr NUMBER [--base REF] [--head REF]
+#   docket/scripts/check-pr-markers.sh --body FILE [--base REF] [--head REF] [--todo PATH] [--backlog PATH]
+#   docket/scripts/check-pr-markers.sh --pr NUMBER [--base REF] [--head REF]
 #
 # Defaults: --base origin/main (local main when there is no origin), --head HEAD,
 # TODO.md, review/BACKLOG.md. --branch NAME (default: the head's branch) enables
