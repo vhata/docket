@@ -84,7 +84,7 @@ All scripts are portable shell (bash 3.2) and need only git, plus `gh` where PRs
 
 | Script | Purpose |
 | --- | --- |
-| `ci.sh` | Runs `check-queues.sh --strict`, `check-links.sh` and, on pull requests, `check-pr-markers.sh` (reads `PR`, `BASE`, `HEAD_BRANCH` and `GH_TOKEN` from the environment). The one hygiene step CI calls. |
+| `ci.sh` | Runs `check-queues.sh --strict`, `check-links.sh` and, on pull requests, `check-pr-markers.sh` (reads `PR`, `BASE`, `HEAD_BRANCH`, `GH_TOKEN` and `GITHUB_EVENT_PATH` from the environment; the PR body comes from the event payload when it is available, otherwise from `gh pr view`). The one hygiene step CI calls. |
 | `check-queues.sh [--strict]` | Validates TODO.md and review/BACKLOG.md: entry format, unique slugs, Source lines, resolvable `Related`/`Depends on`, no Ready entry blocked by unresolved work, one finding per backlog entry. Run in CI. |
 | `check-pr-markers.sh --body FILE \| --pr N` | Validates PR markers against the queues at base and head, fails a body whose first heading is not `## Why`, and requires a Validation section for finding fixes. Run in CI on pull requests. |
 | `claim-check.sh [--self] <slug>...` | Finds existing claims across PRs, branches and worktrees, following backlog findings. `--self` is the recheck from inside the claimed worktree: it ignores the worker's own branch and pushed copy but not another worker's. |

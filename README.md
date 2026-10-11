@@ -20,7 +20,7 @@ The user stays in charge of the one-way doors: merging, force-pushing, tagging, 
 | `references/` | The deeper documents: `setup.md` (installing and auditing), `queues.md`, `parallel-work.md` (including paired review), `reviews.md`, `quality-gates.md` and `pr-and-landing.md` (PRs, stacking, landing, cleanup). |
 | `install.sh` | Copies `templates/docket/` into a project as `docket/`, verbatim, and with `--check` reports any drift between the two. The same command is first install and update. |
 | `templates/` | Files the skill installs into a repository, laid out as they land there. `templates/docket/` is vendored as `docket/` and never edited in the project: the generic contract, the queue and review guides, and portable bash tools (bash 3.2, git, and `gh` where PRs are involved) for queue validation, PR marker checks, claim checks, branch and worktree creation, review drift, post-merge cleanup, and the CI entry point. The rest are starting points edited per project: the Docket section the installer adds to `AGENTS.md`, CI workflows, a PR template, and `scripts/check.sh` and `scripts/setup.sh` skeletons. See `templates/README.md` for where each one goes. |
-| `tests/scripts.sh` | Regression checks for the vendored scripts against a disposable git repository, with a fake forge for the pull request cases. CI runs it under Linux bash and macOS `/bin/bash` 3.2. |
+| `tests/` | `scripts.sh` checks the vendored scripts against a disposable git repository, with a fake forge for the pull request cases; `install.sh` runs the installer against a scratch project and a scratch clone of this checkout. CI runs both under Linux bash and macOS `/bin/bash` 3.2. |
 | `agents/openai.yaml` | Display metadata so the skill shows up in Codex. |
 
 ## Installing the skill
