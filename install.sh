@@ -6,17 +6,19 @@
 #   target: a directory inside the project's git repository (default: the
 #           repository containing the current directory). The files land in
 #           <toplevel>/docket/.
-#   --check: write nothing; compare <toplevel>/docket/ and the docket block in
+#   --check: write nothing; compare <toplevel>/docket/ and the Docket section of
 #            <toplevel>/AGENTS.md with the skill's copies and exit 1 on any
 #            difference or a missing VERSION file.
 #
 # The same command performs the first install and every later update. Files
 # present in the project's docket/ but absent from the skill are reported,
-# never deleted. In AGENTS.md the installer owns only the block between
-# '<!-- docket:begin -->' and '<!-- docket:end -->'; it inserts the block when
-# it is missing (creating the file when there is none, and adding the settings
-# list under it on first insert) and rewrites it on every run. Everything else
-# in AGENTS.md is the project's. An existing CLAUDE.md gets the line
+# never deleted. In AGENTS.md the installer owns only the Docket section,
+# between '<!-- docket:begin -->' and '<!-- docket:end -->'. It inserts the
+# section when it is missing (creating the file when there is none). On later
+# runs it rewrites the heading and text, keeps each settings bullet ('- Name:
+# value') the project has set, re-adds a missing setting as a placeholder, and
+# keeps extra bullets. Everything outside the markers is the project's and is
+# never read or written. An existing CLAUDE.md gets the line
 # '@AGENTS.md' appended when it lacks one; no CLAUDE.md is created or replaced.
 # Exit 2 on usage errors. Portable to bash 3.2.
 set -euo pipefail
@@ -27,7 +29,7 @@ check=0; target=""
 for arg in "$@"; do
   case "$arg" in
     --check) check=1 ;;
-    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     -*) echo "install: unknown option $arg" >&2; exit 2 ;;
     *) [ -z "$target" ] || { echo "install: only one target may be given" >&2; exit 2; }; target="$arg" ;;
   esac
@@ -54,7 +56,26 @@ agents="$top/AGENTS.md"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/docket-install.XXXXXX")"; trap 'rm -rf "$tmp"' EXIT
 # Print the lines from the begin marker to the end marker, inclusive.
 block() { awk -v b="$begin" -v e="$end" '$0 == b { p = 1 } p { print } $0 == e { p = 0 }' "$1"; }
-block "$fragment" > "$tmp/want"
+block "$fragment" > "$tmp/template"
+# The section a project should have, given the section it has now ($1): the
+# template's text verbatim; for each template bullet the project's line with
+# the same name, else the placeholder; then the project's other bullets in
+# their own order.
+expected() {
+  awk -v e="$end" -v have="$1" '
+    function name(l,  s) { s = substr(l, 3); if (index(s, ":") == 0) return ""; return substr(s, 1, index(s, ":") - 1) }
+    BEGIN { while ((getline l < have) > 0) if (l ~ /^- /) { k = name(l); if (k != "" && !(k in hv)) { hv[k] = l; order[m++] = k } else extra[n++] = l } }
+    /^- / { k = name($0); if (k in hv) { print hv[k]; seen[k] = 1 } else print; next }
+    $0 == e { for (i = 0; i < m; i++) if (!(order[i] in seen)) print hv[order[i]]; for (i = 0; i < n; i++) print extra[i]; print; next }
+    { print }' "$tmp/template"
+}
+# Names of template settings whose line in $1 is missing or still a placeholder.
+unfilled() {
+  while IFS= read -r l; do
+    k="${l#- }"; k="${k%%:*}"
+    if ! grep -q "^- $k:" "$1"; then echo "$k (missing)"; elif grep "^- $k:" "$1" | grep -q '<[^>]*>'; then echo "$k (placeholder)"; fi
+  done < <(grep '^- ' "$tmp/template")
+}
 # 0: one well-formed block; 1: no block; 2: malformed markers. Missing file counts as no block.
 agents_state() {
   [ -f "$agents" ] || return 1
@@ -79,13 +100,16 @@ if [ "$check" -eq 1 ]; then
   diff -r -x VERSION "$src" "$dst" || status=1
   if agents_state; then
     block "$agents" > "$tmp/have"
-    diff -u --label "skill AGENTS.md block" --label "$agents block" "$tmp/want" "$tmp/have" || status=1
+    expected "$tmp/have" > "$tmp/want"
+    diff -u --label "expected Docket section" --label "$agents" "$tmp/want" "$tmp/have" || status=1
+    unfilled "$tmp/have" > "$tmp/unfilled"
+    if [ -s "$tmp/unfilled" ]; then echo "install: settings not filled in $agents: $(paste -sd, "$tmp/unfilled" | sed 's/,/, /g')" >&2; status=1; fi
   elif [ $? -eq 1 ]; then
-    echo "install: $agents has no docket block ($begin ... $end)" >&2; status=1
+    echo "install: $agents has no Docket section ($begin ... $end)" >&2; status=1
   else
     echo "install: $agents has malformed docket markers; expected exactly one $begin before one $end" >&2; status=1
   fi
-  if [ "$status" -eq 0 ]; then echo "install: $dst and the $agents block match the skill"; else echo "install: $top differs from the skill; rerun install.sh to resync" >&2; fi
+  if [ "$status" -eq 0 ]; then echo "install: $dst and the Docket section of $agents match the skill"; else echo "install: $top differs from the skill; rerun install.sh to resync" >&2; fi
   exit "$status"
 fi
 
@@ -115,29 +139,32 @@ while IFS= read -r rel; do
   [ -f "$src/$rel" ] || echo "install: warning: $dst/$rel is not part of the skill; remove it by hand if it is obsolete" >&2
 done < <(cd "$dst" && find . -type f | sort)
 
-# The project points its agents at the vendored contract through one block in
-# AGENTS.md. Only that block is written; the rest of the file is left alone.
+# The project points its agents at the vendored contract through the Docket
+# section of AGENTS.md. Only that section is written; the rest is left alone.
 status=0; agents_note=""
 if agents_state; then
   block "$agents" > "$tmp/have"
+  expected "$tmp/have" > "$tmp/want"
   if cmp -s "$tmp/want" "$tmp/have"; then
-    agents_note="docket block in $agents is current"
+    agents_note="Docket section of $agents is current"
   else
     awk -v b="$begin" -v e="$end" -v f="$tmp/want" '
       $0 == b { while ((getline l < f) > 0) print l; skip = 1; next }
       skip { if ($0 == e) skip = 0; next }
       { print }' "$agents" > "$tmp/agents"
     cp "$tmp/agents" "$agents"
-    agents_note="rewrote the docket block in $agents"
+    agents_note="rewrote the Docket section of $agents, keeping its settings"
   fi
+  unfilled "$tmp/want" > "$tmp/unfilled"
+  if [ -s "$tmp/unfilled" ]; then agents_note="$agents_note; settings to fill in: $(paste -sd, "$tmp/unfilled" | sed 's/,/, /g')"; fi
 elif [ $? -eq 1 ]; then
   if [ -f "$agents" ]; then
     [ -z "$(tail -c 1 "$agents")" ] || printf '\n' >> "$agents"
     printf '\n' >> "$agents"; cat "$fragment" >> "$agents"
-    agents_note="appended the docket block and settings list to $agents; fill in the settings"
+    agents_note="appended the Docket section to $agents; fill in its settings"
   else
     cp "$fragment" "$agents"
-    agents_note="created $agents with the docket block and settings list; fill in the settings"
+    agents_note="created $agents with the Docket section; fill in its settings"
   fi
 else
   echo "install: $agents has malformed docket markers; expected exactly one $begin before one $end; fix it by hand" >&2; status=1

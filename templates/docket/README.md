@@ -13,11 +13,13 @@ rule text belongs in the `## Docket` section of `AGENTS.md` or in
 `docs/QUALITY.md`, not here. Changes to the shared machinery go to the skill
 repository and reach this project through a resync.
 
-The installer also owns one block in `AGENTS.md`, between
-`<!-- docket:begin -->` and `<!-- docket:end -->`: the `## Docket` heading and
-the pointer to `CONTRACT.md`. It is rewritten on every resync and compared by
-`--check`, so it is never edited by hand either. Everything else in
-`AGENTS.md`, including the settings list under the block, is the project's.
+The installer also owns the `## Docket` section of `AGENTS.md`, between
+`<!-- docket:begin -->` and `<!-- docket:end -->`. The heading and text are
+rewritten on every resync; the settings bullets (`- Name: value`) hold this
+project's values and are kept by name, with a missing one re-added as a
+placeholder. Edit the values, not the text. `--check` reports text drift and
+any setting that is missing or still a placeholder. Everything outside the
+markers is the project's and is never touched.
 
 ## Resync and audit
 
@@ -27,8 +29,8 @@ bash ~/.claude/skills/docket/install.sh --check  # report drift, exit 1 if any
 ```
 
 The same command performs the first install and every later update. It copies
-the skill's files over this directory, writes `VERSION`, refreshes the block in
-`AGENTS.md`, and reports (but does not delete) files here that the skill no
+the skill's files over this directory, writes `VERSION`, refreshes the Docket
+section of `AGENTS.md`, and reports (but does not delete) files here that the skill no
 longer ships. Commit the result.
 
 `VERSION` holds the skill commit the files came from, as `<sha> <date>`
