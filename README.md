@@ -34,9 +34,9 @@ git clone git@github.com:vhata/docket.git ~/.claude/skills/docket
 # 2. A squashed subtree, when your skills directory is a repository you version.
 cd ~/.claude/skills
 git remote add docket git@github.com:vhata/docket.git
-git subtree add --prefix=docket docket main --squash
-#    Later, to update:
-git subtree pull --prefix=docket docket main --squash
+git subtree add --prefix=docket docket main --squash -m 'Add the docket skill'
+#    Later, to update (-m replaces the "Merge commit 'abc123'" message git would write):
+git subtree pull --prefix=docket docket main --squash -m 'Update the docket skill'
 
 # 3. A symlink from the other harnesses' skill directories to one copy.
 ln -s ~/.claude/skills/docket ~/.codex/skills/docket
