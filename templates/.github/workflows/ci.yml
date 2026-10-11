@@ -1,5 +1,6 @@
 # Merge-blocking checks. Every job calls the scripts in scripts/, so
-# `bash scripts/check.sh` reproduces the check job locally. See docs/QUALITY.md.
+# `bash scripts/check.sh && bash scripts/build.sh` reproduces the check job
+# locally. See docs/QUALITY.md.
 name: CI
 
 on:
@@ -30,6 +31,7 @@ jobs:
       # <Replace with the language's setup: pinned toolchain read from a file in the repo, dependency cache, lockfile-exact install.>
       - run: bash scripts/setup.sh
       - run: bash scripts/check.sh
+      # <Remove if the project has no build step.>
       - run: bash scripts/build.sh
       - uses: actions/upload-artifact@v4
         if: failure()

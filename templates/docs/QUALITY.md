@@ -23,7 +23,9 @@ Each check is a standalone script in `scripts/`, runnable from any directory, ex
 | `scripts/workflow/check-pr-markers.sh` | PR markers against queues | | | yes | | |
 | `scripts/workflow/check-links.sh` | relative Markdown links | | | yes | yes | |
 | `scripts/workflow/review-due.sh` | review cadence report | | | | | yes |
-| `scripts/check.sh` | fmt-check, lint, typecheck, test, in order | | | | | |
+| `scripts/check.sh` | fmt-check, lint, typecheck, test, in order | | | yes | yes | yes |
+
+`scripts/check.sh` is the composite entry point: `ci.yml` and `main-validation.yml` run it rather than the four gates individually, so its CI columns are those of the gates it runs.
 
 Hooks are managed by <manager> from <config file> and installed by `bash scripts/setup.sh`. Pre-commit <checks only | rewrites staged files>. Measured pre-commit time: <n> s warm. Bypassing a hook is for a broken toolchain only; state the bypass and the equivalent checks in the PR.
 
