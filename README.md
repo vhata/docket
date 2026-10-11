@@ -1,4 +1,8 @@
+<img src="assets/docket.svg" alt="Docket ledger icon" width="80" height="80">
+
 # docket
+
+**A shared plan for coding agents.**
 
 An agent skill for running a project with many coding agents working on it at once, without them tripping over each other. A docket is the list of work to be heard and the record of what happened to each item; this one keeps that list for a software project.
 

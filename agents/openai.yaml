@@ -1,4 +1,7 @@
 interface:
   display_name: "Docket"
-  short_description: "Run a project's agent work through queues, worktrees, paired review, gates and a review ledger; coordinate fan-outs; run codebase reviews"
+  short_description: "Coordinate coding agents with queues and paired review"
+  icon_small: "./assets/docket.svg"
+  icon_large: "./assets/docket.png"
+  brand_color: "#183D36"
   default_prompt: "Use $docket to adopt or audit this project's workflow, or to run a codebase review or triage."

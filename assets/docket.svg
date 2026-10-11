@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Docket</title>
+  <desc id="desc">A cream ledger with three green entries on an ink-green background.</desc>
+  <rect width="256" height="256" rx="56" fill="#183D36"/>
+  <path d="M67 53h103a23 23 0 0 1 23 23v104a23 23 0 0 1-23 23H67z" fill="#F4EEDF"/>
+  <path d="M67 53h20v150H67z" fill="#DCCBA8"/>
+  <g fill="#183D36">
+    <circle cx="110" cy="94" r="7"/>
+    <circle cx="110" cy="128" r="7"/>
+    <circle cx="110" cy="162" r="7"/>
+    <rect x="130" y="89" width="40" height="10" rx="5"/>
+    <rect x="130" y="123" width="40" height="10" rx="5"/>
+    <rect x="130" y="157" width="29" height="10" rx="5"/>
+  </g>
+</svg>
