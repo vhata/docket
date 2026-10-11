@@ -77,7 +77,7 @@ Why the pair is mandatory: in one repository a single post-merge pass over 25 se
 
 The coordinator integrates after each writer reports. Passing checks on isolated branches does not establish that their combination works; two gates that each passed alone contradicted each other once they met on main. Before marking a set of related PRs ready, either rebase each onto the others in merge order and run the check entrypoint on the result, or build a disposable integration worktree that combines them and run the checks there. Record the integration check in the coordinator's report.
 
-Keep linear history: rebase, never merge main into a branch. To limit conflict rounds, squash the branch to one commit (`git reset --soft $(git merge-base origin/main HEAD) && git commit`) before `git rebase origin/main`, then `git push --force-with-lease` the PR branch. Queue files and decision logs are where nearly every branch conflicts; expect it, and resolve in the branch, never with a merge commit.
+Keep linear history: rebase, never merge main into a branch. The squash-then-rebase flow, the force-with-lease rule and the expected queue-file conflicts are in [pr-and-landing](pr-and-landing.md#keeping-branches-current).
 
 ## Autonomy modes
 
@@ -93,7 +93,7 @@ In the unattended mode, claims are not globally visible. Say so in the audit log
 
 ### Audit log
 
-`AUDIT.md` at the repository root, excluded from git through `.git/info/exclude` (so it never reaches a PR), append-only. Each session opens with a scope entry stating what is authorised. Each load-bearing decision (interface change, approach chosen over alternatives, dependency added, behaviour changed, work held back) gets:
+`AUDIT.md` at the repository root, excluded from git through `.git/info/exclude` (so it never reaches a PR; the exclusion is added at install, see [setup](setup.md#3-install-order) step 3), append-only. Each session opens with a scope entry stating what is authorised. Each load-bearing decision (interface change, approach chosen over alternatives, dependency added, behaviour changed, work held back) gets:
 
 ```markdown
 ## 2026-09-23 00:12 — <title>

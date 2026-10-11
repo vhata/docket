@@ -63,7 +63,7 @@ Script paths below are the installed paths (`scripts/workflow/`), the only ones 
 
 ## Authorisation ladder
 
-Autonomy grants cover implementation. These need the user's word in the current conversation, every time:
+Autonomy grants cover implementation. Which other actions need the user's word, and when:
 
 | Action | Needs explicit go-ahead |
 | --- | --- |
@@ -85,7 +85,7 @@ All scripts are portable shell (bash 3.2) and need only git, plus `gh` where PRs
 | Script | Purpose |
 | --- | --- |
 | `check-queues.sh [--strict]` | Validates TODO.md and review/BACKLOG.md: entry format, unique slugs, Source lines, resolvable `Related`/`Depends on`, no Ready entry blocked by unresolved work, one finding per backlog entry. Run in CI. |
-| `check-pr-markers.sh --body FILE \| --pr N` | Validates PR markers against the queues at base and head, requires `## Why` first and a Validation section for finding fixes. Run in CI on pull requests. |
+| `check-pr-markers.sh --body FILE \| --pr N` | Validates PR markers against the queues at base and head, fails a body whose first heading is not `## Why`, and requires a Validation section for finding fixes. Run in CI on pull requests. |
 | `claim-check.sh <slug>...` | Finds existing claims across PRs, branches and worktrees, following backlog findings. |
 | `start-work.sh <queue> <slug>` | Claim check, then branch plus worktree with the repository's naming. |
 | `review-due.sh [--paths ...]` | Reads the review index, measures drift since the reviewed commit, says whether an incremental or full review is due. |

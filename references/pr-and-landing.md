@@ -65,7 +65,7 @@ bash scripts/workflow/cleanup-landed.sh --apply          # removes clean worktre
 bash scripts/workflow/cleanup-landed.sh --apply --empty  # also deletes placeholder branches with no commits, no PR, no worktree
 ```
 
-The script deletes a branch only when its tip is the exact commit a merged PR landed; a branch with commits after that is kept and reported. Dirty worktrees are never removed; worktrees holding ignored files (evidence, `.feral/`) are kept unless told otherwise. Look at what is in them (`git -C <path> status --porcelain --ignored -uall`) and either commit, move or, with the user's word, discard. Branches with unmerged, unpushed commits are reported, not deleted; one repository carried an unpushed capacity-measurement branch for days that nobody knew about. Rebase stacked children onto the new main as part of the same cleanup. Then check the push CI run on main (`gh run list --branch main --limit 3`) and apply the red-main policy if needed.
+The script deletes a branch only when its tip is the exact commit a merged PR landed; a branch with commits after that is kept and reported. Dirty worktrees are never removed; worktrees holding ignored files (evidence, `.feral/`) are kept unless `--discard-ignored` is passed. Look at what is in them (`git -C <path> status --porcelain --ignored -uall`) and either commit, move or, with the user's word, discard. Branches with unmerged, unpushed commits are reported, not deleted; one repository carried an unpushed capacity-measurement branch for days that nobody knew about. Rebase stacked children onto the new main as part of the same cleanup. Then check the push CI run on main (`gh run list --branch main --limit 3`) and apply the red-main policy if needed.
 
 ## Releases
 
