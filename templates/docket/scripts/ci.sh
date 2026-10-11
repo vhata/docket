@@ -23,7 +23,9 @@
 #
 # The PR body comes from one of two places. When GITHUB_EVENT_PATH names a
 # readable pull_request event payload for PR and jq is installed, the body is
-# read from it with `jq -r`; this needs no token. Otherwise it is fetched with
+# read from it with `jq -r`; this needs no token. A re-run reuses the original
+# payload, so the workflow must also trigger on `edited` for a changed body to
+# be re-validated. Otherwise it is fetched with
 # `gh pr view`, which needs GH_TOKEN with `pull-requests: read` (the default
 # GITHUB_TOKEN has it only when the workflow's permissions block grants it).
 # On a pull_request event the checkout is the merge commit, so --head HEAD is

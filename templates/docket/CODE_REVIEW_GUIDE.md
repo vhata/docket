@@ -90,8 +90,9 @@ Base is the newest snapshot's reviewed commit.
    bash docket/scripts/check-links.sh
    bash docket/scripts/check-queues.sh --strict
    git ls-files | xargs wc -l | sort -rn | head        # largest files, as evidence, not a threshold
-   git grep -nE 'TODO|FIXME|HACK'                      # deferred work hiding in code instead of the queue
-   git status --porcelain --ignored                    # stray files, tracked or not
+   git grep -nE 'TODO|FIXME|HACK|XXX'                  # deferred work hiding in code instead of the queue
+   git status --porcelain --ignored                    # stray files not yet committed, and ignored directories that should not be there
+   git ls-files                                        # read for committed strays, against the extension list under Review inputs
    ```
 
    Language-specific checks (lint-suppression counts, documented flags or controls against the code, and the rest) are the drift checks listed under [Review inputs](../docs/QUALITY.md#review-inputs) in `docs/QUALITY.md`. Compare every number with the previous snapshot and record it even when unchanged.

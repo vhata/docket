@@ -6,13 +6,17 @@ name: CI
 
 on:
   pull_request:
+    # edited: a re-run reuses the original event payload, so without this
+    # trigger an edited PR body is re-validated as it was before the edit.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
 permissions:
   contents: read
   # ci.sh reads the PR body from the event payload; pull-requests: read covers
-  # its fallback to `gh pr view` when the payload has no body.
+  # its fallback to `gh pr view` when jq is missing or the payload describes
+  # another pull request.
   pull-requests: read
 
 defaults:
