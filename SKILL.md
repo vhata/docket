@@ -48,7 +48,7 @@ PRs, stacking, landing and cleanup are in [pr-and-landing](references/pr-and-lan
 
 ## The unit of work, start to finish
 
-Script paths below are the in-repo install paths (`scripts/workflow/`); from the skill directory itself drop `workflow/`.
+Script paths below are the installed paths (`scripts/workflow/`), the only ones agents and CI use; the skill's own `scripts/` copies are for install and audit only (see Bundled tools).
 
 1. **Select.** Follow the user's selection, or take the highest-priority unclaimed entry from the named queue in its Ready section. Never switch queues or stages because the requested one is empty; report that instead.
 2. **Check claims.** `bash scripts/workflow/claim-check.sh <slug>` (open and merged PRs, branches, worktrees, mapped findings). A matching branch or worktree is a provisional claim. Overlap means stop and coordinate, not race.
@@ -63,7 +63,7 @@ Script paths below are the in-repo install paths (`scripts/workflow/`); from the
 
 ## Authorisation ladder
 
-Autonomy grants cover implementation. These need the user's word in the current conversation, every time:
+Autonomy grants cover implementation. Which other actions need the user's word, and when:
 
 | Action | Needs explicit go-ahead |
 | --- | --- |
@@ -80,12 +80,12 @@ Under an autonomy grant without push authority, work lands on local branches wit
 
 ## Bundled tools
 
-All scripts are portable shell (bash 3.2) and need only git, plus `gh` where PRs are involved. Run them with `bash scripts/<name>.sh` from the skill directory. On install they are copied into the repository as `scripts/workflow/<name>.sh`, which is the path the templates and the repository's guides use, so agents without this skill run the same tools.
+All scripts are portable shell (bash 3.2) and need only git, plus `gh` where PRs are involved. In an installed repository run them as `bash scripts/workflow/<name>.sh`; the install copies them there, and that is the path the templates, the repository's guides and CI use, so agents without this skill run the same tools. The skill's own `scripts/<name>.sh` copies are used only during install or audit, before the installed copies exist or while they are being checked: run them from inside the target repository by their path in the skill directory (`bash <skill-dir>/scripts/check-queues.sh --strict`). Never `cd` into the skill directory to run them; every script acts on the repository of the current directory, and the skill directory may itself be a git repository.
 
 | Script | Purpose |
 | --- | --- |
 | `check-queues.sh [--strict]` | Validates TODO.md and review/BACKLOG.md: entry format, unique slugs, Source lines, resolvable `Related`/`Depends on`, no Ready entry blocked by unresolved work, one finding per backlog entry. Run in CI. |
-| `check-pr-markers.sh --body FILE \| --pr N` | Validates PR markers against the queues at base and head, requires `## Why` first and a Validation section for finding fixes. Run in CI on pull requests. |
+| `check-pr-markers.sh --body FILE \| --pr N` | Validates PR markers against the queues at base and head, fails a body whose first heading is not `## Why`, and requires a Validation section for finding fixes. Run in CI on pull requests. |
 | `claim-check.sh <slug>...` | Finds existing claims across PRs, branches and worktrees, following backlog findings. |
 | `start-work.sh <queue> <slug>` | Claim check, then branch plus worktree with the repository's naming. |
 | `review-due.sh [--paths ...]` | Reads the review index, measures drift since the reviewed commit, says whether an incremental or full review is due. |

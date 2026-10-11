@@ -22,7 +22,7 @@ Split along files or components, never along a shared mutable surface. Before di
 
 - Branch: `<queue>/<slug>` for queued work (`todo/`, `review/`, `roadmap/`), `fix/<slug>` for directly requested fixes, `task/<slug>` for other direct requests. The slug appears verbatim so claim checks find it.
 - Worktree: use the harness's native tool when it has one (it owns placement and cleanup), naming the branch `<queue>/<slug>` and running the claim check first. Otherwise `.worktrees/<queue>-<slug>` under the repository root, ignored by git. A repository-local ignored directory survives temp-directory cleaning; worktrees under `/tmp` left twelve prunable registrations and fifteen orphaned branches in one repository.
-- Create the branch and worktree before investigating. `bash scripts/start-work.sh <queue> <slug>` does the claim check and creation.
+- Create the branch and worktree before investigating. `bash scripts/workflow/start-work.sh <queue> <slug>` does the claim check and creation.
 - Run the repository's setup script in the new worktree (dependencies, hooks). Hooks installed into the shared `.git/hooks` cover every worktree; hooks managed through `core.hooksPath` pointing at a tracked directory also do.
 - Baseline before changing anything: run the check entrypoint once so later failures are attributable.
 
@@ -77,7 +77,7 @@ Why the pair is mandatory: in one repository a single post-merge pass over 25 se
 
 The coordinator integrates after each writer reports. Passing checks on isolated branches does not establish that their combination works; two gates that each passed alone contradicted each other once they met on main. Before marking a set of related PRs ready, either rebase each onto the others in merge order and run the check entrypoint on the result, or build a disposable integration worktree that combines them and run the checks there. Record the integration check in the coordinator's report.
 
-Keep linear history: rebase, never merge main into a branch. To limit conflict rounds, squash the branch to one commit (`git reset --soft $(git merge-base origin/main HEAD) && git commit`) before `git rebase origin/main`, then `git push --force-with-lease` the PR branch. Queue files and decision logs are where nearly every branch conflicts; expect it, and resolve in the branch, never with a merge commit.
+Keep linear history: rebase, never merge main into a branch. The squash-then-rebase flow, the force-with-lease rule and the expected queue-file conflicts are in [pr-and-landing](pr-and-landing.md#keeping-branches-current).
 
 ## Autonomy modes
 
@@ -93,7 +93,7 @@ In the unattended mode, claims are not globally visible. Say so in the audit log
 
 ### Audit log
 
-`AUDIT.md` at the repository root, excluded from git through `.git/info/exclude` (so it never reaches a PR), append-only. Each session opens with a scope entry stating what is authorised. Each load-bearing decision (interface change, approach chosen over alternatives, dependency added, behaviour changed, work held back) gets:
+`AUDIT.md` at the repository root, excluded from git through `.git/info/exclude` (so it never reaches a PR; the exclusion is added at install, see [setup](setup.md#3-install-order) step 3), append-only. Each session opens with a scope entry stating what is authorised. Each load-bearing decision (interface change, approach chosen over alternatives, dependency added, behaviour changed, work held back) gets:
 
 ```markdown
 ## 2026-09-23 00:12 — <title>
@@ -109,7 +109,7 @@ End every fan-out or unattended run with: branches and their state in merge orde
 
 ## Harness pitfalls seen in practice
 
-- Placeholder branches (`worktree-agent-*`) accumulate with no commits; `bash scripts/cleanup-landed.sh --empty` removes them.
+- Placeholder branches (`worktree-agent-*`) accumulate with no commits; `bash scripts/workflow/cleanup-landed.sh --apply --empty` removes them (without `--apply` the script only lists them).
 - Agents in worktrees cannot write into the main checkout; have them leave PR bodies and reports in their own worktree and let the coordinator copy them.
 - Watchdog timeouts kill long single commands; prefer several shorter commands and incremental commits.
 - Concurrency groups that cancel in-progress runs on pushes to main hide red main builds when several PRs merge quickly; see quality-gates.

@@ -17,7 +17,7 @@ The user stays in charge of the one-way doors: merging, force-pushing, tagging, 
 | Path | What it is |
 | --- | --- |
 | `SKILL.md` | The skill itself. The entry point an agent reads, with the quick-start phrases, the unit-of-work procedure, the authorisation ladder and the red flags. |
-| `references/` | One deeper document per pillar: `setup.md`, `queues.md`, `parallel-work.md`, `reviews.md`, `quality-gates.md`, `pr-and-landing.md`. |
+| `references/` | The deeper documents: `setup.md` (installing and auditing), `queues.md`, `parallel-work.md` (including paired review), `reviews.md`, `quality-gates.md` and `pr-and-landing.md` (PRs, stacking, landing, cleanup). |
 | `scripts/` | Portable bash tools (bash 3.2, git, and `gh` where PRs are involved): queue validation, PR marker checks, claim checks, branch and worktree creation, review drift, and post-merge cleanup. |
 | `templates/` | Files the skill installs into a repository: `AGENTS.md`, `CLAUDE.md`, queue and review guides, CI workflows, a PR template, and `scripts/check.sh` and `scripts/setup.sh` skeletons. See `templates/README.md` for where each one goes. |
 | `agents/openai.yaml` | Display metadata so the skill shows up in Codex. |
@@ -55,19 +55,19 @@ Once a repository has been set up, ordinary single-task work does not need this 
 
 ## Running the scripts by hand
 
-From this directory:
+In a repository where the workflow is installed, the scripts live under `scripts/workflow/`, which is the path agents, hooks and CI use:
 
 ```bash
-bash scripts/check-queues.sh --strict      # validate TODO.md and review/BACKLOG.md
-bash scripts/claim-check.sh <slug>         # who already claims this entry?
-bash scripts/start-work.sh <queue> <slug>  # branch + worktree for a task
-bash scripts/check-pr-markers.sh --pr N    # validate Claims/Resolves markers on a PR
-bash scripts/review-due.sh                 # is a review due?
-bash scripts/cleanup-landed.sh --apply     # remove worktrees and branches for merged PRs
-bash scripts/check-links.sh                # relative Markdown links resolve
+bash scripts/workflow/check-queues.sh --strict      # validate TODO.md and review/BACKLOG.md
+bash scripts/workflow/claim-check.sh <slug>         # who already claims this entry?
+bash scripts/workflow/start-work.sh <queue> <slug>  # branch + worktree for a task
+bash scripts/workflow/check-pr-markers.sh --pr N    # validate Claims/Resolves markers on a PR
+bash scripts/workflow/review-due.sh                 # is a review due?
+bash scripts/workflow/cleanup-landed.sh --apply     # remove worktrees and branches for merged PRs
+bash scripts/workflow/check-links.sh                # relative Markdown links resolve
 ```
 
-Inside a repository where the workflow is installed, the same scripts live under `scripts/workflow/`.
+The copies in this repository's `scripts/` are the source for that install step and are what you edit when developing the skill. When one has to run against a repository that does not have the installed copies yet (the install itself, or an audit), run it from inside that repository by its path in the skill directory, for example `bash ~/.claude/skills/repo-workflow/scripts/check-queues.sh --strict`. The scripts act on the repository of the current directory, so do not `cd` into the skill directory to run them.
 
 ## Licence
 

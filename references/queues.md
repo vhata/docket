@@ -17,7 +17,7 @@ Natural-language selection follows the file boundary: "grab a TODO" means `TODO.
   - Remaining from: `original-slug` / Split from: `original-slug` (lineage, when applicable)
 ```
 
-Slugs are unique across all queues and never change when an entry moves. One area marker per entry; the repository defines its area list. Free-form indented lines for evidence are fine. `bash scripts/check-queues.sh` validates all of this.
+Slugs are unique across all queues and never change when an entry moves. One area marker per entry; the repository defines its area list. Free-form indented lines for evidence are fine. `bash scripts/workflow/check-queues.sh` validates all of this.
 
 ## Stages and priorities
 
@@ -49,9 +49,9 @@ Review-close triage of findings is a separate step owned by codebase reviews (se
 ## Claiming
 
 1. Follow the user's selection. Otherwise take the highest-priority suitable unclaimed entry in the Ready section of the named queue. If none is suitable, say so; do not pick from Needs triage or another queue.
-2. `bash scripts/claim-check.sh <slug>`: open PRs whose body carries a marker for the slug or whose head branch contains it, merged PRs that already resolved it, branches and worktrees containing it. For a backlog entry the script also checks every slug in its `Findings:` line, because a raw finding can be explicitly assigned without the batch being claimed.
-3. Create the branch and worktree immediately (`bash scripts/start-work.sh <queue> <slug>`), then recheck once; two agents can take the same slug within seconds. Search-then-create is not a lock: within one team the coordinator is the single dispatcher and no two writers are given overlapping slugs; across independent sessions or machines, the draft PR is the only shared record, so publish it early or accept the race.
-4. After the first meaningful commit, open a draft PR with the claim marker. The entry stays in the queue while work is underway. If no PR can be created (no remote, no forge access, no push authority), write the finished body to `.feral/pr-<slug>.md` (excluded from git), say so in the report (and in the audit log when one is in use) so the user knows the claim is local-only, and leave the branch and worktree for the user to publish with `git push -u origin <branch> && gh pr create --head <branch> --body-file .feral/pr-<slug>.md`.
+2. `bash scripts/workflow/claim-check.sh <slug>`: open PRs whose body carries a marker for the slug or whose head branch contains it, merged PRs that already resolved it, branches and worktrees containing it. For a backlog entry the script also checks every slug in its `Findings:` line, because a raw finding can be explicitly assigned without the batch being claimed.
+3. Create the branch and worktree immediately (`bash scripts/workflow/start-work.sh <queue> <slug>`), then recheck once; two agents can take the same slug within seconds. Search-then-create is not a lock: within one team the coordinator is the single dispatcher and no two writers are given overlapping slugs; across independent sessions or machines, the draft PR is the only shared record, so publish it early or accept the race.
+4. After the first meaningful commit, open a draft PR with the claim marker. The entry stays in the queue while work is underway. If no PR can be created (no remote, no forge access, no push authority), write the finished body to `.feral/pr-<slug>.md` (excluded from git), say so in the report (and in the audit log when one is in use) so the user knows the claim is local-only, and leave the branch and worktree for the user to publish with `git push -u origin <branch> && gh pr create --head <branch> --title "<title>" --body-file .feral/pr-<slug>.md`.
 5. Abandoning the work releases the claim: close the draft, remove the worktree and branch, leave the entry untouched.
 
 ## Markers
@@ -67,7 +67,7 @@ Files TODO: <slug>                         Claims review finding: <slug> / Resol
 Claims roadmap: <slug>                     Resolves roadmap: <slug>
 ```
 
-Directly requested work needs no invented entry and no marker. A review batch claims its backlog slug plus each finding actually in scope. `bash scripts/check-pr-markers.sh --body <file> --base origin/main --head HEAD` checks every marker against the queue files at base and head, so it belongs in CI.
+Directly requested work needs no invented entry and no marker; its branch is `task/<slug>` or `fix/<slug>`. That includes review snapshots and every other PR that is not queue work. The `todo/`, `review/` and `roadmap/` branch prefixes are claims: the validator fails a branch with one of them whose body carries no marker for the slug, and `review/` as a branch prefix means a claim on a `review/BACKLOG.md` entry, unrelated to the `review/` directory. A review batch claims its backlog slug plus each finding actually in scope. `bash scripts/workflow/check-pr-markers.sh --body <file> --base origin/main --head HEAD` checks every marker against the queue files at base and head, so it belongs in CI.
 
 ## Resolving
 

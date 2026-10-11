@@ -26,18 +26,19 @@ Also check what lives outside the repository: harness memory files and the user'
 | Roadmap (optional) | `docs/ROADMAP.md` | Themes and direction in prose. A third queue when the repository wants vision-sized items claimable. |
 | Deferred work | `TODO.md`, `docs/TODO_GUIDE.md` | Stages, priorities, entry format, claims, markers, resolution. |
 | Review ledger | `review/README.md`, `review/BACKLOG.md`, `review/<timestamp>-<type>.md`, `docs/CODE_REVIEW_GUIDE.md` | Snapshots, inventory, promoted work, closure rules. |
-| Quality | `docs/QUALITY.md`, `scripts/*.sh`, hook config, `.github/workflows/ci.yml`, `.github/workflows/main-validation.yml` | What runs where, current state only. |
+| Quality | `docs/QUALITY.md`, `scripts/*.sh`, hook config (no template; see quality-gates.md), `.github/workflows/ci.yml`, `.github/workflows/main-validation.yml` | What runs where, current state only. |
 | PR shape | `.github/pull_request_template.md` | Why, what changed, markers, validation, review. |
 | Audit (unattended runs) | `AUDIT.md` excluded via `.git/info/exclude`; `.feral/` likewise | Append-only decisions with undo lines; prepared PR bodies. |
+| Plans | `plans/YYYY-MM-DD-<slug>.md` | Dated plans for work; committed direct to main (see pr-and-landing.md). |
 
-Every file in this table except the optional ones has a template under `templates/`, with placeholders in angle brackets; `ARCHITECTURE.md` and `docs/DECISIONS.md` templates are skeletons to fill from the code and the conversation, never from guesswork. Copy, then edit every placeholder; a template left with placeholders is a Docs finding at the next review.
+Every file in this table has a template under `templates/`, with placeholders in angle brackets, except the optional records, the hook config, plans and the audit files; `ARCHITECTURE.md` and `docs/DECISIONS.md` templates are skeletons to fill from the code and the conversation, never from guesswork. Copy, then edit every placeholder; a template left with placeholders is a Docs finding at the next review.
 
 ## 3. Install order
 
 1. **Contract.** `AGENTS.md` from `templates/AGENTS.md`. Fill in the project line, the area list, the concurrency cap, the autonomy defaults, and which optional pieces are in force. The direct-to-main rule in the template (work-recording documentation; housekeeping metadata on the user's say-so) is the standard one; narrow it only if the user asks. Create `CLAUDE.md` containing `@AGENTS.md`.
-2. **Scripts.** `scripts/setup.sh`, `scripts/check.sh` and the per-check scripts for the repository's language (see quality-gates.md). Copy the skill's `scripts/*.sh` into `scripts/workflow/` so hooks, CI and agents without the skill can run them.
-3. **Hooks.** One manager, config tracked, installed by `scripts/setup.sh`. Measure the pre-commit time; move anything slow to pre-push. Add `.worktrees/` and the evidence and cache directories to `.gitignore` in the install PR; until it lands, `start-work.sh` excludes `.worktrees/` locally through `.git/info/exclude`.
-4. **Queues.** `TODO.md` and `docs/TODO_GUIDE.md`. Bring known deferred work in with sources; everything starts Unprioritized in Needs triage unless evidence says otherwise. Run `bash scripts/check-queues.sh --strict`.
+2. **Scripts.** `scripts/setup.sh`, `scripts/check.sh` and the per-check scripts for the repository's language (see quality-gates.md). Copy the skill's `scripts/*.sh` into `scripts/workflow/` so hooks, CI and agents without the skill can run them. Fixes to the skill do not reach these copies on their own, so every audit diffs `scripts/workflow/*.sh` against the skill's `scripts/*.sh` and recopies any that differ.
+3. **Hooks.** One manager, config tracked, installed by `scripts/setup.sh`. Measure the pre-commit time; move anything slow to pre-push. Add `.worktrees/` and the evidence and cache directories to `.gitignore` in the install PR; until it lands, `start-work.sh` excludes `.worktrees/` locally through `.git/info/exclude`. Add `AUDIT.md` and `.feral/` to `.git/info/exclude` on each machine that works in the repository (`printf 'AUDIT.md\n.feral/\n' >> .git/info/exclude`); they are per-machine working files that are never committed, which is why they do not go in `.gitignore`. Nothing else creates these exclusions, so an audit checks for them.
+4. **Queues.** `TODO.md` and `docs/TODO_GUIDE.md`. Bring known deferred work in with sources; everything starts Unprioritized in Needs triage unless evidence says otherwise. Run `bash scripts/workflow/check-queues.sh --strict`.
 5. **Review ledger.** `review/README.md`, `review/BACKLOG.md`, `docs/CODE_REVIEW_GUIDE.md`. Empty index; the first review is a separate task the user requests. Install it even when the repository defers reviews for now (an empty ledger costs nothing), unless `AGENTS.md` records that the ledger is deliberately not in use.
 6. **CI.** `ci.yml` from the template: check job, optional browser or smoke job, queue and marker validation, concurrency that cancels only PR runs. Then `main-validation.yml` with whatever extended checks the project has, even if initially only the check entrypoint plus `review-due.sh`.
 7. **PR template.**
@@ -70,6 +71,7 @@ Symptoms and the fix, from the studied repositories:
 | Claim markers never used, PRs not opened as drafts | Put `start-work.sh` and the draft rule into the contract; add the marker validator to CI so a missing or malformed marker is visible |
 | Review index stale for months | Run `review-due.sh` in the scheduled workflow; request the review |
 | Stale worktrees and placeholder branches | `cleanup-landed.sh --apply --empty` at the end of every session; `.worktrees/` inside the repo |
+| Installed `scripts/workflow/*.sh` differ from the skill's `scripts/*.sh` | Diff them during every audit (`diff <skill-dir>/scripts/<name>.sh scripts/workflow/<name>.sh`) and recopy; fixes to the skill do not reach installed copies on their own |
 | Quality doc describes a past state | Rewrite as current state; move history to decisions |
 | Red main nobody noticed | Concurrency fix for main pushes; red-main policy; badge for the scheduled run |
 | Zero review records on the forge | `## Review` section in every code PR body |

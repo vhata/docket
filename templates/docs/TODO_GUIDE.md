@@ -15,11 +15,13 @@ Work required for the requested outcome, its correctness or its verification sta
   - Depends on: `other-slug` (when blocked by queued work)
   - Blocked by: a decision, person or external condition, in prose (when blocked by something that is not queued work)
   - Related: `other-slug` (optional)
+  - Findings: `finding-slug`, `finding-slug` (review backlog only, required)
+  - Remaining from: `original-slug` / Split from: `original-slug` (lineage, when applicable)
 ```
 
-`Source` is required. Slugs are unique across both queues and never change when an entry moves. One area per entry, from: <`[AREA]`, `[AREA]`, `[TOOLING]`, `[DOCS]`; edit this list>. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
+`Source` is required. Slugs are unique across all queues and never change when an entry moves. One area per entry, from: <`[AREA]`, `[AREA]`, `[TOOLING]`, `[DOCS]`; edit this list>. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
 
-Review backlog entries additionally carry `Findings: <finding-slug>, ...` naming every raw review finding they cover, and `Source` names the review file. Each finding maps to at most one backlog entry.
+Review backlog entries additionally carry a `Findings:` line naming every raw review finding they cover, each slug in backticks (``Findings: `finding-slug`, `finding-slug` ``), and `Source` names the review file. Each finding maps to at most one backlog entry.
 
 ## Stages and priorities
 
@@ -49,6 +51,7 @@ Resolves TODO: <slug>                    Resolves review backlog: <slug>
 Partially resolves TODO: <slug>          Partially resolves review backlog: <slug>
 Remaining TODO: <new-slug>               Remaining review backlog: <new-slug>
 Files TODO: <slug>                       Claims review finding: <slug> / Resolves review finding: <slug>
+Claims roadmap: <slug>                   Resolves roadmap: <slug>
 ```
 
 Directly requested work needs no invented entry and no marker. A review batch claims its backlog slug and each finding actually in scope; a raw finding taken by explicit assignment claims only the finding and says why. `bash scripts/workflow/check-pr-markers.sh --body <file>` validates markers against the queues.
@@ -58,8 +61,8 @@ Directly requested work needs no invented entry and no marker. A review batch cl
 Verify the implementation against the complete entry before marking the PR ready.
 
 - **Full:** remove the entry in the PR; change `Claims` to `Resolves`. Search both queues for the slug and repair `Related:` and `Depends on:` lines that name it.
-- **Partial:** remove the original; add a remainder with a new slug, reassessed stage, priority and area, and `Remaining from: <original-slug>`. Use `Partially resolves` plus `Remaining`. For review work the remainder lists only the still-open findings.
-- **Parallel subsets of a batch:** first land a direct commit to `main` that keeps the original slug on one narrowed entry and adds new entries with `Split from: <original-slug>`. Then each subset is claimed separately. Splitting is not resolution.
+- **Partial:** remove the original; add a remainder with a new slug, reassessed stage, priority and area, and a ``Remaining from: `original-slug` `` line (the validator reads the backticked slug). Use `Partially resolves` plus `Remaining`. For review work the remainder lists only the still-open findings.
+- **Parallel subsets of a batch:** first land a direct commit to `main` that keeps the original slug on one narrowed entry and adds new entries with a ``Split from: `original-slug` `` line. Then each subset is claimed separately. Splitting is not resolution.
 - **Rejected or obsolete:** remove with the reason in the PR.
 
 Merging a fix PR removes the backlog entry but does not close a review finding; the next incremental review verifies and records closure (see [CODE_REVIEW_GUIDE.md](CODE_REVIEW_GUIDE.md)). Implementation PRs never edit review snapshots.
