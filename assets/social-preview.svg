@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">Docket — A shared plan for coding agents</title>
+  <desc id="desc">An ink-green card with a ledger icon, Docket wordmark, and the words Queues. Worktrees. Paired review. For Claude Code and Codex.</desc>
+  <rect width="1280" height="640" fill="#183D36"/>
+  <path d="M80 79h1120" stroke="#46665E" stroke-width="2"/>
+  <text x="80" y="124" fill="#DCCBA8" font-family="Arial" font-size="18" letter-spacing="3">THE AGENT WORKFLOW SKILL</text>
+  <g transform="translate(80 177) scale(.53)">
+    <rect width="256" height="256" rx="56" fill="#F4EEDF"/>
+    <path d="M67 53h103a23 23 0 0 1 23 23v104a23 23 0 0 1-23 23H67z" fill="#183D36"/>
+    <path d="M67 53h20v150H67z" fill="#A2B5A7"/>
+    <g fill="#F4EEDF">
+      <circle cx="110" cy="94" r="7"/><circle cx="110" cy="128" r="7"/><circle cx="110" cy="162" r="7"/>
+      <rect x="130" y="89" width="40" height="10" rx="5"/><rect x="130" y="123" width="40" height="10" rx="5"/><rect x="130" y="157" width="29" height="10" rx="5"/>
+    </g>
+  </g>
+  <text x="242" y="286" fill="#F4EEDF" font-family="Georgia" font-size="124">docket</text>
+  <text x="80" y="394" fill="#F4EEDF" font-family="Arial" font-size="46">A shared plan for coding agents.</text>
+  <text x="82" y="451" fill="#B7C8BC" font-family="Arial" font-size="28">Queues. Worktrees. Paired review.</text>
+  <path d="M80 520h1120" stroke="#46665E" stroke-width="2"/>
+  <text x="80" y="565" fill="#DCCBA8" font-family="Arial" font-size="22">For Claude Code &amp; Codex</text>
+  <text x="1200" y="565" text-anchor="end" fill="#B7C8BC" font-family="Arial" font-size="22">github.com/vhata/docket</text>
+</svg>
