@@ -11,7 +11,7 @@ Every PR that changes code is reviewed by an agent that did not write it, includ
 Independent review by <agent> at <commit>: <verdict>. Verified: <claims and how>. Findings: <n> (<fixed in <commit> | disposition>). Not checked: <gaps>.
 ```
 
-Focus areas for this project: <list the correctness boundaries that matter here, e.g. determinism, accounting, persistence round-trips, privacy of player views, protocol compatibility>.
+The correctness boundaries the reviewer concentrates on are listed under [What quality means here](../docs/QUALITY.md#what-quality-means-here) in `docs/QUALITY.md`.
 
 ## Ledger
 
@@ -63,12 +63,7 @@ One finding is one independently fixable, verifiable problem; repeated instances
 
 ## Baseline checks
 
-Run at the reviewed commit and record exact results in the header:
-
-```bash
-bash scripts/check.sh
-<e2e, smoke, headless or installed-package commands for this project>
-```
+Run `bash scripts/check.sh` and the baseline commands listed under [Review inputs](../docs/QUALITY.md#review-inputs) in `docs/QUALITY.md` at the reviewed commit, and record exact results in the header.
 
 A check that passed at the previous review and fails now is a finding.
 
@@ -88,11 +83,11 @@ Base is the newest snapshot's reviewed commit.
 1. Baseline, recorded.
 2. Re-check every standing finding by reading current code. For merged PRs carrying `Resolves review finding: <slug>`, inspect the code at the new commit, record the new location, rerun the original reproduction (Verified) or repeat the inspection (Read). Unconfirmed closures stay Open or Moved with their backlog mapping restored.
 3. Read the whole delta against the invariants and standing findings; a new copy of a listed duplication is a finding.
-4. Mechanical checks: `bash scripts/workflow/check-links.sh`, `bash scripts/workflow/check-queues.sh --strict`, counts of lint suppressions and in-code TODO/FIXME markers, largest files, stray tracked files, and this project's drift checks: <documented CLI/controls/features against code; plan status against merged work; QUALITY.md against hooks and CI>. Compare every number with the previous snapshot.
+4. Mechanical checks: `bash docket/scripts/check-links.sh`, `bash docket/scripts/check-queues.sh --strict`, counts of lint suppressions and in-code TODO/FIXME markers, largest files, stray tracked files, and the drift checks listed under [Review inputs](../docs/QUALITY.md#review-inputs) in `docs/QUALITY.md`. Compare every number with the previous snapshot.
 5. Re-read files touched by most PRs in the delta.
 6. Review-close triage, snapshot, index row, review PR.
 
-A full review resets the baseline after a large refactor, when a hot file was rewritten, when most findings are closed and a clean baseline is wanted, when two consecutive incremental reviews each added many findings, or when `bash scripts/workflow/review-due.sh` reports source churn above a third of the codebase.
+A full review resets the baseline after a large refactor, when a hot file was rewritten, when most findings are closed and a clean baseline is wanted, when two consecutive incremental reviews each added many findings, or when `bash docket/scripts/review-due.sh` reports source churn above a third of the codebase.
 
 ## Review-close triage
 

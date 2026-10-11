@@ -1,6 +1,6 @@
 # Deferred work: capture, triage, claim, resolve
 
-Read when an idea surfaces during work, or when adding, selecting, claiming, moving or resolving an entry in [TODO.md](../TODO.md) or [review/BACKLOG.md](../review/BACKLOG.md). `bash scripts/workflow/check-queues.sh` validates both files and runs in CI.
+Read when an idea surfaces during work, or when adding, selecting, claiming, moving or resolving an entry in [TODO.md](../TODO.md) or [review/BACKLOG.md](../review/BACKLOG.md). `bash docket/scripts/check-queues.sh` validates both files and runs in CI.
 
 ## Scope decision
 
@@ -19,7 +19,7 @@ Work required for the requested outcome, its correctness or its verification sta
   - Remaining from: `original-slug` / Split from: `original-slug` (lineage, when applicable)
 ```
 
-`Source` is required. Slugs are unique across all queues and never change when an entry moves. One area per entry, from: <`[AREA]`, `[AREA]`, `[TOOLING]`, `[DOCS]`; edit this list>. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
+`Source` is required. Slugs are unique across all queues and never change when an entry moves. One area per entry, from the list in the Docket section of `AGENTS.md`. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
 
 Review backlog entries additionally carry a `Findings:` line naming every raw review finding they cover, each slug in backticks (``Findings: `finding-slug`, `finding-slug` ``), and `Source` names the review file. Each finding maps to at most one backlog entry.
 
@@ -36,9 +36,9 @@ Triage runs when the user asks, when Needs triage holds more than about a dozen 
 ## Selecting and claiming
 
 1. Follow the user's selection. Otherwise take the highest-priority suitable unclaimed entry in **Ready for separate work** of the named queue. If nothing suitable is ready, say so; do not take a triage or proof-of-concept item, and do not switch queues.
-2. Run `bash scripts/workflow/claim-check.sh <slug>`. For a backlog entry it also checks every finding slug. A branch or worktree containing the slug is a provisional claim; an open PR with a marker for it is a claim; a merged PR that resolved it means the entry is stale. Stop and coordinate on any hit.
-3. Create the branch and worktree immediately: `bash scripts/workflow/start-work.sh <queue> <slug>` (branch `<queue>/<slug>`). Recheck claims once after creating it.
-4. After the first meaningful commit, open a draft PR with the claim marker. Leave the entry in the queue while work is underway. If no PR can be opened, save the body as `.feral/pr-<slug>.md` (excluded from git), say so where the user will see it, and leave the branch and worktree for the user; the claim is then local only.
+2. Run `bash docket/scripts/claim-check.sh <slug>`. For a backlog entry it also checks every finding slug. A branch or worktree containing the slug is a provisional claim; an open PR with a marker for it is a claim; a merged PR that resolved it means the entry is stale. Stop and coordinate on any hit.
+3. Create the branch and worktree immediately: `bash docket/scripts/start-work.sh <queue> <slug>` (branch `<queue>/<slug>`). Recheck claims once after creating it.
+4. After the first meaningful commit, open a draft PR with the claim marker. Leave the entry in the queue while work is underway. If no PR can be opened, save the body as `.docket/pr-<slug>.md` (excluded from git), say so where the user will see it, and leave the branch and worktree for the user; the claim is then local only.
 5. Abandoned work: close the draft, remove the worktree and branch, leave the entry untouched.
 
 ## Markers
@@ -54,7 +54,7 @@ Files TODO: <slug>                       Claims review finding: <slug> / Resolve
 Claims roadmap: <slug>                   Resolves roadmap: <slug>
 ```
 
-Directly requested work needs no invented entry and no marker. A review batch claims its backlog slug and each finding actually in scope; a raw finding taken by explicit assignment claims only the finding and says why. `bash scripts/workflow/check-pr-markers.sh --body <file>` validates markers against the queues.
+Directly requested work needs no invented entry and no marker. A review batch claims its backlog slug and each finding actually in scope; a raw finding taken by explicit assignment claims only the finding and says why. `bash docket/scripts/check-pr-markers.sh --body <file>` validates markers against the queues.
 
 ## Resolving
 
