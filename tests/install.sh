@@ -10,8 +10,10 @@
 # settings kept by name and a deleted one re-added; --check on placeholders,
 # content drift and executable bits; CLAUDE.md as a symlink, as a regular file
 # and absent; the stale .feral/ exclude line; hand-copied layout, missing
-# Review inputs and docs/superpowers (directory and settings bullet) warnings; VERSION newer than, behind, or unknown to the
-# checkout; a template with blank lines inside the markers; self-install;
+# Review inputs and docs/superpowers (directory, and a bullet inside but not
+# outside the Docket section or past a missing end marker) warnings; VERSION
+# newer than, behind, or unknown to the checkout; a template with blank lines
+# inside the markers; self-install;
 # a squashed-subtree host, reached directly and through a symlink, with an
 # unrelated host change (clean) and a committed edit under the skill (dirty).
 #
@@ -183,6 +185,15 @@ refute '--check warned about a CLAUDE.md that has the line' 'CLAUDE.md'
 printf '# Claude\n' > "$p/CLAUDE.md"
 run 0 '--check with the import line missing' bash "$inst" --check "$p"
 expect '--check did not warn about the missing import line' "lacks the line '@AGENTS.md'"
+# A bullet naming docs/superpowers outside the Docket section is the project's.
+printf '\n- Old plans: `docs/superpowers/plans/`.\n' >> "$p/AGENTS.md"
+run 0 '--check with a docs/superpowers bullet outside the section' bash "$inst" --check "$p"
+refute '--check warned about a bullet outside the Docket section' 'docs/superpowers'
+# With the end marker gone the bullet is not inside a section either.
+sed -i.bak "/^$end\$/d" "$p/AGENTS.md"; rm -f "$p/AGENTS.md.bak"
+run 1 '--check with malformed markers and a docs/superpowers bullet' bash "$inst" --check "$p"
+expect '--check did not report the malformed markers' 'malformed docket markers'
+refute '--check read a bullet past a missing end marker' 'names docs/superpowers'
 
 # CLAUDE.md as a symlink to something else is never written through.
 newproj four; p="$work/four"
