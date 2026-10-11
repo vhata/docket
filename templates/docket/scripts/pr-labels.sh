@@ -78,7 +78,7 @@ if [ -n "$pr" ]; then
     if git rev-parse --verify --quiet "origin/$pr_head^{commit}" >/dev/null; then head="origin/$pr_head"
     else
       head="HEAD"
-      echo "pr-labels: note: origin/$pr_head is not fetched; reading entries filed in the PR from HEAD ($(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached))" >&2
+      echo "pr-labels: note: origin/$pr_head is not fetched; reading entries filed in the PR from HEAD ($(git symbolic-ref --short -q HEAD || echo detached))" >&2
     fi
   fi
   [ -n "$branch" ] || branch="$pr_head"
@@ -112,7 +112,9 @@ tr -d '\r' < "$body" | awk '
         out = out substr(line, 1, p - 1); line = substr(line, p + 4); incomment = 1
       }
     }
-    if (out ~ /^[[:space:]]*(```|~~~)/) { fence = !fence; print ""; next }
+    # A backtick fence never has backticks after it on the opening line, so
+    # inline code such as ```x``` at the start of a line is not a fence.
+    if (out ~ /^[[:space:]]*~~~/ || (out ~ /^[[:space:]]*```/ && (fence || out !~ /^[[:space:]]*```.*`/))) { fence = !fence; print ""; next }
     print (fence ? "" : out)
   }' > "$tmp/body.clean"
 

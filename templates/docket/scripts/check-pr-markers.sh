@@ -114,7 +114,9 @@ tr -d '\r' < "$body" | awk '
         out = out substr(line, 1, p - 1); line = substr(line, p + 4); incomment = 1
       }
     }
-    if (out ~ /^[[:space:]]*(```|~~~)/) { fence = !fence; print ""; next }
+    # A backtick fence never has backticks after it on the opening line, so
+    # inline code such as ```x``` at the start of a line is not a fence.
+    if (out ~ /^[[:space:]]*~~~/ || (out ~ /^[[:space:]]*```/ && (fence || out !~ /^[[:space:]]*```.*`/))) { fence = !fence; print ""; next }
     print (fence ? "" : out)
   }' > "$tmp/body.clean"
 

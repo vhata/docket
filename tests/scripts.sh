@@ -172,6 +172,10 @@ pass 'list prose after a kind' bash "$markers" --body body.md --base "$base" --h
 # Fenced code blocks (examples, pasted YAML) are not part of the description's structure.
 printf '## Why\n\nFenced.\n\n```yaml\ntype: Opaque\nType: docs\n```\n\n~~~\n- Claims TODO: not-real\n~~~\n\nType: fix\n' > body.md
 pass 'fenced code blocks' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
+grep -Fq 'Type: <kind>' "$fixture/result.log" && { echo 'scripts-test: the type line after the fences was missed' >&2; exit 1; }
+printf '## Why\n\nInline.\n\n```inline``` code at the start of a line\n\nType: fix\n' > body.md
+pass 'inline triple backticks' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
+grep -Fq 'Type: <kind>' "$fixture/result.log" && { echo 'scripts-test: inline triple backticks opened a fence' >&2; exit 1; }
 
 # pr-labels.sh: labels from the branch, the type line and the claimed or
 # resolved entries, looked up at base and then at head.
