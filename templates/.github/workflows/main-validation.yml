@@ -10,7 +10,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/main-validation.yml
-      - scripts/workflow/review-due.sh
+      - docket/**
       # <add the scripts the extended checks call, so edits to them run this workflow before landing>
 
 permissions:
@@ -41,7 +41,7 @@ jobs:
       #  property tests at 10x examples seeded with ${{ github.run_id }}, build plus
       #  installed-artifact smoke in a clean environment, recovery drills on synthetic state.>
       - name: Review cadence
-        run: bash scripts/workflow/review-due.sh --paths "<source dirs>" | tee evidence/review-due.txt
+        run: bash docket/scripts/review-due.sh --paths "<source dirs>" | tee evidence/review-due.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
