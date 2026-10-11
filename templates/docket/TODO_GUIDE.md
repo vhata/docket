@@ -31,7 +31,7 @@ An entry with a `Depends on:` naming unresolved queued work, or any `Blocked by:
 
 ## Triage
 
-Triage runs when the user asks, when Needs triage holds more than about a dozen entries, or every few weeks. For each entry: decide the stage, set a priority, add or verify `Depends on:`, merge duplicates, remove obsolete entries with the reason in the commit message. Triage records work rather than doing it, so it lands as a direct commit to `main` (see `AGENTS.md`) with no resolution markers.
+Triage runs when the user asks, when Needs triage holds more than about a dozen entries, or every few weeks. For each entry: decide the stage, set a priority, add or verify `Depends on:`, merge duplicates, remove obsolete entries with the reason in the commit message. Triage records work rather than doing it, so it lands as a direct commit to `main` (see `CONTRACT.md`) with no resolution markers.
 
 ## Selecting and claiming
 
