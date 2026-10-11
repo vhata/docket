@@ -12,14 +12,16 @@
 #   Worktrees with modified or untracked files are never removed. Ignored files
 #   that are known caches (node_modules, target, .venv, __pycache__, .pytest_cache
 #   and the like, at any depth; see cache_re below) never hold a worktree back.
-#   Any other ignored file (evidence, .docket/, an audit log) does, unless
+#   Any other ignored file (evidence, logs, .docket/, an audit log) does, unless
 #   --discard-ignored is given, because it may be the only copy of a record.
+#   The allowlist goes by name, so keep records out of directories named like
+#   build output (build, out, dist, coverage, test-results).
 #   Nothing is pushed; remote branches are untouched.
 set -euo pipefail
 
 # Ignored paths whose last component matches this are reproducible build or
 # tool output and are discarded with the worktree without asking.
-cache_re='^(node_modules|target|dist|build|out|coverage|\.venv|venv|\.tox|\.nox|__pycache__|\.pytest_cache|\.hypothesis|\.mypy_cache|\.ruff_cache|\.cache|\.parcel-cache|\.turbo|\.next|\.nuxt|\.svelte-kit|\.wrangler|\.gradle|\.eslintcache|\.tsbuildinfo|test-results|playwright-report|\.nyc_output|\.DS_Store|[^/]*\.pyc|[^/]*\.log)$'
+cache_re='^(node_modules|target|dist|build|out|coverage|\.venv|venv|\.tox|\.nox|__pycache__|\.pytest_cache|\.hypothesis|\.mypy_cache|\.ruff_cache|\.cache|\.parcel-cache|\.turbo|\.next|\.nuxt|\.svelte-kit|\.wrangler|\.gradle|\.eslintcache|[^/]*\.tsbuildinfo|test-results|playwright-report|\.nyc_output|\.DS_Store|[^/]*\.pyc)$'
 # Prints the ignored entries of worktree $1 that are not known caches.
 # --ignored=matching reports the path that matched an ignore rule (for example
 # src/pkg/__pycache__/) rather than collapsing it to the first directory that
@@ -27,7 +29,7 @@ cache_re='^(node_modules|target|dist|build|out|coverage|\.venv|venv|\.tox|\.nox|
 non_cache_ignored() {
   git -C "$1" status --porcelain --ignored=matching 2>/dev/null | grep '^!!' | sed 's/^!! //' | while IFS= read -r p; do
     last="${p%/}"; last="${last##*/}"
-    echo "$last" | grep -Eq "$cache_re" || printf '%s\n' "$p"
+    printf '%s\n' "$last" | grep -Eq "$cache_re" || printf '%s\n' "$p"
   done
 }
 
@@ -40,7 +42,7 @@ while [ $# -gt 0 ]; do
     --base) base="$2"; shift 2 ;;
     --empty) empty=1; shift ;;
     --discard-ignored) discard_ignored=1; shift ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "cleanup-landed: unknown argument $1" >&2; exit 2 ;;
   esac
 done

@@ -435,15 +435,26 @@ git worktree add --quiet -b landed-record "$fixture/.worktrees/landed-record" ma
 git -C "$fixture/.worktrees/landed-record" commit --quiet --allow-empty -m 'Landed, holds a record'
 mkdir -p "$fixture/.worktrees/landed-record/.docket" "$fixture/.worktrees/landed-record/node_modules"
 echo body > "$fixture/.worktrees/landed-record/.docket/pr-landed-record.md"; echo x > "$fixture/.worktrees/landed-record/node_modules/x"
-merged='landed-caches landed-record'
+printf '*.log\n' >> "$fixture/.git/info/exclude"
+git worktree add --quiet -b landed-log "$fixture/.worktrees/landed-log" main
+git -C "$fixture/.worktrees/landed-log" commit --quiet --allow-empty -m 'Landed, holds a log'
+mkdir -p "$fixture/.worktrees/landed-log/results"; echo run > "$fixture/.worktrees/landed-log/results/audit.log"
+merged='landed-caches landed-record landed-log'
+pass 'cleanup-landed dry run with caches and records' in_dir "$fixture/.worktrees/runner" env PATH="$fixture/bin:$PATH" FIXTURE_MERGED="$merged" bash "$cleanup"
+expect 'dry run did not plan to remove the caches-only worktree' 'and branch landed-caches (merged'
+expect 'dry run did not keep the record-holding worktree' 'keep landed-record'
+expect 'dry run did not keep the log-holding worktree' 'keep landed-log'
+[ -d "$fixture/.worktrees/landed-caches" ] || { echo 'scripts-test: cleanup-landed dry run removed the caches-only worktree' >&2; exit 1; }
 pass 'cleanup-landed --apply with caches and a record' in_dir "$fixture/.worktrees/runner" env PATH="$fixture/bin:$PATH" FIXTURE_MERGED="$merged" bash "$cleanup" --apply
 [ ! -d "$fixture/.worktrees/landed-caches" ] || { echo 'scripts-test: cleanup-landed kept a worktree holding only caches' >&2; exit 1; }
 expect 'record-holding worktree was not reported as kept' 'not known caches and would be lost'
 expect 'the record was not named' '.docket/'
 grep -q 'node_modules' "$fixture/result.log" && grep 'node_modules' "$fixture/result.log" | grep -vq 'landed-caches' && { echo 'scripts-test: cleanup-landed listed a cache as a reason to keep' >&2; exit 1; }
 [ -f "$fixture/.worktrees/landed-record/.docket/pr-landed-record.md" ] || { echo 'scripts-test: cleanup-landed removed the record-holding worktree' >&2; exit 1; }
+[ -f "$fixture/.worktrees/landed-log/results/audit.log" ] || { echo 'scripts-test: cleanup-landed removed the log-holding worktree' >&2; exit 1; }
 pass 'cleanup-landed --apply --discard-ignored' in_dir "$fixture/.worktrees/runner" env PATH="$fixture/bin:$PATH" FIXTURE_MERGED="$merged" bash "$cleanup" --apply --discard-ignored
 [ ! -d "$fixture/.worktrees/landed-record" ] || { echo 'scripts-test: --discard-ignored kept the record-holding worktree' >&2; exit 1; }
+[ ! -d "$fixture/.worktrees/landed-log" ] || { echo 'scripts-test: --discard-ignored kept the log-holding worktree' >&2; exit 1; }
 git worktree remove --force "$fixture/.worktrees/runner"
 git branch --quiet -D landed-dirty landed-main runner
 echo 'scripts-test: all checks passed'
