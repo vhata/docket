@@ -1,6 +1,7 @@
-# Checks for the skill repository itself: the vendored scripts parse and pass
-# their regression fixtures under both bash 5 (Linux) and bash 3.2 (macOS), and
-# every relative link in the Markdown resolves.
+# Checks for the skill repository itself: the vendored scripts and install.sh
+# parse and pass their regression fixtures under both bash 5 (Linux) and bash
+# 3.2 (macOS), shellcheck is clean where it is installed, and every relative
+# link in the Markdown resolves.
 name: CI
 
 on:
@@ -19,9 +20,21 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # tests/install.sh clones this checkout and compares commits in it.
+          fetch-depth: 0
       - name: Syntax
-        run: for f in templates/docket/scripts/*.sh install.sh tests/scripts.sh; do /bin/bash -n "$f"; done
-      - name: Regression fixtures
+        run: for f in templates/docket/scripts/*.sh install.sh tests/*.sh; do /bin/bash -n "$f"; done
+      - name: Shellcheck
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -S warning templates/docket/scripts/*.sh install.sh tests/*.sh
+          else
+            echo "shellcheck not installed on this runner; skipped"
+          fi
+      - name: Script fixtures
         run: /bin/bash tests/scripts.sh
+      - name: Installer fixtures
+        run: /bin/bash tests/install.sh
       - name: Links
         run: /bin/bash templates/docket/scripts/check-links.sh
