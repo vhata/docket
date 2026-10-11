@@ -10,7 +10,7 @@ PRs are squash-merged with the title as subject and the body as commit body, so 
 4. `## Validation`: exact commands run and their results; for behaviour changes a reproducible scenario with before and after; for review-finding fixes a human-runnable scenario (setup, actions, old failure, expected result); what was not checked (GUI appearance, production state) and why.
 5. `## Review`: independent reviewer, commit reviewed, verdict, verified claims, findings and dispositions (see parallel-work.md).
 
-Never merge with a one-line body. One PR does one thing; several commits inside it are fine because the squash folds them. After an agent-performed merge, confirm the resulting commit body is the full PR body and not just the subject (one commit on record has its body pasted twice; another has only the title).
+The body is timeless: it describes the change as it will read in `git log` years later, so nothing in it refers to the state of the review (stacking, merge order, what is still to do, other open PRs). That goes in a PR comment or the coordinator's report. Never merge with a one-line body. One PR does one thing; several commits inside it are fine because the squash folds them. After an agent-performed merge, confirm the resulting commit body is the full PR body and not just the subject (one commit on record has its body pasted twice; another has only the title).
 
 Template: `templates/.github/pull_request_template.md`. Keep the template's headings even when the sections are short; later PRs in two repositories dropped the template entirely and the marker and validation lines became hard to find.
 
@@ -48,7 +48,7 @@ git push --force-with-lease
 
 Stack when step N+1 cannot start until step N's code exists and waiting for N to merge would stall the work (plan steps, a contract PR followed by implementations). Do not stack independent work; independent work gets independent branches off main.
 
-- Child branch starts from the parent branch. Child PR base is the parent branch: `gh pr create --base <parent-branch>`. Body says `Stacked on #N` and the merge order is written in the coordinator's report.
+- Child branch starts from the parent branch. Child PR base is the parent branch: `gh pr create --base <parent-branch>`. The stacking and the merge order go in a PR comment and the coordinator's report, never in the body, which becomes the commit message.
 - Shared-contract parents land first. Children show only their own diff while the base is the parent branch.
 - **When the parent merges**: rebase the child onto main immediately (`git rebase --onto origin/main <old-parent-tip> <child>`, or the squash-then-rebase flow above), retarget the PR (`gh pr edit <child> --base main`), force-with-lease, let CI run again. GitHub retargets children automatically only when the parent branch is deleted on merge and the event arrives; verify `gh pr view <child> --json baseRefName` rather than assume.
 - **Never merge a PR whose base is not the default branch.** One repository merged a child into its already-squashed parent branch, orphaning the engine code and forcing a hand cherry-pick onto main. Before any merge: `gh pr view N --json baseRefName,mergeStateStatus`.
