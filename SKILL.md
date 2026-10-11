@@ -1,11 +1,11 @@
 ---
-name: repo-workflow
+name: docket
 description: Use when adopting, repairing, auditing or comparing a repository's agent workflow (queues, worktrees, paired review, gates, review ledger); when coordinating a multi-agent fan-out or an unattended run; when running a full or incremental codebase review; when triaging the queues; or when cleaning up after PRs land. Not needed for ordinary single-task work in a repository whose AGENTS.md and guides already encode the workflow; those documents are sufficient there.
 ---
 
-# Agent repository workflow
+# Docket
 
-A repository run this way answers four questions from its own files at any moment: what is being worked on, what is ready to work on, what was decided, and what is known to be broken. Everything below exists to keep those answers true while many agents work at once.
+A project run this way answers four questions from its own files at any moment: what is being worked on, what is ready to work on, what was decided, and what is known to be broken. Everything below exists to keep those answers true while many agents work at once.
 
 **Core principle:** every unit of work is a branch, a worktree, a draft PR with an exact claim, an independent review, and a cleanup. Every idea that is not that unit of work goes into a queue, immediately, and the current work continues. Two things go straight to `main` without a branch: documentation that records work to be done (queue entries, triage, plans), and housekeeping metadata files when the user says so for that case; see [pr-and-landing](references/pr-and-landing.md#direct-to-main).
 
@@ -17,9 +17,9 @@ The user needs only these phrases; this skill works out the rest by inspecting t
 
 | The user says | What it means |
 | --- | --- |
-| "Use repo-workflow to set up or audit this repo" | Inspect first. A repository with a contract gets an audit and repairs on a branch; one without gets the workflow installed; an empty one gets initialised before any product code. Propose hosting settings, never apply them. If the repository records a policy that conflicts with the default model (for example one queue, no markers), report the conflict and ask which way to go before changing it. |
-| "Use repo-workflow to do a full / incremental review" | The codebase review procedure in [reviews](references/reviews.md), landed as its own PR. |
-| "Use repo-workflow to fan out the ready TODOs" / "run overnight" | The coordinator procedure in [parallel-work](references/parallel-work.md), with the autonomy mode stated up front. |
+| "Use docket to set up or audit this project" | Inspect first. A project with a contract gets an audit and repairs on a branch; one without gets the workflow installed; an empty one gets initialised before any product code. Propose hosting settings, never apply them. If the repository records a policy that conflicts with the default model (for example one queue, no markers), report the conflict and ask which way to go before changing it. |
+| "Use docket to do a full / incremental review" | The codebase review procedure in [reviews](references/reviews.md), landed as its own PR. |
+| "Use docket to fan out the ready TODOs" / "run overnight" | The coordinator procedure in [parallel-work](references/parallel-work.md), with the autonomy mode stated up front. |
 | "Grab a TODO" / any single task | Not this skill. The repository's `AGENTS.md` and guides. |
 
 ## Choose the operation

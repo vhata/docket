@@ -1,6 +1,6 @@
-# repo-workflow
+# docket
 
-An agent skill for running a repository with many coding agents working on it at once, without them tripping over each other.
+An agent skill for running a project with many coding agents working on it at once, without them tripping over each other. A docket is the list of work to be heard and the record of what happened to each item; this one keeps that list for a software project.
 
 It gives Claude Code (and Codex, via `agents/openai.yaml`) a documented way to adopt, audit and operate a workflow built on:
 
@@ -28,13 +28,13 @@ Copy or clone this directory into your agent's skills directory so that `SKILL.m
 
 ```bash
 # Claude Code
-git clone git@github.com:vhata/repo-workflow.git ~/.claude/skills/repo-workflow
+git clone git@github.com:vhata/docket.git ~/.claude/skills/docket
 
 # Codex
-git clone git@github.com:vhata/repo-workflow.git ~/.codex/skills/repo-workflow
+git clone git@github.com:vhata/docket.git ~/.codex/skills/docket
 ```
 
-Restart the agent, or start a new session, and the skill is available as `repo-workflow`.
+Restart the agent, or start a new session, and the skill is available as `docket`.
 
 ## Using it
 
@@ -42,12 +42,12 @@ You do not need to know the internals. Open a session in the repository you want
 
 | Say | What happens |
 | --- | --- |
-| "Use repo-workflow to set up this repo" | The agent inspects the repository. A repository with no workflow gets the contract, queues, scripts, CI and review ledger installed on a branch. An empty repository gets initialised first. |
-| "Use repo-workflow to audit this repo" | Same inspection, but against an existing workflow. Drift between what the docs say, what CI enforces, and what the records prove becomes a list of findings and repairs. |
-| "Use repo-workflow to do a full review" / "an incremental review" | A codebase review landed as its own PR, recorded in the review ledger. |
-| "Use repo-workflow to fan out the ready TODOs" / "run overnight" | The agent acts as coordinator: one writer and one reviewer per ready queue entry, each in its own worktree, with the autonomy mode stated up front. |
-| "Use repo-workflow to triage the queues" | Sort new entries into stages and priorities, split batches, reconcile stale claims. |
-| "Use repo-workflow to clean up after the merged PRs" | Remove worktrees and branches whose PRs have landed. |
+| "Use docket to set up this project" | The agent inspects the repository. A repository with no workflow gets the contract, queues, scripts, CI and review ledger installed on a branch. An empty repository gets initialised first. |
+| "Use docket to audit this project" | Same inspection, but against an existing workflow. Drift between what the docs say, what CI enforces, and what the records prove becomes a list of findings and repairs. |
+| "Use docket to do a full review" / "an incremental review" | A codebase review landed as its own PR, recorded in the review ledger. |
+| "Use docket to fan out the ready TODOs" / "run overnight" | The agent acts as coordinator: one writer and one reviewer per ready queue entry, each in its own worktree, with the autonomy mode stated up front. |
+| "Use docket to triage the queues" | Sort new entries into stages and priorities, split batches, reconcile stale claims. |
+| "Use docket to clean up after the merged PRs" | Remove worktrees and branches whose PRs have landed. |
 
 Branch protection settings are proposed, never applied; you apply them yourself on the hosting side.
 
@@ -67,7 +67,7 @@ bash scripts/workflow/cleanup-landed.sh --apply     # remove worktrees and branc
 bash scripts/workflow/check-links.sh                # relative Markdown links resolve
 ```
 
-The copies in this repository's `scripts/` are the source for that install step and are what you edit when developing the skill. When one has to run against a repository that does not have the installed copies yet (the install itself, or an audit), run it from inside that repository by its path in the skill directory, for example `bash ~/.claude/skills/repo-workflow/scripts/check-queues.sh --strict`. The scripts act on the repository of the current directory, so do not `cd` into the skill directory to run them.
+The copies in this repository's `scripts/` are the source for that install step and are what you edit when developing the skill. When one has to run against a repository that does not have the installed copies yet (the install itself, or an audit), run it from inside that repository by its path in the skill directory, for example `bash ~/.claude/skills/docket/scripts/check-queues.sh --strict`. The scripts act on the repository of the current directory, so do not `cd` into the skill directory to run them.
 
 ## Licence
 
