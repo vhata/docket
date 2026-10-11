@@ -16,7 +16,9 @@
 # '<!-- docket:begin -->' and '<!-- docket:end -->'; it inserts the block when
 # it is missing (creating the file when there is none, and adding the settings
 # list under it on first insert) and rewrites it on every run. Everything else
-# in AGENTS.md is the project's. Exit 2 on usage errors. Portable to bash 3.2.
+# in AGENTS.md is the project's. An existing CLAUDE.md gets the line
+# '@AGENTS.md' appended when it lacks one; no CLAUDE.md is created or replaced.
+# Exit 2 on usage errors. Portable to bash 3.2.
 set -euo pipefail
 
 skill="$(cd "$(dirname "$0")" && pwd)"
@@ -25,7 +27,7 @@ check=0; target=""
 for arg in "$@"; do
   case "$arg" in
     --check) check=1 ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
     -*) echo "install: unknown option $arg" >&2; exit 2 ;;
     *) [ -z "$target" ] || { echo "install: only one target may be given" >&2; exit 2; }; target="$arg" ;;
   esac
@@ -140,13 +142,19 @@ elif [ $? -eq 1 ]; then
 else
   echo "install: $agents has malformed docket markers; expected exactly one $begin before one $end; fix it by hand" >&2; status=1
 fi
+# Claude Code reads CLAUDE.md, so an existing one needs the import line. The
+# line is appended, never substituted for the file, and no CLAUDE.md is created.
+claude_note=""
 if [ -f "$top/CLAUDE.md" ] && ! grep -qx '@AGENTS.md' "$top/CLAUDE.md"; then
-  echo "install: warning: $top/CLAUDE.md does not contain the line '@AGENTS.md'" >&2
+  [ -z "$(tail -c 1 "$top/CLAUDE.md")" ] || printf '\n' >> "$top/CLAUDE.md"
+  printf '\n@AGENTS.md\n' >> "$top/CLAUDE.md"
+  claude_note="appended @AGENTS.md to $top/CLAUDE.md"
 fi
 
 echo "install: copied $copied files from $src to $dst (VERSION $(cat "$dst/VERSION"))"
 [ -z "$agents_note" ] || echo "install: $agents_note"
+[ -z "$claude_note" ] || echo "install: $claude_note"
 [ "$added_exclude" -eq 1 ] && echo "install: added .docket/ to $exclude"
 echo "install: changes in $top:"
-git -C "$top" status --short docket/ AGENTS.md
+git -C "$top" status --short docket/ AGENTS.md CLAUDE.md
 exit "$status"

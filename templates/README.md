@@ -6,8 +6,7 @@ Copy, then replace every `<placeholder>`. Keep headings and marker vocabulary in
 
 | Template | Install at | Notes |
 | --- | --- | --- |
-| `AGENTS.md` | `AGENTS.md` | Not a whole file: the block `install.sh` owns, between `<!-- docket:begin -->` and `<!-- docket:end -->`, plus the settings list it adds under the block on first insert. The installer appends it to an existing AGENTS.md (or creates the file) and rewrites only the block on later runs; everything else in AGENTS.md is the project's. Create `CLAUDE.md` containing the single line `@AGENTS.md`. |
-| `CLAUDE.md` | `CLAUDE.md` | The import line, for Claude Code. Other harnesses: symlink to AGENTS.md. |
+| `AGENTS.md` | `AGENTS.md` | Not a whole file: the block `install.sh` owns, between `<!-- docket:begin -->` and `<!-- docket:end -->`, plus the settings list it adds under the block on first insert. The installer appends it to an existing AGENTS.md (or creates the file) and rewrites only the block on later runs; everything else in AGENTS.md is the project's. If the project has a `CLAUDE.md`, the installer appends the line `@AGENTS.md` when it is missing and changes nothing else in it. |
 | `ARCHITECTURE.md` | `ARCHITECTURE.md` | Skeleton; fill from the code, never from guesswork. |
 | `docs/DECISIONS.md` | `docs/DECISIONS.md` | Skeleton for dated decisions. |
 | `TODO.md` | `TODO.md` | Empty staged queue. |
