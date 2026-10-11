@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: read
+  # ci.sh reads the PR body from the event payload; pull-requests: read covers
+  # its fallback to `gh pr view` when the payload has no body.
   pull-requests: read
 
 defaults:

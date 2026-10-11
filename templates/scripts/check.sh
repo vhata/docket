@@ -3,6 +3,8 @@
 # stop at the first failure, naming the gate. Hooks and CI call the same
 # per-gate scripts. Gate scripts take no arguments and must be executable
 # (chmod +x scripts/*.sh). See docs/QUALITY.md.
+# This script runs the project's gates; hooks and docket/scripts/ci.sh run
+# the vendored validators, and including them here is optional.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

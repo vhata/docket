@@ -15,11 +15,21 @@
 #
 # Environment (all optional; set them on pull_request events):
 #   PR           GitHub pull request number. When non-empty the PR body is
-#                fetched with `gh pr view` and validated against the queues.
+#                validated against the queues.
 #   BASE         the PR's base branch name (for example "main"); required
 #                with PR. The comparison uses "origin/$BASE".
 #   HEAD_BRANCH  the PR's head branch name; required with PR. Enables the
 #                claim rule for branches named <queue>/<slug>.
+#
+# The PR body comes from one of two places. When GITHUB_EVENT_PATH names a
+# readable pull_request event payload for PR and jq is installed, the body is
+# read from it with `jq -r`; this needs no token. Otherwise it is fetched with
+# `gh pr view`, which needs GH_TOKEN with `pull-requests: read` (the default
+# GITHUB_TOKEN has it only when the workflow's permissions block grants it).
+# On a pull_request event the checkout is the merge commit, so --head HEAD is
+# the base-plus-PR tree, and --base "origin/$BASE" is the base branch tip at
+# the time the job runs; fetch it with enough depth (fetch-depth: 0) for the
+# queue snapshots to resolve.
 #
 # Exit 1 on the first failing check, 2 on a configuration error.
 set -euo pipefail
@@ -51,10 +61,20 @@ if [ -n "${PR:-}" ]; then
     exit 2
   fi
   echo "==> check-pr-markers (PR #$PR, base origin/$BASE, head branch $HEAD_BRANCH)"
-  if ! gh pr view "$PR" --json body -q .body > "$tmp/pr-body.md"; then
-    echo "ci: check 'check-pr-markers' failed: could not fetch the body of PR #$PR with gh" >&2
+  # Prefer the event payload (no token needed); fall back to gh when jq or the
+  # payload is missing, or the payload describes a different pull request.
+  body_from=""
+  if command -v jq >/dev/null 2>&1 && [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -r "$GITHUB_EVENT_PATH" ] \
+    && jq -e --arg pr "$PR" '.pull_request | type == "object" and has("body") and ((.number | tostring) == $pr)' "$GITHUB_EVENT_PATH" >/dev/null 2>&1; then
+    jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" > "$tmp/pr-body.md"
+    body_from="$GITHUB_EVENT_PATH"
+  elif gh pr view "$PR" --json body -q .body > "$tmp/pr-body.md"; then
+    body_from="gh pr view"
+  else
+    echo "ci: check 'check-pr-markers' failed: could not read the body of PR #$PR (no usable GITHUB_EVENT_PATH, and gh failed; the gh path needs pull-requests: read)" >&2
     exit 1
   fi
+  echo "    (body from $body_from)"
   if ! "$here/check-pr-markers.sh" --body "$tmp/pr-body.md" --base "origin/$BASE" --head HEAD --branch "$HEAD_BRANCH"; then
     echo "ci: check 'check-pr-markers' failed" >&2
     exit 1
