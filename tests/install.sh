@@ -270,12 +270,22 @@ git -C "$host" config user.name 'Host fixture'; git -C "$host" config user.email
 echo host > "$host/README.md"; git -C "$host" add README.md; git -C "$host" commit --quiet -m 'Host repository'
 upstream="$(git -C "$skill" rev-parse HEAD)"
 # Built the way `git subtree add --squash` builds it, without needing the
-# git-subtree command: the skill's tree under the prefix, and a message that
-# carries the git-subtree-dir and git-subtree-split trailers. The fetch brings
-# the upstream objects into the host, as a subtree pull does.
+# git-subtree command: a squash commit with no parent whose tree is the skill
+# at its root and whose message carries the git-subtree-dir and
+# git-subtree-split trailers, then a two-parent merge of it into the host with
+# the tree placed under the prefix and no trailer. The fetch brings the
+# upstream objects into the host, as a subtree pull does.
 git -C "$host" fetch --quiet "$skill" HEAD
-git -C "$host" read-tree --prefix=skills/docket/ -u "$upstream"
-git -C "$host" commit --quiet -m 'Add the docket skill as a subtree' -m "git-subtree-dir: skills/docket" -m "git-subtree-split: $upstream"
+subtree_squash() { # $1 upstream commit, $2 message; prints the squash commit and merges it under skills/docket
+  local squash
+  squash="$(printf '%s\n\ngit-subtree-dir: skills/docket\ngit-subtree-split: %s\n' "$2" "$1" | git -C "$host" commit-tree "$1^{tree}")"
+  git -C "$host" rm -r -q --cached skills/docket 2>/dev/null || true
+  rm -rf "$host/skills/docket"
+  git -C "$host" read-tree --prefix=skills/docket/ -u "$squash"
+  git -C "$host" update-ref HEAD "$(printf 'Merge the docket skill (%s)\n' "$2" | git -C "$host" commit-tree "$(git -C "$host" write-tree)" -p HEAD -p "$squash")"
+  git -C "$host" reset -q --hard HEAD
+}
+subtree_squash "$upstream" 'Add the docket skill'
 echo scratch > "$host/scratch.txt"
 newproj eight; p="$work/eight"
 run 0 'install from a subtree host' bash "$host/skills/docket/install.sh" "$p"
@@ -285,6 +295,15 @@ fill "$p"
 run 0 '--check from a subtree host' bash "$host/skills/docket/install.sh" --check "$p"
 grep -q 'not in this skill checkout' "$log" && { echo 'install-test: --check from a subtree host did not recognise the upstream commit' >&2; exit 1; }
 expect 'subtree host --check did not report a match' 'match the skill'
+# A later pull --squash adds a second trailer-bearing squash commit; the newest wins.
+git -C "$skill" commit --quiet --allow-empty -m 'Upstream moved on'
+upstream2="$(git -C "$skill" rev-parse HEAD)"
+git -C "$host" fetch --quiet "$skill" HEAD
+subtree_squash "$upstream2" 'Update the docket skill'
+upstream="$upstream2"
+newproj eight-b; p="$work/eight-b"
+run 0 'install from a subtree host after a pull' bash "$host/skills/docket/install.sh" "$p"
+[ "$(cut -d' ' -f1 "$p/docket/VERSION")" = "$(printf '%.12s' "$upstream2")" ] || { echo "install-test: after a second squash VERSION is $(cat "$p/docket/VERSION"), expected $upstream2" >&2; exit 1; }
 # The same host reached through a symlink: the prefix still resolves.
 ln -s "$host" "$work/hostlink"
 newproj nine; p="$work/nine"

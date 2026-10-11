@@ -44,7 +44,7 @@ ln -s ~/.claude/skills/docket ~/.codex/skills/docket
 
 Restart the agent, or start a new session, and the skill is available as `docket`.
 
-Two things follow from how it is installed. `install.sh --check` compares a project against the copy it runs from, so update the clone or pull the subtree before resyncing a project, or the project's newer files are reported as drift (the installer stops with "the installed copy is newer than this skill checkout" when it can tell). And `docket/VERSION` always names a commit of this repository: from a subtree the installer reads the upstream commit from the subtree's `git-subtree-split` trailer, so copies installed from a clone and from a subtree compare correctly. A subtree pulled without `--squash` leaves no trailer, and the installer then records the install as dirty.
+Two things follow from how it is installed. `install.sh --check` compares a project against the copy it runs from, so update the clone or pull the subtree before resyncing a project, or the project's newer files are reported as drift (the installer stops with "the installed copy is newer than this skill checkout" when it can tell). And `docket/VERSION` always names a commit of this repository: from a subtree the installer reads the upstream commit from the subtree's `git-subtree-split` trailer, so copies installed from a clone and from a subtree compare correctly. A subtree pulled without `--squash` leaves no trailer, so the installer records the last squashed commit it can find and marks the install dirty.
 
 ## Using it
 
