@@ -218,13 +218,26 @@ expect 'non-repository target was not refused' 'is not inside a git repository'
 # marker (the shape Markdown formatters produce): a project installed from the
 # unpadded template is rewritten to it with its settings kept, and the padded
 # block compares equal afterwards, extra bullets included.
+# Build both shapes from whichever the checkout ships: strip blank lines next
+# to the markers for the unpadded copy, then add exactly one for the padded one.
+cp "$skill/templates/AGENTS.md" "$work/template.orig"
+awk -v b="$begin" -v e="$end" '{ l[NR] = $0 } END {
+  for (i = 1; i <= NR; i++) {
+    if (l[i] == "" && (l[i-1] == b || l[i+1] == e)) continue
+    print l[i]
+  } }' "$work/template.orig" > "$work/unpadded.md"
+awk -v b="$begin" -v e="$end" '{ l[NR] = $0 } END {
+  for (i = 1; i <= NR; i++) {
+    if (l[i] == b) { print l[i]; if (l[i+1] != "") print ""; continue }
+    if (l[i] == e) { if (l[i-1] != "") print ""; print l[i]; continue }
+    print l[i]
+  } }' "$work/template.orig" > "$work/padded.md"
+cp "$work/unpadded.md" "$skill/templates/AGENTS.md"
 newproj six; p="$work/six"
-run 0 'install before padding the template' bash "$inst" "$p"
+run 0 'install from the unpadded template' bash "$inst" "$p"
 sed -i.bak 's/^- Concurrency cap: .*/- Concurrency cap: 3 heavy builds or runs at once./' "$p/AGENTS.md"; rm -f "$p/AGENTS.md.bak"
 fill "$p"
-awk -v b="$begin" -v e="$end" '$0 == b { print; print ""; next } $0 == e { print ""; print; next } { print }' "$skill/templates/AGENTS.md" > "$work/padded.md"
 cp "$work/padded.md" "$skill/templates/AGENTS.md"
-grep -c '^$' "$skill/templates/AGENTS.md" >/dev/null
 run 0 'rerun with the padded template' bash "$inst" "$p"
 expect 'padded template did not rewrite the section' 'rewrote the Docket section'
 l_begin="$(lineof "$p/AGENTS.md" "$begin")"; l_end="$(lineof "$p/AGENTS.md" "$end")"
