@@ -30,7 +30,7 @@ The correctness boundaries the reviewer concentrates on are listed under [What q
 | Reviewed commit | `<sha>` on main |
 | Previous review | <file> at `<sha>` / None |
 | Reviewers | <coordinator; independent agents and the areas each covered> |
-| Baseline | `bash scripts/check.sh`: <result>; `bash scripts/e2e.sh`: <result>; <other baseline commands>: <results> |
+| Baseline | `bash scripts/check.sh`: <result>; <each baseline command from the Review inputs in `docs/QUALITY.md`>: <result> |
 
 ## Summary
 ## Invariants
