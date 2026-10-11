@@ -12,7 +12,7 @@ gh api repos/{owner}/{repo}/branches/main/protection 2>/dev/null | head -c 400
 cat .pre-commit-config.yaml lefthook.yml .husky/* package.json 2>/dev/null | head -80
 ```
 
-The skill path is wherever the skill is installed; `~/.claude/skills/docket` is the Claude Code default. `--check` compares against the skill checkout it runs from, which must be at or beyond the commit in `docket/VERSION` (see [The vendored directory](#the-vendored-directory)).
+The skill path is wherever the skill is installed; `~/.claude/skills/docket` is the Claude Code default. `--check` compares against the skill checkout it runs from, which must be at or beyond the commit in `docket/VERSION` (see [The vendored directory](#the-vendored-directory)). `VERSION` always names a docket commit: from a squashed subtree the installer reads it from the subtree's `git-subtree-split` trailer, so copies installed from a subtree and from a clone of the skill compare correctly.
 
 Keep four columns as you go: what the repository's policy says, what hooks, CI and protection actually enforce, what the records prove happened and at which revision, and what you could not see (no forge access, unrun checks, undated claims). The gaps between those columns are the findings, and so is every difference `install.sh --check` reports. Then map what exists onto the records below. Preserve compatible conventions (an issue tracker instead of Markdown queues, a different area list, a different branch prefix) and keep identifiers, sources and history. Do not create a second tracker next to a working one; do not fabricate entries, reviews or acceptance claims to make files look populated. Empty sections are valid.
 

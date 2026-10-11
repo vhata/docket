@@ -259,4 +259,28 @@ newproj seven; p="$work/seven"
 run 0 'first install from the padded template' bash "$inst" "$p"
 fill "$p"
 run 0 '--check after a first install from the padded template' bash "$inst" --check "$p"
+# The skill vendored into another repository as a squashed subtree: VERSION
+# records the upstream docket commit, not the host repository's HEAD, and
+# changes elsewhere in the host do not make the skill dirty.
+host="$work/host"
+git init --quiet "$host"; git -C "$host" symbolic-ref HEAD refs/heads/main
+git -C "$host" config user.name 'Host fixture'; git -C "$host" config user.email 'host-fixture@example.invalid'
+echo host > "$host/README.md"; git -C "$host" add README.md; git -C "$host" commit --quiet -m 'Host repository'
+upstream="$(git -C "$skill" rev-parse HEAD)"
+# Built the way `git subtree add --squash` builds it, without needing the
+# git-subtree command: the skill's tree under the prefix, and a message that
+# carries the git-subtree-dir and git-subtree-split trailers. The fetch brings
+# the upstream objects into the host, as a subtree pull does.
+git -C "$host" fetch --quiet "$skill" HEAD
+git -C "$host" read-tree --prefix=skills/docket/ -u "$upstream"
+git -C "$host" commit --quiet -m 'Add the docket skill as a subtree' -m "git-subtree-dir: skills/docket" -m "git-subtree-split: $upstream"
+echo scratch > "$host/scratch.txt"
+newproj eight; p="$work/eight"
+run 0 'install from a subtree host' bash "$host/skills/docket/install.sh" "$p"
+[ "$(cut -d' ' -f1 "$p/docket/VERSION")" = "$(printf '%.12s' "$upstream")" ] || { echo "install-test: VERSION from a subtree host is $(cat "$p/docket/VERSION"), expected the upstream commit $upstream" >&2; exit 1; }
+grep -q -- '-dirty' "$p/docket/VERSION" && { echo 'install-test: an unrelated change in the host made the skill dirty' >&2; exit 1; }
+fill "$p"
+run 0 '--check from a subtree host' bash "$host/skills/docket/install.sh" --check "$p"
+grep -q 'not in this skill checkout' "$log" && { echo 'install-test: --check from a subtree host did not recognise the upstream commit' >&2; exit 1; }
+expect 'subtree host --check did not report a match' 'match the skill'
 echo 'install-test: all checks passed'

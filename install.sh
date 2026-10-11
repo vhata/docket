@@ -12,7 +12,9 @@
 #            executable (on disk, or committed as other than 100755), or an
 #            installed commit newer than this skill checkout (update the
 #            checkout before resyncing). Run it from a checkout at or beyond
-#            the commit named in docket/VERSION.
+#            the commit named in docket/VERSION. That commit is always a
+#            docket commit: from a squashed subtree the installer reads the
+#            upstream commit in the subtree's git-subtree-split trailer.
 #
 # The same command performs the first install and every later update. Files
 # present in the project's docket/ but absent from the skill are reported,
@@ -54,7 +56,7 @@ for arg in "$@"; do
   case "$arg" in
   --check) check=1 ;;
   -h | --help)
-    sed -n '2,37p' "$0"
+    sed -n '2,39p' "$0"
     exit 0
     ;;
   -*)
@@ -94,10 +96,24 @@ if [ "$top" = "$skill_top" ] || [ "$common" = "$skill_common" ]; then
 fi
 dst="$top/docket"
 
-head_sha="$(git -C "$skill" rev-parse HEAD 2>/dev/null || echo unknown)"
+# VERSION records the docket commit, not the commit of whatever repository
+# holds this copy of the skill. A squashed subtree (git subtree add --squash)
+# has commit ids of its own; the newest "git-subtree-split:" line for the
+# subtree's prefix names the upstream commit, so that is used when the skill
+# lives in a subdirectory of a larger repository, and HEAD otherwise.
+prefix=""
+[ "$skill_top" = "$skill" ] || prefix="${skill#"$skill_top"/}"
+head_sha=""
+if [ -n "$prefix" ]; then
+  head_sha="$(git -C "$skill_top" log -1 -E --grep="^git-subtree-dir: $prefix\$" --format=%b 2>/dev/null \
+    | sed -n 's/^git-subtree-split: \([0-9a-f]\{40\}\).*/\1/p' | head -1)"
+fi
+[ -n "$head_sha" ] || head_sha="$(git -C "$skill" rev-parse HEAD 2>/dev/null || echo unknown)"
 sha=unknown
-[ "$head_sha" = unknown ] || sha="$(git -C "$skill" rev-parse --short=12 HEAD)"
-if [ "$sha" != unknown ] && [ -n "$(git -C "$skill" status --porcelain 2>/dev/null)" ]; then sha="$sha-dirty"; fi
+[ "$head_sha" = unknown ] || sha="$(printf '%.12s' "$head_sha")"
+# Only changes under the skill's own directory make it dirty; a host repository
+# may carry unrelated work.
+if [ "$sha" != unknown ] && [ -n "$(git -C "$skill" status --porcelain -- . 2>/dev/null)" ]; then sha="$sha-dirty"; fi
 
 begin='<!-- docket:begin -->'
 end='<!-- docket:end -->'
