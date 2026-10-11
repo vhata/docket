@@ -8,7 +8,7 @@ PR review checks one change. A codebase review checks the properties no single c
 - `review/YYYY-MM-DD-HHMM-{full,incremental}.md`: one immutable snapshot per review, UTC timestamp. Edited after merge only to correct a factual error in the review itself. Status changes belong to the next snapshot, never to the PR that fixes a finding.
 - `review/BACKLOG.md`: the mutable queue of findings promoted into work (see queues.md).
 
-**Record the reviewed commit as a commit on the default branch.** Reviews of unmerged branches get squashed away on merge, after which the exact delta since the review cannot be read from history; `bash scripts/review-due.sh` then reports the baseline as lost and gives merge-base figures as approximations only. Never treat a merge-base diff as complete coverage. If the review must happen on a branch before landing (a release review of a stack), keep the reviewed tree retrievable (`git bundle create review/<stamp>.bundle <commit>`, or the PR's head), record the branch commit in the snapshot, and in the next PR touching the index record the squash commit on main it corresponds to, after comparing the two trees exactly (`git diff <reviewed-commit> <squash-commit>`).
+**Record the reviewed commit as a commit on the default branch.** Reviews of unmerged branches get squashed away on merge, after which the exact delta since the review cannot be read from history; `bash scripts/workflow/review-due.sh` then reports the baseline as lost and gives merge-base figures as approximations only. Never treat a merge-base diff as complete coverage. If the review must happen on a branch before landing (a release review of a stack), keep the reviewed tree retrievable (`git bundle create review/<stamp>.bundle <commit>`, or the PR's head), record the branch commit in the snapshot, and in the next PR touching the index record the squash commit on main it corresponds to, after comparing the two trees exactly (`git diff <reviewed-commit> <squash-commit>`).
 
 ## Snapshot structure
 
@@ -71,8 +71,8 @@ git ls-files | xargs wc -l | sort -rn | head               # largest files, comp
 grep -rnE 'TODO|FIXME|HACK|XXX' <source dirs>              # deferred work hiding in code instead of the queue
 grep -rnE '<lint-suppression-pattern>' <source dirs>       # #[allow(, eslint-disable, noqa, nolint: count must not drift up unexplained
 git ls-files | grep -vE '<expected extensions and paths>'   # stray files committed by accident (one repo shipped a shell error log)
-bash scripts/check-links.sh                                 # documentation link rot
-bash scripts/check-queues.sh --strict                       # queue hygiene
+bash scripts/workflow/check-links.sh                        # documentation link rot
+bash scripts/workflow/check-queues.sh --strict              # queue hygiene
 ```
 
 Add the repository's own drift checks: documented CLI flags against the parser, documented controls against the handlers, a features list against the code, plan status against what has merged, the quality doc against what hooks and CI actually run. Each is a Docs finding when it disagrees, fixed on the spot when it is a small edit.
@@ -96,6 +96,6 @@ When the fix PR lands, add the finding to the index's Pending reconciliation lis
 
 ## When a review is due
 
-`bash scripts/review-due.sh --paths "<source dirs>"` reports commits and days since the latest review, source churn since the latest full review, and a verdict. Defaults: incremental after 25 commits or 21 days or when merged PRs claim finding closures; full when inserted source lines since the last full review exceed a third of the current source; "baseline lost" when a reviewed commit is missing or no longer on main. Also reset with a full review after a large refactor, when a hot file was substantially rewritten, when most standing findings are closed and a clean baseline is wanted, or when two consecutive incremental reviews each added many findings.
+`bash scripts/workflow/review-due.sh --paths "<source dirs>"` reports commits and days since the latest review, source churn since the latest full review, and a verdict. Defaults: incremental after 25 commits or 21 days or when merged PRs claim finding closures; full when inserted source lines since the last full review exceed a third of the current source; "baseline lost" when a reviewed commit is missing or no longer on main. Also reset with a full review after a large refactor, when a hot file was substantially rewritten, when most standing findings are closed and a clean baseline is wanted, or when two consecutive incremental reviews each added many findings.
 
 Two of the studied repositories had let reviews lapse past every one of these triggers, with 95 commits and more than half the source added since the only review in one case. Put the review-due script in the scheduled main-validation workflow so the lapse is reported, and treat its verdict as a prompt for a review PR, never as licence to start fixing.

@@ -48,7 +48,7 @@ PRs, stacking, landing and cleanup are in [pr-and-landing](references/pr-and-lan
 
 ## The unit of work, start to finish
 
-Script paths below are the in-repo install paths (`scripts/workflow/`); from the skill directory itself drop `workflow/`.
+Script paths below are the installed paths (`scripts/workflow/`), the only ones agents and CI use; the skill's own `scripts/` copies are for install and audit only (see Bundled tools).
 
 1. **Select.** Follow the user's selection, or take the highest-priority unclaimed entry from the named queue in its Ready section. Never switch queues or stages because the requested one is empty; report that instead.
 2. **Check claims.** `bash scripts/workflow/claim-check.sh <slug>` (open and merged PRs, branches, worktrees, mapped findings). A matching branch or worktree is a provisional claim. Overlap means stop and coordinate, not race.
@@ -80,7 +80,7 @@ Under an autonomy grant without push authority, work lands on local branches wit
 
 ## Bundled tools
 
-All scripts are portable shell (bash 3.2) and need only git, plus `gh` where PRs are involved. Run them with `bash scripts/<name>.sh` from the skill directory. On install they are copied into the repository as `scripts/workflow/<name>.sh`, which is the path the templates and the repository's guides use, so agents without this skill run the same tools.
+All scripts are portable shell (bash 3.2) and need only git, plus `gh` where PRs are involved. In an installed repository run them as `bash scripts/workflow/<name>.sh`; the install copies them there, and that is the path the templates, the repository's guides and CI use, so agents without this skill run the same tools. The skill's own `scripts/<name>.sh` copies are used only during install or audit, before the installed copies exist or while they are being checked: run them from inside the target repository by their path in the skill directory (`bash <skill-dir>/scripts/check-queues.sh --strict`). Never `cd` into the skill directory to run them; every script acts on the repository of the current directory, and the skill directory may itself be a git repository.
 
 | Script | Purpose |
 | --- | --- |
