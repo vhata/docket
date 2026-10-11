@@ -12,6 +12,10 @@
 #   --exclude-branch NAME  the same exclusion for a named local branch
 # A remote ref or PR with the same branch name but commits you do not have (or
 # from a fork) is another worker's claim and is still reported.
+# A branch, worktree or PR head branch counts when its last path component is
+# the slug (todo/<slug>, origin/fix/<slug>, <slug>); a longer name that merely
+# contains the slug does not. A PR body counts when a marker line names the slug.
+# Slugs are lowercase kebab-case ([a-z0-9-]); anything else is rejected.
 # Exit 1 when any claim or prior completion is found, 0 when all are free, 2
 # when a forge query fails (ownership is then unverified).
 # Needs git; uses gh when available and says so when it is not.
@@ -19,7 +23,7 @@ set -euo pipefail
 
 root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$root"
-usage() { sed -n '2,18p' "$0"; exit 2; }
+usage() { sed -n '2,21p' "$0"; exit 2; }
 self=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -99,23 +103,28 @@ fail_query() { echo "claim-check: hosted PR query failed; ownership remains unve
 claims=0
 for requested in "$@"; do
   for slug in $(expand "$requested"); do
+    # The slug is interpolated into jq programs and regular expressions below;
+    # only kebab-case is safe there, and only kebab-case is a valid slug.
+    echo "$slug" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || { echo "claim-check: slug '$slug' is not lowercase kebab-case" >&2; exit 2; }
     [ "$slug" = "$requested" ] && label="$slug" || label="$slug (finding mapped by $requested)"
     echo "== $label"
     if [ "$have_gh" -eq 1 ]; then
       # Paginate the forge's pull records directly: search does not index head
       # branches, and indexing delays must not hide a freshly published claim.
-      # Open PRs: a claim is a body marker naming the slug or a head branch containing it; a bare mention is only a note.
+      # Open PRs: a claim is a body marker naming the slug or a head branch whose
+      # last path component is the slug; a bare mention is only a note.
       claim_re="(Claims|Resolves|Partially resolves|Remaining|Files) (TODO|review backlog|review finding|roadmap): $slug(\$|[^a-z0-9-])"
+      head_re="(^|/)$slug\$"
       claimsline="$(gh api --paginate 'repos/{owner}/{repo}/pulls?state=open&per_page=100' \
-        --jq ".[] | select((((.body // \"\") | test(\"$claim_re\")) or (.head.ref | contains(\"$slug\")))) | $own_pre\"  open PR #\\(.number) [\\(if .draft then \"draft\" else \"ready\" end)] \\(.head.ref): \\(.title)\"$own_post" | drop_own || fail_query)"
+        --jq ".[] | select((((.body // \"\") | test(\"$claim_re\")) or (.head.ref | test(\"$head_re\")))) | $own_pre\"  open PR #\\(.number) [\\(if .draft then \"draft\" else \"ready\" end)] \\(.head.ref): \\(.title)\"$own_post" | drop_own || fail_query)"
       if [ -n "$claimsline" ]; then echo "$claimsline"; claims=$((claims + 1)); fi
       mentions="$(gh api --paginate 'repos/{owner}/{repo}/pulls?state=open&per_page=100' \
-        --jq ".[] | select(((.title | contains(\"$slug\")) or ((.body // \"\") | contains(\"$slug\"))) and (((((.body // \"\") | test(\"$claim_re\")) or (.head.ref | contains(\"$slug\"))) | not))) | $own_pre\"  note: open PR #\\(.number) mentions this slug: \\(.title)\"$own_post" | drop_own || fail_query)"
+        --jq ".[] | select(((.title | contains(\"$slug\")) or ((.body // \"\") | contains(\"$slug\"))) and (((((.body // \"\") | test(\"$claim_re\")) or (.head.ref | test(\"$head_re\"))) | not))) | $own_pre\"  note: open PR #\\(.number) mentions this slug: \\(.title)\"$own_post" | drop_own || fail_query)"
       [ -n "$mentions" ] && echo "$mentions"
       # Merged PRs: already resolved when a merged body resolves the slug or its head branch carried it.
       done_re="(Resolves|Partially resolves) (TODO|review backlog|review finding|roadmap): $slug(\$|[^a-z0-9-])"
       done_line="$(gh api --paginate 'repos/{owner}/{repo}/pulls?state=closed&per_page=100' \
-        --jq ".[] | select(.merged_at != null and ((((.body // \"\") | test(\"$done_re\")) or (.head.ref | contains(\"$slug\"))))) | \"  merged PR #\\(.number) (\\(.merged_at[0:10])) resolved or carried this slug: \\(.title)\"" || fail_query)"
+        --jq ".[] | select(.merged_at != null and ((((.body // \"\") | test(\"$done_re\")) or (.head.ref | test(\"$head_re\"))))) | \"  merged PR #\\(.number) (\\(.merged_at[0:10])) resolved or carried this slug: \\(.title)\"" || fail_query)"
       if [ -n "$done_line" ]; then echo "$done_line"; echo "  -> confirm the queue entry is still current (a remainder may have been filed) before claiming"; claims=$((claims + 1)); fi
     fi
     # Branches whose last path component is the slug (todo/<slug>, origin/fix/<slug>, <slug>).

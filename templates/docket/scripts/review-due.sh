@@ -2,7 +2,10 @@
 # Report how far the codebase has moved since the last recorded codebase
 # review and say whether an incremental or full review is due.
 #
-# Usage: docket/scripts/review-due.sh [--index review/README.md] [--paths "src crates"] [--base main]
+# Usage: docket/scripts/review-due.sh [--index review/README.md] [--paths "src crates"] [--base HEAD]
+#   --base defaults to HEAD, the checked-out commit, so the report describes
+#   the tree CI or a reviewer is looking at; pass --base main to measure the
+#   landed history instead.
 #
 # Reads the review index for the latest review and the latest FULL review
 # (first table rows with a backticked commit), measures commits, changed files
@@ -10,6 +13,9 @@
 # full review so that frequent incrementals cannot hide cumulative change.
 # A reviewed commit that is missing or not an ancestor of the base is reported
 # as a lost baseline; figures are then merge-base approximations only.
+# Current source lines count tracked files under --paths (or everything) minus
+# docs, lockfiles, queue files, .svg/.png/.jpg, and any file grep -I reports as
+# binary (fonts, icons, archives), so assets never inflate the denominator.
 # Thresholds (override with environment variables):
 #   REVIEW_DUE_COMMITS=25     commits since last review -> incremental due
 #   REVIEW_DUE_DAYS=21        days since last review    -> incremental due
@@ -26,7 +32,7 @@ while [ $# -gt 0 ]; do
     --index) index="$2"; shift 2 ;;
     --paths) paths="$2"; shift 2 ;;
     --base) base="$2"; shift 2 ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "review-due: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -89,11 +95,20 @@ fi
 src_files="$(echo "$list" | grep -Ev '(^|/)(docs|review|plans|\.github)/|\.md$|\.lock$|lock\.(json|yaml)$|\.sum$|\.svg$|\.png$|\.jpg$' || true)"
 src_lines=0
 if [ -n "$src_files" ]; then
-  # Count only files present in the working tree: a tracked file deleted or
-  # replaced locally must not abort the report.
-  missing="$(echo "$src_files" | while IFS= read -r f; do [ -f "$f" ] || echo x; done | wc -l | tr -d ' ')"
+  # Classify each file once: a tracked file deleted or replaced locally must
+  # not abort the report, and a binary file (grep -I; an empty file is text)
+  # must not count as source lines.
+  missing=0; binary=0; present=""
+  while IFS= read -r f; do
+    if [ ! -f "$f" ]; then missing=$((missing + 1))
+    elif [ -s "$f" ] && ! grep -Iq '' "$f" 2>/dev/null; then binary=$((binary + 1))
+    else present="$present$f
+"
+    fi
+  done <<< "$src_files"
   [ "$missing" -eq 0 ] || echo "note: $missing tracked source file(s) are missing from the working tree; current source lines count only the files present"
-  src_lines="$(echo "$src_files" | while IFS= read -r f; do [ -f "$f" ] && printf '%s\0' "$f"; done | { xargs -0 cat 2>/dev/null || true; } | wc -l | tr -d ' ')"
+  [ "$binary" -eq 0 ] || echo "note: $binary binary file(s) skipped (fonts, icons, archives); current source lines count text files only"
+  [ -z "$present" ] || src_lines="$(printf '%s' "$present" | while IFS= read -r f; do printf '%s\0' "$f"; done | { xargs -0 cat 2>/dev/null || true; } | wc -l | tr -d ' ')"
 fi
 # grep exits 1 when no source file changed; under pipefail that would abort the script.
 churn_since() {
