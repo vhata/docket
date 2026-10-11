@@ -39,6 +39,15 @@ set -euo pipefail
 
 skill="$(cd "$(dirname "$0")" && pwd)"
 src="$skill/templates/docket"
+
+# Drift is shown with colordiff when it is installed and the output is a
+# terminal; otherwise with diff, so logs and pipes stay plain. Either way the
+# exit status is diff's.
+if command -v colordiff >/dev/null 2>&1 && [ -t 1 ]; then
+  show_diff() { colordiff "$@"; }
+else
+  show_diff() { diff "$@"; }
+fi
 check=0
 target=""
 for arg in "$@"; do
@@ -201,7 +210,7 @@ if [ "$check" -eq 1 ]; then
       echo "install: the installed commit ($installed) and this skill checkout ($sha) have diverged; comparing the files anyway" >&2
     fi
   fi
-  diff -u -r -x VERSION "$src" "$dst" || status=1
+  show_diff -u -r -x VERSION "$src" "$dst" || status=1
   # diff -r ignores modes; start-work.sh runs claim-check.sh directly, so a
   # lost executable bit is drift too, on disk and in the committed mode.
   for f in "$dst"/scripts/*.sh; do
@@ -218,7 +227,7 @@ if [ "$check" -eq 1 ]; then
   if agents_state; then
     block "$agents" >"$tmp/have"
     expected "$tmp/have" >"$tmp/want"
-    diff -u --label "expected Docket section" --label "$agents" "$tmp/want" "$tmp/have" || status=1
+    show_diff -u --label "expected Docket section" --label "$agents" "$tmp/want" "$tmp/have" || status=1
     unfilled "$tmp/have" >"$tmp/unfilled"
     if [ -s "$tmp/unfilled" ]; then
       echo "install: settings not filled in $agents: $(paste -sd, "$tmp/unfilled" | sed 's/,/, /g')" >&2
