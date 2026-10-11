@@ -80,6 +80,7 @@ bash docket/scripts/check-queues.sh --strict      # validate TODO.md and review/
 bash docket/scripts/claim-check.sh <slug>         # who already claims this entry?
 bash docket/scripts/start-work.sh <queue> <slug>  # branch + worktree for a task
 bash docket/scripts/check-pr-markers.sh --pr N    # validate Claims/Resolves markers on a PR
+bash docket/scripts/pr-labels.sh --pr N --apply   # label a PR by type, queue, area and priority
 bash docket/scripts/review-due.sh                 # is a review due?
 bash docket/scripts/cleanup-landed.sh --apply     # remove worktrees and branches for merged PRs
 bash docket/scripts/check-links.sh                # relative Markdown links resolve

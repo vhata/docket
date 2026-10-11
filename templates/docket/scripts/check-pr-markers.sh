@@ -28,6 +28,10 @@
 #   Claims review finding: <slug>          Resolves review finding: <slug>
 #   Claims roadmap: <slug>                 Resolves roadmap: <slug>
 #
+# Change type (exactly one per description, same placement rules; missing is
+# a warning, malformed or repeated an error):
+#   Type: feature | fix | refactor | perf | docs | test | tooling | review
+#
 # Exit 1 on any error. Portable to bash 3.2.
 set -euo pipefail
 
@@ -47,7 +51,7 @@ while [ $# -gt 0 ]; do
     --todo) todo="$2"; shift 2 ;;
     --backlog) backlog="$2"; shift 2 ;;
     --branch) branch="$2"; shift 2 ;;
-    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,35p' "$0"; exit 0 ;;
     *) echo "check-pr-markers: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -137,6 +141,27 @@ grep -Ei '^[*_` ]*(claims|resolves|partially resolves|remaining|files)[*_` ]*(to
 while IFS= read -r line; do
   [ -n "$line" ] && err "malformed marker \"$line\" (exact form: \"Resolves TODO: my-slug\"; one slug per line, nothing after the slug, no backticks or bold; put explanations in the prose above)"
 done < "$tmp/nearmiss"
+
+# The change type: one "Type: <kind>" line, which pr-labels.sh turns into a
+# type: label and the squash commit keeps in the history. Missing is a
+# warning; a malformed or repeated line is an error. Keep the kinds in step
+# with pr-labels.sh.
+types_re='feature|fix|refactor|perf|docs|test|tooling|review'
+grep -Ex "Type: ($types_re)" "$tmp/body.clean" > "$tmp/types" || true
+# Near misses: a line that starts with "Type:" in any case or emphasis but is
+# not exact, or a list item, quote or bold form naming one of the kinds.
+{ grep -Ei '^[*_]*type[*_]*:' "$tmp/body.clean" || true
+  grep -Ei "^[[:space:]]*(([-+*]|[0-9]+[.)])[[:space:]]+|>[[:space:]]*)+[*_]*type[*_]*:[*_ ]*($types_re)([^a-z]|\$)" "$tmp/body.clean" || true
+} | { grep -Exv "Type: ($types_re)" || true; } > "$tmp/badtypes"
+while IFS= read -r line; do
+  [ -n "$line" ] && err "malformed type line \"$line\" (exact form: \"Type: fix\", at the start of the line, one of: ${types_re//|/, })"
+done < "$tmp/badtypes"
+ntypes="$(wc -l < "$tmp/types" | tr -d ' ')"
+if [ "$ntypes" -gt 1 ]; then
+  err "$ntypes Type lines; a pull request does one kind of thing, so it carries one"
+elif [ "$ntypes" -eq 0 ] && [ ! -s "$tmp/badtypes" ]; then
+  warn "no \"Type: <kind>\" line (one of: ${types_re//|/, }); pr-labels.sh cannot label the kind of change"
+fi
 
 if [ ! -s "$tmp/markers" ]; then
   [ -n "$branch" ] || branch="$(git rev-parse --abbrev-ref "$head" 2>/dev/null || true)"

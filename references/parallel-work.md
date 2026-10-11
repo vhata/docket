@@ -91,7 +91,7 @@ Which mode is in force is said at the top of the session and written to the audi
 | Fan-out with PRs ("put PRs up while I'm away") | yes | yes | user | ready PRs, one per item, plus a summary |
 | Unattended without push authority ("I'm going to bed") | no | no | no | local branches, `.docket/pr-<slug>.md` bodies, `.docket/AUDIT.md`, a report |
 
-In the unattended mode, claims are not globally visible. Say so in the audit log. Stack dependent plan steps branch on branch rather than waiting for merges, and record the merge order in the report. Publishing in the morning is one command per branch: `git push -u origin <branch> && gh pr create --head <branch> --title "<title>" --body-file .docket/pr-<slug>.md`.
+In the unattended mode, claims are not globally visible. Say so in the audit log. Stack dependent plan steps branch on branch rather than waiting for merges, and record the merge order in the report. Publishing in the morning is one command per branch: `git push -u origin <branch> && gh pr create --head <branch> --title "<title>" --body-file .docket/pr-<slug>.md && bash docket/scripts/pr-labels.sh --pr <branch> --apply`.
 
 ### Audit log
 

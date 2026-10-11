@@ -55,6 +55,11 @@ reject() {
   fi
 }
 
+expect() {
+  # expect LABEL TEXT: the last pass() output must contain TEXT.
+  grep -Fq "$2" "$fixture/result.log" || { echo "scripts-test: $1" >&2; cat "$fixture/result.log" >&2; exit 1; }
+}
+
 # check-pr-markers.sh
 cat > TODO.md <<'QUEUE'
 # TODO
@@ -147,6 +152,116 @@ printf '## Why\n\nPartial work.\n\nPartially resolves TODO: original-task\nRemai
 reject 'remainder that existed at base' 'already existed at' bash "$markers" --body body.md --base "$partial_base" --head HEAD --branch todo/original-task
 printf '## Why\n\nPartial work without a remainder marker.\n\nPartially resolves TODO: original-task\n' > body.md
 reject 'partial resolution without a Remaining marker' 'has no matching "Remaining TODO:' bash "$markers" --body body.md --base "$partial_base" --head HEAD --branch todo/original-task
+
+# The change-type line: missing warns, exact passes, near misses and
+# repeats fail, and prose that merely mentions a type: label is not a near miss.
+printf '## Why\n\nNo type.\n' > body.md
+pass 'missing type line' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
+expect 'missing type line was not warned' 'no "Type: <kind>" line'
+printf '## Why\n\nTyped.\n\n- `type:` labels are mentioned in prose\n\nType: refactor\n' > body.md
+pass 'exact type line' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
+grep -Fq 'Type: <kind>' "$fixture/result.log" && { echo 'scripts-test: exact type line was warned as missing' >&2; exit 1; }
+for item in 'Type: Feature' 'type: fix' '**Type:** fix' '- Type: fix' '> Type: docs' 'Type: fix.' 'Type: chore'; do
+  printf '## Why\n\nNear miss.\n\n%s\n' "$item" > body.md
+  reject "type near miss $item" 'malformed type line' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
+done
+printf '## Why\n\nTwo kinds.\n\nType: fix\nType: docs\n' > body.md
+reject 'two type lines' '2 Type lines' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
+
+# pr-labels.sh: labels from the branch, the type line and the claimed or
+# resolved entries, looked up at base and then at head.
+labels="docket/scripts/pr-labels.sh"
+cat > TODO.md <<'QUEUE'
+# TODO
+
+## Ready for separate work
+
+### P1 High
+
+- [CORE] `urgent-task` **Do the urgent thing.**
+  - Source: scripts regression fixture
+
+### Unprioritized
+
+- [DOCS] `loose-task` **Write it down.**
+  - Source: scripts regression fixture
+
+## Needs triage
+
+### P0 Critical
+
+- [TOOLS] `triage-task` **Look into it.**
+  - Source: scripts regression fixture
+QUEUE
+cat > review/BACKLOG.md <<'QUEUE'
+# Review backlog
+
+## P3 Low
+
+- [UI_KIT] `backlog-fix` **Fix the reviewed thing.**
+  - Source: scripts regression fixture
+  - Findings: `some-finding`
+QUEUE
+git add TODO.md review/BACKLOG.md
+git commit --quiet -m 'Label fixture base'
+labels_base="$(git rev-parse HEAD)"
+awk '/`urgent-task`/ { skip = 2 } skip > 0 { skip--; next } { print }' TODO.md > TODO.next && mv TODO.next TODO.md
+printf -- '- [WEB] `filed-here` **Filed in the same PR.**\n  - Source: scripts regression fixture\n' >> TODO.md
+git add TODO.md
+git commit --quiet -m 'Label fixture head'
+labels_are() {
+  # labels_are LABEL "WANTED LABELS" CMD...: stdout must be exactly the labels.
+  label="$1"; want="$2"; shift 2
+  "$@" > "$fixture/result.log" 2> "$fixture/stderr.log" || { echo "scripts-test: $label unexpectedly failed" >&2; cat "$fixture/stderr.log" >&2; exit 1; }
+  printf '%s\n' "$want" | tr ' ' '\n' > "$fixture/want.txt"
+  diff -u "$fixture/want.txt" "$fixture/result.log" > /dev/null 2>&1 || { echo "scripts-test: $label labelled wrongly" >&2; diff -u "$fixture/want.txt" "$fixture/result.log" >&2; exit 1; }
+}
+printf '## Why\n\nQueued work.\n\nType: feature\nResolves TODO: urgent-task\nClaims TODO: loose-task\n' > body.md
+labels_are 'labels for resolved and claimed entries' 'docket type:feature queue:todo area:core area:docs priority:p1' \
+  bash "$labels" --body body.md --base "$labels_base" --head HEAD --branch todo/loose-task
+printf '## Why\n\nA reviewed fix.\n\nClaims review backlog: backlog-fix\nClaims review finding: some-finding\n' > body.md
+labels_are 'labels for a fix branch without a type line' 'docket type:fix queue:review area:ui_kit priority:p3' \
+  bash "$labels" --body body.md --base "$labels_base" --head HEAD --branch fix/backlog-fix
+printf '## Why\n\nTriage spike.\n\n<!-- Claims TODO: urgent-task -->\nType: refactor\nClaims TODO: triage-task\nClaims TODO: filed-here\nFiles TODO: loose-task\n' > body.md
+labels_are 'labels ignore comments and Files markers, read head-only entries' 'docket type:refactor queue:todo area:tools area:web priority:p0' \
+  bash "$labels" --body body.md --base "$labels_base" --head HEAD --branch todo/triage-task
+printf '## Why\n\nDirect request.\n\nType: docs\n' > body.md
+labels_are 'labels for directly requested work' 'docket type:docs' \
+  bash "$labels" --body body.md --base "$labels_base" --head HEAD --branch task/direct
+printf '## Why\n\nNo type.\n\nClaims roadmap: big-theme\n' > body.md
+labels_are 'labels without a type line' 'docket queue:roadmap' \
+  bash "$labels" --body body.md --base "$labels_base" --head HEAD --branch roadmap/big-theme
+grep -Fq 'no "Type: <kind>" line' "$fixture/stderr.log" || { echo 'scripts-test: pr-labels did not warn about the missing type line' >&2; exit 1; }
+reject 'pr-labels --apply without --pr' 'needs --pr' bash "$labels" --body body.md --apply
+
+# --apply against a fake forge: creates only missing labels, adds what applies,
+# removes stale labels of the managed forms and leaves every other label alone.
+cat > bin/gh <<'GH'
+#!/usr/bin/env bash
+echo "$*" >> "$FIXTURE_GH_LOG"
+case "$1 $2" in
+  'pr view')
+    case "$5" in
+      body) cat "$FIXTURE_BODY" ;;
+      baseRefName,headRefName) echo 'main todo/loose-task' ;;
+      labels) printf 'docket\ntype:fix\narea:old\nbug\npriority:high\n' ;;
+      *) exit 2 ;;
+    esac ;;
+  'label list') printf 'docket\nbug\ntype:feature\n' ;;
+  'label create'|'pr edit') exit 0 ;;
+  *) exit 2 ;;
+esac
+GH
+chmod +x bin/gh
+printf '## Why\n\nQueued work.\n\nType: feature\nResolves TODO: urgent-task\nClaims TODO: loose-task\n' > body.md
+: > gh.log
+pass 'pr-labels --apply' env PATH="$fixture/bin:$PATH" FIXTURE_BODY="$fixture/body.md" FIXTURE_GH_LOG="$fixture/gh.log" \
+  bash "$labels" --pr 7 --apply --base "$labels_base" --head HEAD
+created="$(grep '^label create' gh.log | awk '{ print $3 }' | paste -sd' ' -)"
+[ "$created" = 'queue:todo area:core area:docs priority:p1' ] || { echo "scripts-test: pr-labels created the wrong labels: $created" >&2; exit 1; }
+grep -qx 'pr edit 7 --add-label type:feature,queue:todo,area:core,area:docs,priority:p1 --remove-label type:fix,area:old' gh.log \
+  || { echo 'scripts-test: pr-labels edited the PR wrongly' >&2; cat gh.log >&2; exit 1; }
+expect 'pr-labels did not report the removal' 'removed type:fix, area:old'
 
 # check-queues.sh
 cat > TODO.md <<'QUEUE'
@@ -341,10 +456,6 @@ head="$(git rev-parse HEAD)"
 printf '| Date | Type | Commit |\n| 2026-10-06 | full | `%s` |\n' "$head" > review-index.md
 rm src/deleted.sh
 pass 'deleted tracked source' bash "$due" --index review-index.md --base "$head"
-expect() {
-  # expect LABEL TEXT: the last pass() output must contain TEXT.
-  grep -Fq "$2" "$fixture/result.log" || { echo "scripts-test: $1" >&2; cat "$fixture/result.log" >&2; exit 1; }
-}
 expect 'deleted tracked source gave the wrong verdict' 'verdict: no review due'
 expect 'deleted tracked source was not reported' 'note: 1 tracked source file(s) are missing'
 expect 'deleted tracked source miscounted lines' 'against 2 current source lines'
