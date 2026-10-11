@@ -90,7 +90,7 @@ All scripts are portable shell (bash 3.2) and need only git, plus `gh` where PRs
 | `claim-check.sh [--self] <slug>...` | Finds existing claims across PRs, branches and worktrees, following backlog findings. `--self` is the recheck from inside the claimed worktree: it ignores the worker's own branch and pushed copy but not another worker's. |
 | `start-work.sh <queue> <slug>` | Claim check, then branch plus worktree with the repository's naming. |
 | `review-due.sh [--paths ...]` | Reads the review index, measures drift since the reviewed commit, says whether an incremental or full review is due. |
-| `cleanup-landed.sh [--apply] [--empty]` | Removes worktrees and branches whose PRs merged, and empty harness placeholder branches. Dry run by default. |
+| `cleanup-landed.sh [--apply] [--empty] [--discard-ignored]` | Removes worktrees and branches whose PRs merged, and empty harness placeholder branches. Known caches (build and tool output, by name) never hold a worktree back; other ignored files do unless `--discard-ignored` is passed. Dry run by default. |
 | `check-links.sh` | Relative Markdown links resolve. Cheap drift catcher for hooks or CI. |
 
 ## Red flags

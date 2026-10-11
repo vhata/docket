@@ -94,7 +94,7 @@ kinds of content:
 | `scripts/check-links.sh` | Checks that relative Markdown links, images and `#anchors` resolve to existing files and headings. |
 | `scripts/claim-check.sh` | Looks for existing claims on a slug: open and merged pull requests (a body marker, or a head branch whose last path component is the slug), branches and worktrees. `--self` rechecks from inside the claimed worktree, ignoring the worker's own branch. |
 | `scripts/start-work.sh` | Runs the claim check, then creates the `<queue>/<slug>` branch and its worktree. |
-| `scripts/cleanup-landed.sh` | Removes branches and worktrees whose pull requests have merged; a dry run unless `--apply` is given. |
+| `scripts/cleanup-landed.sh` | Removes branches and worktrees whose pull requests have merged; a dry run unless `--apply` is given. Known caches in a worktree are discarded with it; other ignored files hold it back unless `--discard-ignored` is given. |
 | `scripts/review-due.sh` | Measures movement since the last recorded codebase review and says whether an incremental or full review is due; binary assets are not counted as source. |
 
 Run the scripts from anywhere inside the project as
