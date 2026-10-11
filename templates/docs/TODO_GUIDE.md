@@ -4,7 +4,7 @@ Read when an idea surfaces during work, or when adding, selecting, claiming, mov
 
 ## Scope decision
 
-Work required for the requested outcome, its correctness or its verification stays in the current branch. A separately shippable feature, refactor, optimisation or polish item is a follow-up: write the entry first (with the evidence and trade-offs discussed so far), add `Files TODO: <slug>` to the PR body, and continue the original task. Pulling the entry forward is a separate decision, normally the user's. An unrelated P0 (data loss, security exposure, release blocker) is recorded, reported prominently, and work pauses for direction.
+Work required for the requested outcome, its correctness or its verification stays in the current branch. A separately shippable feature, refactor, optimisation or polish item is a follow-up: write the entry first (with the evidence and trade-offs discussed so far), add `Files TODO: <slug>` to the PR body when the entry was added on the branch (an entry committed directly to `main` takes no marker), and continue the original task. Pulling the entry forward is a separate decision, normally the user's. An unrelated P0 (data loss, security exposure, release blocker) is recorded, reported prominently, and work pauses for direction.
 
 ## Entry format
 

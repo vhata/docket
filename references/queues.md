@@ -33,7 +33,7 @@ When an idea, improvement, bug or alternative surfaces, from the user or from in
 
 1. Search all queues for an existing entry (`grep -rn "keyword" TODO.md review/BACKLOG.md`); update rather than duplicate.
 2. Write the entry first, with `Source:` and the evidence gathered so far, before asking whether to do it now. The in-conversation trade-off is the most valuable thing to preserve.
-3. Add `Files TODO: <slug>` to the current PR body so the capture is auditable; a follow-up mentioned only in PR prose went missing from the queue in one repository.
+3. If the entry was added on the current branch, add `Files TODO: <slug>` to the PR body so the capture is auditable; a follow-up mentioned only in PR prose went missing from the queue in one repository. If the entry was instead committed directly to `main` (see [pr-and-landing](pr-and-landing.md#direct-to-main)), use no marker; the validator warns when `Files TODO` names an entry that already exists at the base.
 4. Continue the original task. Pulling the entry forward is a second, deliberate decision, normally the user's.
 
 Exceptions: work required for the requested outcome, its correctness or its verification stays in scope without a queue entry. An unrelated P0 is recorded, reported prominently, and work pauses for direction.
