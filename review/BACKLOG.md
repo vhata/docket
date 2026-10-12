@@ -39,7 +39,7 @@ Only work promoted from whole-codebase reviews belongs here. Every entry is read
 - [SCRIPTS] `marker-body-cleaning` — **The PR body cleaning in `check-pr-markers.sh` and `pr-labels.sh` hides only what GitHub hides, and the near-miss rule leaves wrapped prose alone.** An inline `<!--` hides later markers, a fenced Validation section counts as empty, and ordinary wrapped prose fails as a malformed marker.
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
   - Starting point: The shared awk at `check-pr-markers.sh:113-130` and `pr-labels.sh:101-118`; keep the two copies identical.
-  - Findings: `validation-section-blind-to-fenced-content`, `unterminated-comment-opener-swallows-body`, `near-miss-marker-rule-flags-wrapped-prose`, `four-backtick-fences-not-recognised`, `trailing-whitespace-fails-markers`, `pr-labels-comment-fixture-vacuous`
+  - Findings: `validation-section-blind-to-fenced-content`, `unterminated-comment-opener-swallows-body`, `near-miss-marker-rule-flags-wrapped-prose`, `four-backtick-fences-not-recognised`, `trailing-whitespace-fails-markers`, `comment-fixtures-vacuous`
 
 - [SCRIPTS] `marker-rule-fixtures` — **Every base/head rule in `check-pr-markers.sh` and every path in `ci.sh` has a fixture that fails without it, and each partial resolution names its own remainder.** Mutation testing removed most of these rules without a failure.
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
