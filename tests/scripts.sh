@@ -308,6 +308,9 @@ expect 'cross-repository references were not accepted' 'no errors'
 printf '  - Related: `missing-local`\n' >> TODO.md
 reject 'local related still checked' 'Related slug `missing-local` is not in any queue' bash "$queues" --strict
 cp local-todo.md TODO.md
+printf '  - Blocked by: `other-repo:upstream-fix` and `missing-local`\n' >> TODO.md
+reject 'local blocker still checked' 'depends on `missing-local` which is not in any queue' bash "$queues" --strict
+cp local-todo.md TODO.md
 printf '  - Depends on: `other-repo:upstream-fix`\n' >> TODO.md
 reject 'cross-repository dependency' 'in another repository' bash "$queues" --strict
 cp local-todo.md TODO.md
