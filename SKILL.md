@@ -7,7 +7,7 @@ description: Use when adopting, repairing, auditing or comparing a repository's 
 
 A project run this way answers four questions from its own files at any moment: what is being worked on, what is ready to work on, what was decided, and what is known to be broken. Everything below exists to keep those answers true while many agents work at once.
 
-**Core principle:** every unit of work is a branch, a worktree, a draft PR with an exact claim, an independent review, and a cleanup. Every idea that is not that unit of work goes into a queue, immediately, and the current work continues. Two things go straight to `main` without a branch: documentation that records work to be done (queue entries, triage, plans), and housekeeping metadata files when the user says so for that case; see [pr-and-landing](references/pr-and-landing.md#direct-to-main).
+**Core principle:** every unit of work is a branch, a worktree, a draft PR with an exact claim, an independent review, and a cleanup. Every idea that is not that unit of work goes into a queue, immediately, and the current work continues. Two things may go straight to `main` without a branch: documentation that records work to be done (queue entries, triage, plans, design specs; these may also ride along in whatever PR they came up in, which does not then do that work), and housekeeping metadata files when the user says so for that case; see [pr-and-landing](references/pr-and-landing.md#direct-to-main).
 
 The repository's own `AGENTS.md` and guides win wherever they exist and are what an agent reads for everyday work; this skill is for the operations below, and for installing those guides where they are missing (see `references/setup.md`). Loading it for an ordinary implementation task in an already-set-up repository spends context on rules the repository already states.
 
@@ -74,7 +74,7 @@ Autonomy grants cover implementation. Which other actions need the user's word, 
 | Release tag, deploy, publish | Yes, in that turn or the one before, even under "go wild" |
 | Change CI, branch protection, hooks policy | Yes |
 | Delete a branch with unmerged commits, remove a dirty worktree | Yes |
-| Commit directly to main | Work-recording documentation (TODO entries, triage, plans): normal. Housekeeping metadata such as `.git-blame-ignore-revs`: only when the user says so for that case. Nothing else; pushing the commit follows the session's push authority |
+| Commit directly to main | Work-recording documentation (TODO entries, triage, plans, design specs): normal. Housekeeping metadata such as `.git-blame-ignore-revs`: only when the user says so for that case. Nothing else; pushing the commit follows the session's push authority |
 
 Under an autonomy grant without push authority, work lands on local branches with the finished PR body saved to `.docket/pr-<slug>.md` and every load-bearing decision appended to `.docket/AUDIT.md` with an undo line. See [parallel-work](references/parallel-work.md#autonomy-modes).
 

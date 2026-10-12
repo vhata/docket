@@ -34,8 +34,10 @@
 # Warnings (never failures): docs/QUALITY.md without a '## Review inputs'
 # heading, which the vendored review guide links; files of the hand-copied
 # layout that preceded docket/ (scripts/workflow/, docs/TODO_GUIDE.md,
-# docs/CODE_REVIEW_GUIDE.md). A stale '.feral/' line in .git/info/exclude is
-# removed on install.
+# docs/CODE_REVIEW_GUIDE.md); a docs/superpowers/ directory, or a bullet in
+# the Docket section naming it, since plans and design specs live in plans/
+# and docs/specs/. Nothing is moved. A stale '.feral/' line in
+# .git/info/exclude is removed on install.
 # Exit 2 on usage errors. Portable to bash 3.2.
 set -euo pipefail
 
@@ -56,7 +58,7 @@ for arg in "$@"; do
   case "$arg" in
   --check) check=1 ;;
   -h | --help)
-    sed -n '2,39p' "$0"
+    sed -n '2,41p' "$0"
     exit 0
     ;;
   -*)
@@ -212,6 +214,12 @@ warn_layout() {
     [ -e "$top/$f" ] && old="$old${old:+, }$f"
   done
   [ -z "$old" ] || echo "install: warning: hand-copied layout still present ($old); see the migration notes in the setup reference" >&2
+  # Plans and design specs have conventional homes (docket/CONTRACT.md); a
+  # directory named after the tool that wrote them is migrated by hand.
+  [ ! -e "$top/docs/superpowers" ] || echo "install: warning: $top/docs/superpowers exists; move its plans to plans/ and its specs to docs/specs/ (see the setup reference)" >&2
+  if agents_state && block "$agents" | grep '^- .*docs/superpowers' >/dev/null; then
+    echo "install: warning: a bullet in the Docket section of $agents names docs/superpowers; plans and design specs live where docket/CONTRACT.md says, so drop it" >&2
+  fi
 }
 exclude="$(git -C "$top" rev-parse --git-path info/exclude)"
 case "$exclude" in /*) ;; *) exclude="$top/$exclude" ;; esac

@@ -68,9 +68,12 @@ Both install and `--check` warn, without failing, when `docs/QUALITY.md`
 exists without a `## Review inputs` heading (the vendored review guide links
 it, so `check-links.sh` fails until the section exists) and when files of the
 hand-copied layout that preceded `docket/` are still present
-(`scripts/workflow/`, `docs/TODO_GUIDE.md`, `docs/CODE_REVIEW_GUIDE.md`); the
-setup reference in the skill has the migration notes. Install also removes a
-stale `.feral/` line from `.git/info/exclude`.
+(`scripts/workflow/`, `docs/TODO_GUIDE.md`, `docs/CODE_REVIEW_GUIDE.md`), and
+while `docs/superpowers/` exists or a bullet in the Docket section of
+`AGENTS.md` names it (plans and design specs live where
+[CONTRACT.md](CONTRACT.md) says); the setup reference in the skill has the
+migration notes. Install also removes a stale `.feral/` line from
+`.git/info/exclude`.
 
 ## docket/ and .docket/
 

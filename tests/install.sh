@@ -9,9 +9,11 @@
 # and before the first "## " heading, or at the end; idempotent reruns;
 # settings kept by name and a deleted one re-added; --check on placeholders,
 # content drift and executable bits; CLAUDE.md as a symlink, as a regular file
-# and absent; the stale .feral/ exclude line; hand-copied layout and missing
-# Review inputs warnings; VERSION newer than, behind, or unknown to the
-# checkout; a template with blank lines inside the markers; self-install;
+# and absent; the stale .feral/ exclude line; hand-copied layout, missing
+# Review inputs and docs/superpowers (directory, and a bullet inside but not
+# outside the Docket section or past a missing end marker) warnings; VERSION
+# newer than, behind, or unknown to the checkout; a template with blank lines
+# inside the markers; self-install;
 # a squashed-subtree host, reached directly and through a symlink, with an
 # unrelated host change (clean) and a committed edit under the skill (dirty).
 #
@@ -69,11 +71,13 @@ expect 'first install did not list the settings to fill in' 'settings to fill in
 [ -f "$p/docket/VERSION" ] || fail 'VERSION was not written'
 for f in "$p"/docket/scripts/*.sh; do [ -x "$f" ] || fail "$f is not executable after install"; done
 grep -qxF '.docket/' "$p/.git/info/exclude" || fail '.docket/ was not added to the exclude file'
+refute 'install warned about docs/superpowers in a project without it' 'docs/superpowers'
 run 1 '--check with placeholders' bash "$inst" --check "$p"
 expect '--check did not name the placeholder settings' 'settings not filled in'
 fill "$p"
 run 0 '--check after filling' bash "$inst" --check "$p"
 expect '--check did not report a match' 'match the skill'
+refute '--check warned about docs/superpowers in a project without it' 'docs/superpowers'
 cp "$p/AGENTS.md" "$work/one-agents.before"
 run 0 'idempotent rerun' bash "$inst" "$p"
 expect 'rerun did not report the section as current' 'is current'
@@ -108,13 +112,16 @@ expect 'missing VERSION was not reported' 'VERSION file missing'
 
 # Existing AGENTS.md with an introduction and sections; CLAUDE.md is a symlink
 # to it; the old layout left a .feral/ exclude line, scripts/workflow/ and a
-# QUALITY.md without Review inputs.
+# QUALITY.md without Review inputs; the superpowers plugin left
+# docs/superpowers/ and a settings bullet pointing at it.
 newproj two; p="$work/two"
 printf '# Project\n\nIntro paragraph.\nSecond intro line.\n\n## Other\n\nOther text.\n\n## Last\n\nMore.\n' > "$p/AGENTS.md"
 ln -s AGENTS.md "$p/CLAUDE.md"
 printf '.feral/\nscratch/\n' >> "$p/.git/info/exclude"
 mkdir -p "$p/scripts/workflow" "$p/docs"
 printf '# Quality\n\n## What quality means here\n\nText.\n' > "$p/docs/QUALITY.md"
+mkdir -p "$p/docs/superpowers/plans"
+printf '# A plan\n' > "$p/docs/superpowers/plans/2026-01-01-a-plan.md"
 run 0 'install into a project with sections' bash "$inst" "$p"
 expect 'insertion point was not reported' "before '## Other'"
 l_intro="$(lineof "$p/AGENTS.md" 'Second intro line.')"; l_begin="$(lineof "$p/AGENTS.md" "$begin")"; l_end="$(lineof "$p/AGENTS.md" "$end")"; l_other="$(lineof "$p/AGENTS.md" '## Other')"
@@ -132,16 +139,28 @@ grep -qxF '.docket/' "$p/.git/info/exclude" || fail '.docket/ was not added to t
 expect 'removed .feral/ line was not reported' 'removed the stale .feral/ line'
 expect 'hand-copied layout was not reported' 'hand-copied layout still present (scripts/workflow)'
 expect 'missing Review inputs was not reported' "QUALITY.md has no '## Review inputs' heading"
+expect 'docs/superpowers was not reported' "$p/docs/superpowers exists"
+[ -f "$p/docs/superpowers/plans/2026-01-01-a-plan.md" ] || fail 'install moved or removed docs/superpowers'
 fill "$p"
+sed -i.bak '/^- Environment:/a\
+- Plans: `docs/superpowers/plans/YYYY-MM-DD-<slug>.md`, not `plans/`.
+' "$p/AGENTS.md"; rm -f "$p/AGENTS.md.bak"
+run 0 'rerun with a settings bullet naming docs/superpowers' bash "$inst" "$p"
+expect 'install did not report the settings bullet naming docs/superpowers' 'names docs/superpowers'
+grep -q '^- Plans: `docs/superpowers/' "$p/AGENTS.md" || fail 'install dropped the settings bullet it should only warn about'
 run 0 '--check with warnings only' bash "$inst" --check "$p"
 expect '--check dropped the layout warning' 'hand-copied layout still present'
 expect '--check dropped the Review inputs warning' 'no '"'"'## Review inputs'"'"' heading'
 refute '--check warned about a CLAUDE.md symlink to AGENTS.md' 'CLAUDE.md'
+expect '--check dropped the docs/superpowers warning' "$p/docs/superpowers exists"
+expect '--check did not report the settings bullet naming docs/superpowers' 'names docs/superpowers'
 printf '\n## Review inputs\n\n- Focus areas: none yet.\n' >> "$p/docs/QUALITY.md"
-rm -r "$p/scripts/workflow"
+rm -r "$p/scripts/workflow" "$p/docs/superpowers"
+sed -i.bak '/^- Plans: /d' "$p/AGENTS.md"; rm -f "$p/AGENTS.md.bak"
 run 0 '--check after the migration' bash "$inst" --check "$p"
 refute 'Review inputs warning persisted' 'Review inputs'
 refute 'layout warning persisted' 'hand-copied layout'
+refute 'docs/superpowers warning persisted' 'docs/superpowers'
 cp "$p/AGENTS.md" "$work/two-agents.before"
 run 0 'rerun with the section in the middle' bash "$inst" "$p"
 cmp -s "$p/AGENTS.md" "$work/two-agents.before" || fail 'rerun changed an AGENTS.md whose section sits in the middle'
@@ -166,6 +185,15 @@ refute '--check warned about a CLAUDE.md that has the line' 'CLAUDE.md'
 printf '# Claude\n' > "$p/CLAUDE.md"
 run 0 '--check with the import line missing' bash "$inst" --check "$p"
 expect '--check did not warn about the missing import line' "lacks the line '@AGENTS.md'"
+# A bullet naming docs/superpowers outside the Docket section is the project's.
+printf '\n- Old plans: `docs/superpowers/plans/`.\n' >> "$p/AGENTS.md"
+run 0 '--check with a docs/superpowers bullet outside the section' bash "$inst" --check "$p"
+refute '--check warned about a bullet outside the Docket section' 'docs/superpowers'
+# With the end marker gone the bullet is not inside a section either.
+sed -i.bak "/^$end\$/d" "$p/AGENTS.md"; rm -f "$p/AGENTS.md.bak"
+run 1 '--check with malformed markers and a docs/superpowers bullet' bash "$inst" --check "$p"
+expect '--check did not report the malformed markers' 'malformed docket markers'
+refute '--check read a bullet past a missing end marker' 'names docs/superpowers'
 
 # CLAUDE.md as a symlink to something else is never written through.
 newproj four; p="$work/four"
