@@ -227,6 +227,35 @@ Type: docs
 BODY
 pass 'breakable long lines' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
 expect 'breakable long lines were not warned' 'warning: 2 lines longer than 72 characters (line 3: 81, line 4: 77)'
+# The boundary, trailing whitespace, a long marker line and tables written
+# without leading pipes; a prose line with a pipe is not a table.
+cat > body.md <<'BODY'
+## Why
+
+Seventy-three characters is one too many for the lines of a commit's body
+This line has seventy-two characters, and ends with two trailing blanks.  
+
+Claims roadmap: a-roadmap-theme-whose-slug-is-long-enough-to-pass-the-limit
+
+Column A | Column B, a table written without the leading pipes that is long
+--- | ---
+first | a body row in that table, also written without leading pipes at all
+
+A prose line that mentions a | pipe character but is not a table, and runs on.
+
+Type: docs
+BODY
+pass 'boundary and tables' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct
+expect 'boundary and tables were not warned as expected' 'warning: 2 lines longer than 72 characters (line 3: 73, line 12: 78)'
+# A markerless body that fails only on length does not blame its markers.
+printf '## Why
+
+This description was hard-wrapped at seventy-eight columns, which is too wide.
+
+Type: docs
+' > body.md
+reject 'wide body message' 'no work-tracking markers found' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct --strict
+grep -Fq 'no well-formed markers' "$fixture/result.log" && { echo 'scripts-test: a wide body blamed its markers' >&2; exit 1; }
 
 # pr-labels.sh: labels from the branch, the type line and the claimed or
 # resolved entries, looked up at base and then at head.

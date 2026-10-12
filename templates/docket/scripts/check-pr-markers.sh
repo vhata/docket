@@ -35,8 +35,9 @@
 #   Type: feature | fix | refactor | perf | docs | test | tooling | review
 #
 # Line length: the body is the squash commit message, so a prose line over
-# 72 characters warns. Exempt: fenced code, HTML comments, table rows, marker
-# and Type lines, and lines that are a single token once the indentation,
+# 72 characters warns. Exempt: fenced code, HTML comments, tables (a header
+# row and the rows after its delimiter row, or any row starting with "|"),
+# marker and Type lines, and lines that are a single token once the indentation,
 # list or quote marker and any link-reference label are removed (a long URL
 # on a line of its own).
 #
@@ -60,7 +61,7 @@ while [ $# -gt 0 ]; do
     --backlog) backlog="$2"; shift 2 ;;
     --branch) branch="$2"; shift 2 ;;
     --strict) strict=1; shift ;;
-    -h|--help) sed -n '2,43p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,44p' "$0"; exit 0 ;;
     *) echo "check-pr-markers: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -182,10 +183,24 @@ fi
 # two on its own line wherever the body ran wider. Width is in characters:
 # under the C locale awk counts bytes, so UTF-8 continuation bytes are
 # dropped before measuring. Trailing whitespace (a Markdown hard break)
-# does not count.
+# does not count. The first pass over the body marks table rows: a line
+# with a "|" followed by a delimiter row ("--- | :---:"), and the lines
+# with a "|" that follow it.
 cont="$(printf '[\200-\277]')"
 LC_ALL=C awk -v max=72 -v cont="$cont" '
+  NR == FNR {
+    if (prev ~ /\|/ && ($0 ~ /^[[:space:]]*\|?[[:space:]]*:?-+:?[[:space:]]*(\|[[:space:]]*:?-+:?[[:space:]]*)+\|?[[:space:]]*$/ || $0 ~ /^[[:space:]]*\|[[:space:]]*:?-+:?[[:space:]]*\|[[:space:]]*$/)) {
+      table[FNR - 1] = 1; table[FNR] = 1; intable = 1
+    } else if (intable && $0 ~ /\|/) {
+      table[FNR] = 1
+    } else {
+      intable = 0
+    }
+    prev = $0
+    next
+  }
   {
+    if (FNR in table) next
     s = $0
     sub(/[[:space:]]+$/, "", s)
     gsub(cont, "", s)
@@ -197,13 +212,13 @@ LC_ALL=C awk -v max=72 -v cont="$cont" '
     while (sub(/^(>[[:space:]]*|([-+*]|[0-9]+[.)])[[:space:]]+(\[[ xX]\][[:space:]]+)?)/, "", t)) {}
     sub(/^\[[^]]+\]:[[:space:]]*/, "", t)
     if (t !~ /[[:space:]]/) next
-    if (++n <= 10) printf "%sline %d: %d", (n > 1 ? ", " : ""), NR, length(s)
+    if (++n <= 10) printf "%sline %d: %d", (n > 1 ? ", " : ""), FNR, length(s)
   }
-  END { if (n) printf "%s\n%d\n", (n > 10 ? sprintf(" and %d more", n - 10) : ""), n }' "$tmp/body.clean" > "$tmp/long"
+  END { if (n) printf "%s\n%d\n", (n > 10 ? sprintf(" and %d more", n - 10) : ""), n }' "$tmp/body.clean" "$tmp/body.clean" > "$tmp/long"
 if [ -s "$tmp/long" ]; then
   nlong="$(sed -n 2p "$tmp/long")"
   if [ "$nlong" -eq 1 ]; then lines="line"; else lines="lines"; fi
-  warn "$nlong $lines longer than 72 characters ($(sed -n 1p "$tmp/long")); the body is the squash commit message, so hard-wrap prose at 72 columns, keep list continuation lines indented, and put a long URL on a line of its own"
+  warn "$nlong $lines longer than 72 characters ($(sed -n 1p "$tmp/long")); the body is the squash commit message, so hard-wrap prose at 72 columns, keep list continuation lines indented, and put a long URL on a line of its own; a heading cannot be wrapped, so shorten it"
 fi
 
 if [ ! -s "$tmp/markers" ]; then
@@ -211,7 +226,9 @@ if [ ! -s "$tmp/markers" ]; then
   case "$branch" in
     todo/*|review/*|roadmap/*) err "branch $branch names queued work but the description has no marker for \`${branch#*/}\`" ;;
   esac
-  if [ "$errors" -eq 0 ]; then echo "no work-tracking markers found (fine for directly requested work)"; else echo "no well-formed markers found"; fi
+  if [ -s "$tmp/listed" ] || [ -s "$tmp/nearmiss" ]; then echo "no well-formed markers found"
+  elif [ "$errors" -eq 0 ]; then echo "no work-tracking markers found (fine for directly requested work)"
+  else echo "no work-tracking markers found"; fi
   [ "$errors" -eq 0 ] || exit 1
   exit 0
 fi

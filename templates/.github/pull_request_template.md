@@ -4,7 +4,8 @@ Hard-wrap it at 72 columns or fewer, as for any git commit message; that
 includes .docket/pr-<slug>.md drafts and bodies written by sub-agents.
 Fenced code blocks, tables and unbreakable tokens such as URLs are
 exempt. Indent list continuation lines under their item so the Markdown
-still renders on GitHub.
+still renders on GitHub, and keep headings within 72. Delete this
+comment and the hints below as you fill in the sections.
 -->
 
 ## Why
