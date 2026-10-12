@@ -8,6 +8,8 @@ Work required for the requested outcome, its correctness or its verification sta
 
 Discoveries go to `TODO.md`, bugs included. `review/BACKLOG.md` holds only findings a codebase review promoted.
 
+A discovery that belongs to another repository goes in that repository's queue, not this one's, because that is where its work is picked up. When the other repository uses Docket, add the entry to its `TODO.md` as a direct commit to its `main`: search its queues for an existing entry first (slugs are unique only within a repository), work in a fresh worktree of its `origin/main` rather than a checkout someone may be using, run its `docket/scripts/check-queues.sh`, and push under the session's push authority, removing the worktree afterwards; when the push is held, the report names the worktree. `Source:` names the originating repository as well as the branch or PR (`Source: owner/repo#12, YYYY-MM-DD`). The PR here takes no `Files TODO` marker, which the validator would look for in these queues; name the entry in its prose as `` `repo:slug` `` instead. Work here that cannot proceed until that entry is resolved records `` Blocked by: `repo:slug` ``. A repository that does not use Docket gets the report in whatever tracker it uses. In a fan-out the coordinator files it, as with any discovery.
+
 ## Entry format
 
 ```md
@@ -21,7 +23,7 @@ Discoveries go to `TODO.md`, bugs included. `review/BACKLOG.md` holds only findi
   - Remaining from: `original-slug` / Split from: `original-slug` (lineage, when applicable)
 ```
 
-`Source` is required. Slugs are unique across all queues and never change when an entry moves. One area per entry, from the list in the Docket section of `AGENTS.md`. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
+`Source` is required. Slugs are unique across all queues and never change when an entry moves. `Blocked by:` and `Related:` may name an entry in another repository as `` `repo:slug` `` (or `` `owner/repo:slug` ``), which the validator does not resolve; `Depends on:` names only slugs in these queues. One area per entry, from the list in the Docket section of `AGENTS.md`. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
 
 Review backlog entries additionally carry a `Findings:` line naming every raw review finding they cover, each slug in backticks (``Findings: `finding-slug`, `finding-slug` ``), and `Source` names the review file. Each finding maps to at most one backlog entry.
 
