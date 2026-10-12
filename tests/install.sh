@@ -13,9 +13,14 @@
 # Review inputs and docs/superpowers (directory, and a bullet inside but not
 # outside the Docket section or past a missing end marker) warnings; VERSION
 # newer than, behind, or unknown to the checkout; a template with blank lines
-# inside the markers; self-install;
-# a squashed-subtree host, reached directly and through a symlink, with an
-# unrelated host change (clean) and a committed edit under the skill (dirty).
+# inside the markers; self-install refused without --self; --self into the
+# skill's own clone (VERSION 'self', --self --check passing, failing on an
+# unsynced templates/docket/ edit and on a VERSION other than 'self'), refused
+# for another repository, a sibling worktree and a subtree host; a normal
+# --check of a copied VERSION 'self'; a squashed-subtree host, reached
+# directly and through a symlink, with an unrelated host change and a
+# committed README edit under the skill (both clean) and a committed edit
+# under its templates/ (dirty).
 #
 # Usage: bash tests/install.sh   (from anywhere; needs git and bash 3.2+)
 set -euo pipefail
@@ -44,8 +49,8 @@ run() {
   "$@" > "$log" 2>&1 || got=$?
   [ "$got" -eq "$want" ] || { echo "install-test: $label exited $got, expected $want" >&2; cat "$log" >&2; exit 1; }
 }
-expect() { grep -Fq "$2" "$log" || { echo "install-test: $1" >&2; cat "$log" >&2; exit 1; }; }
-refute() { if grep -Fq "$2" "$log"; then echo "install-test: $1" >&2; cat "$log" >&2; exit 1; fi; }
+expect() { grep -Fq -- "$2" "$log" || { echo "install-test: $1" >&2; cat "$log" >&2; exit 1; }; }
+refute() { if grep -Fq -- "$2" "$log"; then echo "install-test: $1" >&2; cat "$log" >&2; exit 1; fi; }
 fail() { echo "install-test: $*" >&2; exit 1; }
 # A fresh project repository at $work/NAME with one commit.
 newproj() {
@@ -236,13 +241,107 @@ printf '\n' >> "$p/docket/README.md"
 run 1 '--check with a VERSION unknown to the checkout and drift' bash "$inst" --check "$p"
 expect 'unknown VERSION hid the drift' 'rerun install.sh to resync'
 
-# Self-install is refused.
+# Self-install is refused without --self.
 run 2 'self-install by target' bash "$inst" "$skill"
 expect 'self-install by target was not refused' 'refusing to install the skill into its own repository'
+expect 'self-install refusal did not mention --self' 'pass --self'
 run 2 'self-install from inside the skill' sh -c 'cd "$1" && bash install.sh' sh "$skill"
 expect 'self-install from inside was not refused' 'refusing to install the skill into its own repository'
+run 2 '--check of the skill without --self' bash "$inst" --check "$skill"
+expect '--check of the skill without --self was not refused' 'refusing to install the skill into its own repository'
 run 2 'target that is not a repository' bash "$inst" "$work"
 expect 'non-repository target was not refused' 'is not inside a git repository'
+# --self is refused for any other repository.
+newproj selfother; p="$work/selfother"
+run 2 '--self into another repository' bash "$inst" --self "$p"
+expect '--self into another repository was not refused' "--self is only for the skill's own repository"
+run 2 '--self --check of another repository' bash "$inst" --self --check "$p"
+expect '--self --check of another repository was not refused' "--self is only for the skill's own repository"
+[ ! -e "$p/docket" ] || fail '--self into another repository wrote docket/'
+
+# --self vendors docket/ into the skill's own repository, in a separate clone
+# so the checkout the other cases install from stays clean.
+me="$work/selfskill"
+git clone --quiet "$skill" "$me"
+git -C "$me" checkout --quiet --detach "$snapshot"
+git -C "$me" config user.name 'Self fixture'
+git -C "$me" config user.email 'self-fixture@example.invalid'
+git -C "$me" config core.hooksPath /dev/null
+# The skill repository commits its own docket installation; remove it so the
+# first --self below is a first install.
+git -C "$me" rm -rq --ignore-unmatch docket AGENTS.md CLAUDE.md
+git -C "$me" commit --quiet --allow-empty -m 'Remove the self installation'
+run 0 '--self install' bash "$me/install.sh" --self "$me"
+printf 'self\n' | cmp -s - "$me/docket/VERSION" || fail "--self wrote VERSION '$(cat "$me/docket/VERSION")', expected the line 'self'"
+grep -qxF "$begin" "$me/AGENTS.md" || fail '--self did not write the Docket section of AGENTS.md'
+for f in "$me"/docket/scripts/*.sh; do [ -x "$f" ] || fail "$f is not executable after --self"; done
+grep -qxF '.docket/' "$me/.git/info/exclude" || fail '--self did not add .docket/ to the exclude file'
+refute '--self reported a subtree' 'git-subtree-split'
+refute '--self recorded a dirty tree' 'dirty'
+diff -r -x VERSION "$me/templates/docket" "$me/docket" >/dev/null || fail '--self did not copy templates/docket/ byte for byte'
+fill "$me"
+run 0 '--self --check after install' bash "$me/install.sh" --self --check "$me"
+expect '--self --check did not print the installed line' 'installed: self'
+expect '--self --check did not print the skill line' 'skill:     self (templates/docket at this commit)'
+expect '--self --check did not report a match' 'match the skill'
+refute '--self --check compared commits' 'newer than'
+refute '--self --check compared commits' 'behind'
+refute '--self --check compared commits' 'not in this skill checkout'
+git -C "$me" add -A
+git -C "$me" commit --quiet -m 'Vendor docket into the skill repository'
+run 0 '--self --check from inside, committed' sh -c 'cd "$1" && bash install.sh --self --check' sh "$me"
+expect '--self --check from inside did not report a match' 'match the skill'
+# An edit under templates/docket/ without a resync is drift.
+printf '\n' >> "$me/templates/docket/README.md"
+run 1 '--self --check after editing templates/docket' bash "$me/install.sh" --self --check "$me"
+expect '--self --check did not report the unsynced template edit' 'rerun install.sh --self to resync'
+run 0 '--self resync after editing templates/docket' sh -c 'cd "$1" && bash install.sh --self' sh "$me"
+printf 'self\n' | cmp -s - "$me/docket/VERSION" || fail "--self resync wrote VERSION '$(cat "$me/docket/VERSION")'"
+refute '--self resync with a dirty tree warned' 'dirty'
+run 0 '--self --check after the resync' bash "$me/install.sh" --self --check "$me"
+# VERSION must be exactly 'self'.
+printf '%s 2026-10-11\n' "$(git -C "$me" rev-parse --short=12 HEAD)" > "$me/docket/VERSION"
+run 1 '--self --check with a sha VERSION' bash "$me/install.sh" --self --check "$me"
+expect '--self --check did not reject a sha VERSION' "VERSION is not the line 'self'"
+refute '--self --check compared a sha VERSION with the checkout' 'newer than'
+rm "$me/docket/VERSION"
+run 1 '--self --check without VERSION' bash "$me/install.sh" --self --check "$me"
+expect '--self --check did not report the missing VERSION' 'VERSION file missing'
+run 0 '--self restoring VERSION' bash "$me/install.sh" --self "$me"
+# A sibling worktree of the skill is the same repository, but --self only
+# installs into the checkout it runs from.
+git -C "$me" worktree add --quiet --detach "$work/selfwt" HEAD
+run 2 '--self into a sibling worktree' bash "$me/install.sh" --self "$work/selfwt"
+expect '--self into a sibling worktree was not refused' 'installs only into the checkout it runs from'
+run 2 'sibling worktree without --self' bash "$me/install.sh" "$work/selfwt"
+expect 'sibling worktree without --self was not refused' 'refusing to install the skill into its own repository'
+# From inside the sibling worktree, targeting itself, --self is the everyday
+# case for a harness that gives each task its own worktree.
+run 0 '--self inside a worktree' bash "$work/selfwt/install.sh" --self "$work/selfwt"
+fill "$work/selfwt"
+run 0 '--self --check inside a worktree' bash "$work/selfwt/install.sh" --self --check "$work/selfwt"
+# Only install.sh and templates/ decide what an install writes, so uncommitted
+# work in the skill repository's own docket files does not make a project's
+# install dirty, while an uncommitted template edit does.
+git -C "$me" add -A && git -C "$me" commit --quiet -m 'Self fixture state'
+printf 'scratch\n' > "$me/scratch-notes.md"
+printf '\n' >> "$me/AGENTS.md"
+newproj fromself; p="$work/fromself"
+run 0 'install with uncommitted non-template work in the skill' bash "$me/install.sh" "$p"
+grep -q -- '-dirty' "$p/docket/VERSION" && fail "uncommitted non-template work made the install dirty: $(cat "$p/docket/VERSION")"
+printf '\n' >> "$me/templates/README.md"
+run 0 'install with an uncommitted template edit' bash "$me/install.sh" "$p"
+grep -q -- '-dirty' "$p/docket/VERSION" || fail "an uncommitted template edit did not make the install dirty: $(cat "$p/docket/VERSION")"
+git -C "$me" checkout --quiet -- templates/README.md AGENTS.md; rm -f "$me/scratch-notes.md"
+# A project holding a copy of the skill's own docket/ (VERSION 'self') is
+# compared on its files by a normal --check.
+newproj selfcopy; p="$work/selfcopy"
+run 0 'install for the copied self VERSION case' bash "$inst" "$p"
+fill "$p"
+printf 'self\n' > "$p/docket/VERSION"
+run 0 '--check with a VERSION of self' bash "$inst" --check "$p"
+expect '--check did not explain a VERSION of self' "is 'self', which only the skill's own repository records"
+expect '--check with a VERSION of self did not still diff the files' 'match the skill'
 
 # A template with a blank line after the begin marker and before the end
 # marker (the shape Markdown formatters produce): a project installed from the
@@ -316,6 +415,8 @@ subtree_squash() { # $1 upstream commit, $2 message; prints the squash commit an
 subtree_squash "$upstream" 'Add the docket skill'
 echo scratch > "$host/scratch.txt"
 newproj eight; p="$work/eight"
+run 2 '--self from a subtree host' bash "$host/skills/docket/install.sh" --self "$host"
+expect '--self from a subtree host was not refused' 'needs the skill at the root of its repository'
 run 0 'install from a subtree host' bash "$host/skills/docket/install.sh" "$p"
 [ "$(cut -d' ' -f1 "$p/docket/VERSION")" = "$(printf '%.12s' "$upstream")" ] || { echo "install-test: VERSION from a subtree host is $(cat "$p/docket/VERSION"), expected the upstream commit $upstream" >&2; exit 1; }
 grep -q -- '-dirty' "$p/docket/VERSION" && { echo 'install-test: an unrelated change in the host made the skill dirty' >&2; exit 1; }
@@ -337,9 +438,16 @@ ln -s "$host" "$work/hostlink"
 newproj nine; p="$work/nine"
 run 0 'install from a subtree host through a symlink' bash "$work/hostlink/skills/docket/install.sh" "$p"
 [ "$(cut -d' ' -f1 "$p/docket/VERSION")" = "$(printf '%.12s' "$upstream")" ] || { echo "install-test: VERSION through a symlinked host is $(cat "$p/docket/VERSION"), expected the upstream commit" >&2; exit 1; }
-# A committed edit under the skill directory makes the install dirty, since
-# the files no longer match the commit VERSION names.
+# A committed edit to the skill's README changes nothing an install writes, so
+# the install stays clean.
 echo 'local edit' >> "$host/skills/docket/README.md"
+git -C "$host" commit --quiet -am 'Edit the skill README locally'
+newproj ten-a; p="$work/ten-a"
+run 0 'install from a subtree host with a committed README edit' bash "$host/skills/docket/install.sh" "$p"
+grep -q -- '-dirty' "$p/docket/VERSION" && { echo "install-test: a committed README edit in the subtree made the install dirty: $(cat "$p/docket/VERSION")" >&2; exit 1; }
+# A committed edit under templates/ makes the install dirty, since what it
+# writes no longer matches the commit VERSION names.
+echo 'local edit' >> "$host/skills/docket/templates/README.md"
 git -C "$host" commit --quiet -am 'Edit the vendored skill locally'
 newproj ten; p="$work/ten"
 run 0 'install from a subtree host with a committed local edit' bash "$host/skills/docket/install.sh" "$p"

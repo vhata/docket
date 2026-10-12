@@ -49,8 +49,9 @@ delete) files here that the skill no longer ships. Commit the result.
 installed as a squashed subtree of another repository, the installer reads the
 upstream commit from the subtree's `git-subtree-split` trailer rather than
 recording the host repository's own commit. A `-dirty` suffix means the
-skill's directory had uncommitted changes when it was installed; resync from a
-clean checkout before relying on it.
+skill's `install.sh` or `templates/` differed from that commit when it was
+installed (uncommitted changes, or committed local edits in a subtree host);
+resync from a clean checkout before relying on it.
 
 `--check` compares `VERSION` with the skill commit of the checkout it runs
 from (`HEAD` in a clone of the skill, the subtree's upstream commit in a

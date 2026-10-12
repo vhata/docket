@@ -2,7 +2,7 @@
 # Install or update the docket skill's vendored machinery in a project, or
 # audit an installed copy for drift.
 #
-# Usage: bash install.sh [--check] [target]
+# Usage: bash install.sh [--check] [--self] [target]
 #   target: a directory inside the project's git repository (default: the
 #           repository containing the current directory). The files land in
 #           <toplevel>/docket/.
@@ -15,6 +15,11 @@
 #            the commit named in docket/VERSION. That commit is always a
 #            docket commit: from a squashed subtree the installer reads the
 #            upstream commit in the subtree's git-subtree-split trailer.
+#   --self: install into, or with --check audit, the skill's own repository,
+#           which is otherwise refused. Valid only there, from the checkout
+#           whose root holds this install.sh. docket/VERSION is then the fixed
+#           line 'self' (templates/docket/ at the same commit is the source),
+#           and --check requires that line and skips the commit comparison.
 #
 # The same command performs the first install and every later update. Files
 # present in the project's docket/ but absent from the skill are reported,
@@ -53,12 +58,14 @@ else
   show_diff() { diff "$@"; }
 fi
 check=0
+self=0
 target=""
 for arg in "$@"; do
   case "$arg" in
   --check) check=1 ;;
+  --self) self=1 ;;
   -h | --help)
-    sed -n '2,41p' "$0"
+    sed -n '2,46p' "$0"
     exit 0
     ;;
   -*)
@@ -92,8 +99,25 @@ top="$(git -C "$target" rev-parse --show-toplevel 2>/dev/null)" || {
 skill_top="$(git -C "$skill" rev-parse --show-toplevel 2>/dev/null || echo "$skill")"
 common="$(cd "$top" && cd "$(git rev-parse --git-common-dir)" && pwd -P)"
 skill_common="$(cd "$skill" && cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .)" && pwd -P)"
+prefix="$(git -C "$skill" rev-parse --show-prefix 2>/dev/null || true)"; prefix="${prefix%/}"
 if [ "$top" = "$skill_top" ] || [ "$common" = "$skill_common" ]; then
-  echo "install: refusing to install the skill into its own repository ($top)" >&2
+  if [ "$self" -eq 0 ]; then
+    echo "install: refusing to install the skill into its own repository ($top); pass --self to vendor docket/ there deliberately" >&2
+    exit 2
+  fi
+  # Self mode copies templates/docket/ to docket/ within one working tree, so
+  # the target must be the checkout this install.sh runs from, with the skill
+  # at its root: not a host holding it as a subtree, not a sibling worktree.
+  if [ -n "$prefix" ]; then
+    echo "install: --self needs the skill at the root of its repository; $skill is a subdirectory of $skill_top" >&2
+    exit 2
+  fi
+  if [ "$top" != "$skill_top" ]; then
+    echo "install: --self installs only into the checkout it runs from ($skill_top); run $top/install.sh --self for $top" >&2
+    exit 2
+  fi
+elif [ "$self" -eq 1 ]; then
+  echo "install: --self is only for the skill's own repository ($skill_top); $top is another repository" >&2
   exit 2
 fi
 dst="$top/docket"
@@ -103,8 +127,10 @@ dst="$top/docket"
 # has commit ids of its own; the newest "git-subtree-split:" trailer for the
 # subtree's prefix names the upstream commit, so that is used when the skill
 # lives in a subdirectory of a larger repository, and HEAD otherwise. The
-# prefix comes from git so a path reached through a symlink still resolves.
-prefix="$(git -C "$skill" rev-parse --show-prefix 2>/dev/null || true)"; prefix="${prefix%/}"
+# prefix (computed above) comes from git so a path reached through a symlink
+# still resolves. In the skill's own repository (--self) VERSION is the fixed
+# line 'self' instead: a sha there would change, and usually be -dirty, on
+# every branch, and says nothing templates/docket/ at that commit does not.
 # Newest git-subtree-split for prefix $2 in repository $1. The trailers sit on
 # the squash commit, whose tree holds the skill at its root and so never
 # touches the prefix, so the whole history is read (no path filter); exact
@@ -117,26 +143,33 @@ split_for_prefix() {
     dir && index($0, "git-subtree-split: ") == 1 { print substr($0, 20, 40); exit }' || true
 }
 head_sha=""; from_subtree=0
-[ -z "$prefix" ] || head_sha="$(split_for_prefix "$skill_top" "$prefix")"
-case "$head_sha" in [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) from_subtree=1 ;; *) head_sha="" ;; esac
-if [ -z "$head_sha" ]; then
-  [ -z "$prefix" ] || echo "install: $skill is a subdirectory of $skill_top with no git-subtree-split trailer for it; recording that repository's HEAD" >&2
-  head_sha="$(git -C "$skill" rev-parse HEAD 2>/dev/null || echo unknown)"
-fi
-sha=unknown
-[ "$head_sha" = unknown ] || sha="$(printf '%.12s' "$head_sha")"
-# Dirty means the skill's own directory differs from the commit VERSION will
-# name: uncommitted changes under it, or, in a subtree host, a tree that no
-# longer matches the upstream commit (committed local edits, or a subtree pull
-# made without --squash, which leaves no new trailer). Unrelated work elsewhere
-# in a host repository is not dirt.
-if [ "$sha" != unknown ]; then
-  if [ -n "$(git -C "$skill" status --porcelain -- . 2>/dev/null)" ]; then
-    sha="$sha-dirty"
-  elif [ "$from_subtree" -eq 1 ] && git -C "$skill_top" cat-file -e "$head_sha^{commit}" 2>/dev/null \
-    && ! git -C "$skill_top" diff --quiet "$head_sha" "HEAD:$prefix" -- 2>/dev/null; then
-    echo "install: the skill directory $skill differs from upstream commit $sha (committed local edits, or a subtree pull without --squash); recording it as dirty" >&2
-    sha="$sha-dirty"
+if [ "$self" -eq 1 ]; then
+  head_sha=self
+  sha=self
+else
+  [ -z "$prefix" ] || head_sha="$(split_for_prefix "$skill_top" "$prefix")"
+  case "$head_sha" in [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) from_subtree=1 ;; *) head_sha="" ;; esac
+  if [ -z "$head_sha" ]; then
+    [ -z "$prefix" ] || echo "install: $skill is a subdirectory of $skill_top with no git-subtree-split trailer for it; recording that repository's HEAD" >&2
+    head_sha="$(git -C "$skill" rev-parse HEAD 2>/dev/null || echo unknown)"
+  fi
+  sha=unknown
+  [ "$head_sha" = unknown ] || sha="$(printf '%.12s' "$head_sha")"
+  # Dirty means what an install writes differs from the commit VERSION will
+  # name: uncommitted changes to install.sh or templates/, or, in a subtree
+  # host, those paths no longer matching the upstream commit (committed local edits, or a subtree
+  # pull made without --squash, which leaves no new trailer). Unrelated work
+  # elsewhere in a host repository is not dirt, and neither is the skill
+  # repository's own docket installation (docket/, AGENTS.md, TODO.md and the
+  # rest): only install.sh and templates/ decide what an install writes.
+  if [ "$sha" != unknown ]; then
+    if [ -n "$(git -C "$skill" status --porcelain -- install.sh templates 2>/dev/null)" ]; then
+      sha="$sha-dirty"
+    elif [ "$from_subtree" -eq 1 ] && git -C "$skill_top" cat-file -e "$head_sha^{commit}" 2>/dev/null \
+      && ! git -C "$skill_top" diff --quiet "$head_sha" "HEAD:$prefix" -- install.sh templates 2>/dev/null; then
+      echo "install: install.sh or templates/ in $skill differs from upstream commit $sha (committed local edits, or a subtree pull without --squash); recording it as dirty" >&2
+      sha="$sha-dirty"
+    fi
   fi
 fi
 
@@ -235,15 +268,26 @@ if [ "$check" -eq 1 ]; then
     echo "installed: $(cat "$dst/VERSION")"
     installed="$(cut -d' ' -f1 "$dst/VERSION")"
     installed="${installed%-dirty}"
+    if [ "$self" -eq 1 ] && ! printf 'self\n' | cmp -s - "$dst/VERSION"; then
+      echo "install: $dst/VERSION is not the line 'self' that the skill's own repository records; rerun install.sh --self" >&2
+      status=1
+    fi
   else
     echo "installed: VERSION file missing" >&2
     status=1
   fi
-  echo "skill:     $sha"
+  if [ "$self" -eq 1 ]; then
+    echo "skill:     self (templates/docket at this commit)"
+  else
+    echo "skill:     $sha"
+  fi
   # Compare the installed commit with this checkout's HEAD before diffing: a
   # checkout behind the project would report the project's newer files as drift.
+  # In self mode the source is in the same tree, so there is nothing to compare.
   behind=0
-  if [ "$head_sha" != unknown ] && [ -n "$installed" ] && [ "$installed" != unknown ]; then
+  if [ "$self" -eq 0 ] && [ "$installed" = self ]; then
+    echo "install: $dst/VERSION is 'self', which only the skill's own repository records; comparing the files anyway" >&2
+  elif [ "$self" -eq 0 ] && [ "$head_sha" != unknown ] && [ -n "$installed" ] && [ "$installed" != unknown ]; then
     if ! git -C "$skill" cat-file -e "$installed^{commit}" 2>/dev/null; then
       echo "install: the installed commit ($installed) is not in this skill checkout (fetch it, or the copy came from another fork); comparing the files anyway" >&2
     elif [ "$(git -C "$skill" rev-parse "$installed^{commit}")" = "$head_sha" ]; then
@@ -302,7 +346,11 @@ if [ "$check" -eq 1 ]; then
     echo "install: $dst and the Docket section of $agents match the skill"
     [ "$behind" -eq 0 ] || echo "install: VERSION names $installed, behind this checkout ($sha), but the files match; rerun install.sh to record the current commit"
   else
-    echo "install: $top differs from the skill; rerun install.sh to resync" >&2
+    if [ "$self" -eq 1 ]; then
+      echo "install: $top differs from templates/; rerun install.sh --self to resync" >&2
+    else
+      echo "install: $top differs from the skill; rerun install.sh to resync" >&2
+    fi
   fi
   exit "$status"
 fi
@@ -317,7 +365,11 @@ while IFS= read -r rel; do
   copied=$((copied + 1))
 done < <(cd "$src" && find . -type f | sort)
 chmod +x "$dst"/scripts/*.sh
-printf '%s %s\n' "$sha" "$(date -u +%Y-%m-%d)" >"$dst/VERSION"
+if [ "$self" -eq 1 ]; then
+  printf 'self\n' >"$dst/VERSION"
+else
+  printf '%s %s\n' "$sha" "$(date -u +%Y-%m-%d)" >"$dst/VERSION"
+fi
 
 # Local, uncommitted docket state lives in .docket/; keep it out of git. The
 # layout before docket/ used .feral/ for the same purpose; drop its line.
