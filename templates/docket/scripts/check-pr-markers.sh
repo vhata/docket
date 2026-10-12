@@ -5,18 +5,20 @@
 # exact vocabulary; claimed slugs still exist at head; resolved slugs existed
 # at base and are gone at head; partial resolutions name a remainder that
 # exists at head with a "Remaining from:" link; filed discoveries exist at
-# head; review-finding resolutions carry a Validation section.
+# head; review-finding resolutions carry a Validation section; prose lines
+# are at most 72 characters (warning).
 #
 # Usage:
-#   docket/scripts/check-pr-markers.sh --body FILE [--base REF] [--head REF] [--todo PATH] [--backlog PATH]
-#   docket/scripts/check-pr-markers.sh --pr NUMBER [--base REF] [--head REF]
+#   docket/scripts/check-pr-markers.sh --body FILE [--base REF] [--head REF] [--todo PATH] [--backlog PATH] [--strict]
+#   docket/scripts/check-pr-markers.sh --pr NUMBER [--base REF] [--head REF] [--strict]
 #
 # Defaults: --base origin/main (local main when there is no origin), --head HEAD,
 # TODO.md, review/BACKLOG.md. --branch NAME (default: the head's branch) enables
 # the claim rule: a branch named <queue>/<slug> must carry a marker for <slug>.
 # With --pr the body is fetched with `gh pr view`; run it from the PR branch
 # or pass refs explicitly. In CI on a pull_request event use --base
-# "origin/$GITHUB_BASE_REF" and --head HEAD (the merge commit).
+# "origin/$GITHUB_BASE_REF" and --head HEAD (the merge commit). --strict
+# turns warnings into errors.
 #
 # Marker vocabulary (one per line, at the start of the line rather than in a
 # list or quote; no backticks, no trailing punctuation):
@@ -32,6 +34,13 @@
 # a warning, malformed or repeated an error):
 #   Type: feature | fix | refactor | perf | docs | test | tooling | review
 #
+# Line length: the body is the squash commit message, so a prose line over
+# 72 characters warns. Exempt: fenced code, HTML comments, tables (a header
+# row and the rows after its delimiter row, or any row starting with "|"),
+# marker and Type lines, and lines that are a single token once the indentation,
+# list or quote marker and any link-reference label are removed (a long URL
+# on a line of its own).
+#
 # Exit 1 on any error. Portable to bash 3.2.
 set -euo pipefail
 
@@ -41,7 +50,7 @@ cd "$root"
 # Make a path given on the command line absolute relative to the caller's directory.
 abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$orig" "$1" ;; esac; }
 
-body=""; pr=""; base="origin/main"; head="HEAD"; todo="TODO.md"; backlog="review/BACKLOG.md"; branch=""
+body=""; pr=""; base="origin/main"; head="HEAD"; todo="TODO.md"; backlog="review/BACKLOG.md"; branch=""; strict=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --body) body="$(abs "$2")"; shift 2 ;;
@@ -51,7 +60,8 @@ while [ $# -gt 0 ]; do
     --todo) todo="$2"; shift 2 ;;
     --backlog) backlog="$2"; shift 2 ;;
     --branch) branch="$2"; shift 2 ;;
-    -h|--help) sed -n '2,35p' "$0"; exit 0 ;;
+    --strict) strict=1; shift ;;
+    -h|--help) sed -n '2,44p' "$0"; exit 0 ;;
     *) echo "check-pr-markers: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -78,7 +88,7 @@ fi
 
 errors=0
 err() { echo "error: $*"; errors=$((errors + 1)); }
-warn() { echo "warning: $*"; }
+warn() { if [ "$strict" -eq 1 ]; then err "$*"; else echo "warning: $*"; fi; }
 
 # Queue snapshots at base and head (empty when the file does not exist there).
 snap() { git show "$1:$2" 2>/dev/null || true; }
@@ -168,12 +178,57 @@ elif [ "$ntypes" -eq 0 ] && [ ! -s "$tmp/badtypes" ]; then
   warn "no \"Type: <kind>\" line (one of: ${types_re//|/, }); pr-labels.sh cannot label the kind of change"
 fi
 
+# Line length. git log indents the body by four columns, and tools that
+# show or rewrite the squash commit wrap it at 72, which strands a word or
+# two on its own line wherever the body ran wider. Width is in characters:
+# under the C locale awk counts bytes, so UTF-8 continuation bytes are
+# dropped before measuring. Trailing whitespace (a Markdown hard break)
+# does not count. The first pass over the body marks table rows: a line
+# with a "|" followed by a delimiter row ("--- | :---:"), and the lines
+# with a "|" that follow it.
+cont="$(printf '[\200-\277]')"
+LC_ALL=C awk -v max=72 -v cont="$cont" '
+  NR == FNR {
+    if (prev ~ /\|/ && ($0 ~ /^[[:space:]]*\|?[[:space:]]*:?-+:?[[:space:]]*(\|[[:space:]]*:?-+:?[[:space:]]*)+\|?[[:space:]]*$/ || $0 ~ /^[[:space:]]*\|[[:space:]]*:?-+:?[[:space:]]*\|[[:space:]]*$/)) {
+      table[FNR - 1] = 1; table[FNR] = 1; intable = 1
+    } else if (intable && $0 ~ /\|/) {
+      table[FNR] = 1
+    } else {
+      intable = 0
+    }
+    prev = $0
+    next
+  }
+  {
+    if (FNR in table) next
+    s = $0
+    sub(/[[:space:]]+$/, "", s)
+    gsub(cont, "", s)
+    if (length(s) <= max) next
+    if (s ~ /^[[:space:]]*\|/) next
+    if (s ~ /^((Claims|Resolves|Partially resolves|Remaining|Files) (TODO|review backlog|review finding|roadmap)|Type): /) next
+    t = s
+    sub(/^[[:space:]]+/, "", t)
+    while (sub(/^(>[[:space:]]*|([-+*]|[0-9]+[.)])[[:space:]]+(\[[ xX]\][[:space:]]+)?)/, "", t)) {}
+    sub(/^\[[^]]+\]:[[:space:]]*/, "", t)
+    if (t !~ /[[:space:]]/) next
+    if (++n <= 10) printf "%sline %d: %d", (n > 1 ? ", " : ""), FNR, length(s)
+  }
+  END { if (n) printf "%s\n%d\n", (n > 10 ? sprintf(" and %d more", n - 10) : ""), n }' "$tmp/body.clean" "$tmp/body.clean" > "$tmp/long"
+if [ -s "$tmp/long" ]; then
+  nlong="$(sed -n 2p "$tmp/long")"
+  if [ "$nlong" -eq 1 ]; then lines="line"; else lines="lines"; fi
+  warn "$nlong $lines longer than 72 characters ($(sed -n 1p "$tmp/long")); the body is the squash commit message, so hard-wrap prose at 72 columns, keep list continuation lines indented, and put a long URL on a line of its own; a heading cannot be wrapped, so shorten it"
+fi
+
 if [ ! -s "$tmp/markers" ]; then
   [ -n "$branch" ] || branch="$(git rev-parse --abbrev-ref "$head" 2>/dev/null || true)"
   case "$branch" in
     todo/*|review/*|roadmap/*) err "branch $branch names queued work but the description has no marker for \`${branch#*/}\`" ;;
   esac
-  if [ "$errors" -eq 0 ]; then echo "no work-tracking markers found (fine for directly requested work)"; else echo "no well-formed markers found"; fi
+  if [ -s "$tmp/listed" ] || [ -s "$tmp/nearmiss" ]; then echo "no well-formed markers found"
+  elif [ "$errors" -eq 0 ]; then echo "no work-tracking markers found (fine for directly requested work)"
+  else echo "no work-tracking markers found"; fi
   [ "$errors" -eq 0 ] || exit 1
   exit 0
 fi

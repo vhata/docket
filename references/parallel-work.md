@@ -44,7 +44,7 @@ Checks: run <entrypoint> and <specific checks>; report exact commands and result
 Git: commit incrementally with single-purpose messages in the repo's style; no attribution trailers; do not change `git config` (the coordinator sets the repository's identity once, before the first commit); never push, never merge, never tag.
 If you discover something separately shippable, do not fix it; report it as a discovery with the evidence and where it belongs.
 If blocked on a decision the brief does not settle, stop and report the options.
-Return: a short report with what changed, what was verified (commands and results), what was left out and why, discoveries, and the PR body draft (## Why first).
+Return: a short report with what changed, what was verified (commands and results), what was left out and why, discoveries, and the PR body draft (## Why first, hard-wrapped at 72 columns except code blocks, tables and URLs, list continuation lines indented).
 ```
 
 Why these lines: an agent briefed with absolute paths into the main checkout wrote its half-finished files there and broke the main thread's typecheck; an agent that set `git config user.email` changed the shared repository config; an agent allowed to open the GUI popped windows on the user's desktop; agents that stalled on long tasks were recovered by "commit incrementally" and by resuming the same agent rather than starting over.
