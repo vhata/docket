@@ -97,7 +97,7 @@ kinds of content:
 | `TODO_GUIDE.md` | Capture, triage, claim and resolve deferred work in `TODO.md` and `review/BACKLOG.md`. |
 | `CODE_REVIEW_GUIDE.md` | PR review and codebase review, and the review ledger under `review/`. |
 | `VERSION` | The skill commit and date these files were installed from. |
-| `scripts/ci.sh` | The single entry point CI calls; runs every validator below in order and stops at the first failure. On pull requests it reads the PR body from the event payload (`GITHUB_EVENT_PATH`, with `jq`) and falls back to `gh pr view`, which needs `pull-requests: read`. |
+| `scripts/ci.sh` | The single entry point CI calls; runs `check-queues.sh --strict`, then `check-links.sh`, then `check-pr-markers.sh` when `PR` is set, and stops at the first failure. On pull requests it reads the PR body from the event payload (`GITHUB_EVENT_PATH`, with `jq`) and falls back to `gh pr view`, which needs `pull-requests: read`. |
 | `scripts/check-queues.sh` | Validates the structure of `TODO.md` and `review/BACKLOG.md`: entry format, unique slugs, `Source` lines, cross-references and dependencies. |
 | `scripts/check-pr-markers.sh` | Validates a pull request description's markers against the queues at the base and head commits, its `Type:` line, and its line length (prose wrapped at 72 columns). |
 | `scripts/pr-labels.sh` | Derives a pull request's labels from its branch, its `Type:` line and the queue entries it claims or resolves; `--apply` creates missing labels and sets them on the pull request. |
