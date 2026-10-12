@@ -32,8 +32,8 @@ Also check what lives outside the repository: harness memory files and the user'
 | Quality | `docs/QUALITY.md`, `scripts/*.sh`, `docket/scripts/ci.sh`, hook config (no template; see quality-gates.md), `.github/workflows/ci.yml`, `.github/workflows/main-validation.yml` | What runs where, current state only. |
 | PR shape | `.github/pull_request_template.md` | Why, what changed, markers, validation, review. |
 | Audit (unattended runs) | `.docket/AUDIT.md` and `.docket/pr-<slug>.md`; the installer adds `.docket/` to `.git/info/exclude` and the install PR adds it to `.gitignore` (step 3) | Append-only decisions with undo lines; prepared PR bodies. |
-| Plans | `plans/YYYY-MM-DD-<slug>.md` | Dated plans for work; committed direct to main (see pr-and-landing.md). |
-| Design specs | `docs/specs/YYYY-MM-DD-<slug>.md` | Dated designs written ahead of the work; committed direct to main (see pr-and-landing.md). |
+| Plans | `plans/YYYY-MM-DD-<slug>.md` | Dated plans for work; may be committed direct to main (see pr-and-landing.md). |
+| Design specs | `docs/specs/YYYY-MM-DD-<slug>.md` | Dated designs written ahead of the work; may be committed direct to main (see pr-and-landing.md). |
 
 Every file in this table has a template under `templates/`, with placeholders in angle brackets, except `docket/` (installed verbatim by `install.sh`; not a template), the optional records, the hook config, plans, design specs and the audit files; `ARCHITECTURE.md` and `docs/DECISIONS.md` templates are skeletons to fill from the code and the conversation, never from guesswork. Copy, then edit every placeholder; a template left with placeholders is a Docs finding at the next review.
 
