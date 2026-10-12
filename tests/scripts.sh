@@ -19,7 +19,8 @@ if git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
   [ -z "$modes" ] || { echo "scripts-test: not committed as executable: $modes" >&2; exit 1; }
 fi
 fixture="$(mktemp -d)"
-trap 'rm -rf "$fixture"' EXIT
+external="$(mktemp -d)"
+trap 'rm -rf "$fixture" "$external"' EXIT
 mkdir -p "$fixture/docket/scripts" "$fixture/review" "$fixture/bin"
 cp "$scripts"/*.sh "$fixture/docket/scripts/"
 cp "$root/templates/.github/pull_request_template.md" "$fixture/template.md"
@@ -410,6 +411,19 @@ wt="$fixture/.worktrees/todo-fixture-self-task"
 pass 'start-work on a free slug' env PATH="$nogh" bash docket/scripts/start-work.sh todo fixture-self-task --base main
 [ -d "$wt" ] || { echo 'scripts-test: start-work created no worktree' >&2; exit 1; }
 reject 'start-work on a claimed slug' 'existing claim' env PATH="$nogh" bash docket/scripts/start-work.sh fix fixture-self-task --base main
+# A --dir outside the repository cannot be ignored by it: start-work must leave
+# the exclude file alone and print no .gitignore advice, however often it runs.
+cp .git/info/exclude "$fixture/exclude.before"
+for n in one two; do
+  pass "start-work with an external --dir ($n)" env PATH="$nogh" bash docket/scripts/start-work.sh todo "fixture-external-$n" --base main --dir "$external"
+  [ -d "$external/todo-fixture-external-$n" ] || { echo "scripts-test: start-work created no external worktree ($n)" >&2; exit 1; }
+  grep -Fq '.gitignore' "$fixture/result.log" && { echo "scripts-test: start-work gave .gitignore advice for an external --dir ($n)" >&2; cat "$fixture/result.log" >&2; exit 1; }
+done
+cmp -s .git/info/exclude "$fixture/exclude.before" || { echo 'scripts-test: start-work changed the exclude file for an external --dir' >&2; diff "$fixture/exclude.before" .git/info/exclude >&2; exit 1; }
+for n in one two; do
+  git worktree remove --force "$external/todo-fixture-external-$n"
+  git branch --quiet -D "todo/fixture-external-$n"
+done
 git -C "$wt" commit --quiet --allow-empty -m 'Own fixture work'
 own_sha="$(git -C "$wt" rev-parse HEAD)"
 foreign_sha="$(git commit-tree -p main -m 'Another worker' "$(git rev-parse 'main^{tree}')")"
