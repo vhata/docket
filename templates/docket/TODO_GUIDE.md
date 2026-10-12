@@ -56,6 +56,14 @@ Files TODO: <slug>                       Claims review finding: <slug> / Resolve
 Claims roadmap: <slug>                   Resolves roadmap: <slug>
 ```
 
+Every PR body also carries exactly one change-type line, in the same form, whether or not it touches a queue:
+
+```text
+Type: <feature | fix | refactor | perf | docs | test | tooling | review>
+```
+
+`review` is for codebase review snapshots; `tooling` covers scripts, CI, hooks and dependencies. The validator warns when the line is missing and fails a malformed or repeated one. `bash docket/scripts/pr-labels.sh --pr <number> --apply` turns the branch, the `Type:` line and the claimed or resolved entries into the PR's labels: `docket`, `type:<kind>`, `queue:<todo | review | roadmap>`, `area:<area>` and `priority:<p0-p3>`.
+
 Directly requested work needs no invented entry and no marker. A `todo/`, `review/` or `roadmap/` branch is a claim: the validator fails a PR from such a branch unless the body carries a `Claims`, `Resolves` or `Partially resolves` marker in that queue's namespace for the branch's slug (`review/` means a `review/BACKLOG.md` entry). Other prefixes need no marker. A review batch claims its backlog slug and each finding actually in scope; a raw finding taken by explicit assignment claims only the finding and says why. `bash docket/scripts/check-pr-markers.sh --body <file>` validates markers against the queues.
 
 ## Resolving

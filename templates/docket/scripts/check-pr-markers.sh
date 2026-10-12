@@ -28,6 +28,10 @@
 #   Claims review finding: <slug>          Resolves review finding: <slug>
 #   Claims roadmap: <slug>                 Resolves roadmap: <slug>
 #
+# Change type (exactly one per description, same placement rules; missing is
+# a warning, malformed or repeated an error):
+#   Type: feature | fix | refactor | perf | docs | test | tooling | review
+#
 # Exit 1 on any error. Portable to bash 3.2.
 set -euo pipefail
 
@@ -47,7 +51,7 @@ while [ $# -gt 0 ]; do
     --todo) todo="$2"; shift 2 ;;
     --backlog) backlog="$2"; shift 2 ;;
     --branch) branch="$2"; shift 2 ;;
-    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,35p' "$0"; exit 0 ;;
     *) echo "check-pr-markers: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -91,10 +95,11 @@ entry_block() {
     inblock { print }' "$1"
 }
 
-# Strip Windows line endings (bodies edited on the web) and HTML comments
-# (template hints, which may span several lines) before checking structure.
-# A line that lies entirely inside a comment becomes an empty line, so line
-# numbers are preserved.
+# Strip Windows line endings (bodies edited on the web), HTML comments
+# (template hints, which may span several lines) and fenced code blocks
+# (examples and pasted output) before checking structure. A line that lies
+# entirely inside a comment or a fence becomes an empty line, so line numbers
+# are preserved.
 tr -d '\r' < "$body" | awk '
   {
     line = $0; out = ""
@@ -109,7 +114,10 @@ tr -d '\r' < "$body" | awk '
         out = out substr(line, 1, p - 1); line = substr(line, p + 4); incomment = 1
       }
     }
-    print out
+    # A backtick fence never has backticks after it on the opening line, so
+    # inline code such as ```x``` at the start of a line is not a fence.
+    if (out ~ /^[[:space:]]*~~~/ || (out ~ /^[[:space:]]*```/ && (fence || out !~ /^[[:space:]]*```.*`/))) { fence = !fence; print ""; next }
+    print (fence ? "" : out)
   }' > "$tmp/body.clean"
 
 first_heading="$(grep -m1 -E '^## ' "$tmp/body.clean" || true)"
@@ -137,6 +145,28 @@ grep -Ei '^[*_` ]*(claims|resolves|partially resolves|remaining|files)[*_` ]*(to
 while IFS= read -r line; do
   [ -n "$line" ] && err "malformed marker \"$line\" (exact form: \"Resolves TODO: my-slug\"; one slug per line, nothing after the slug, no backticks or bold; put explanations in the prose above)"
 done < "$tmp/nearmiss"
+
+# The change type: one "Type: <kind>" line, which pr-labels.sh turns into a
+# type: label and the squash commit keeps in the history. Missing is a
+# warning; a malformed or repeated line is an error. Keep the kinds in step
+# with pr-labels.sh.
+types_re='feature|fix|refactor|perf|docs|test|tooling|review'
+grep -Ex "Type: ($types_re)" "$tmp/body.clean" > "$tmp/types" || true
+# Near misses: a line that starts with "Type:" in any case or emphasis but is
+# not exact, or a line that is only a type line dressed as a list item,
+# task-list item, quote, indented or backticked text.
+{ grep -Ei '^[*_]*type[*_]*:' "$tmp/body.clean" || true
+  grep -Ei "^[[:space:]]*(([-+*]|[0-9]+[.)])[[:space:]]+(\[[ xX]\][[:space:]]+)?|>[[:space:]]*)*[*_\`]*type[*_\`]*:[*_\` ]*($types_re)[*_\`]*[[:space:]]*\$" "$tmp/body.clean" || true
+} | sort -u | { grep -Exv "Type: ($types_re)" || true; } > "$tmp/badtypes"
+while IFS= read -r line; do
+  [ -n "$line" ] && err "malformed type line \"$line\" (exact form: \"Type: fix\", at the start of the line, one of: ${types_re//|/, })"
+done < "$tmp/badtypes"
+ntypes="$(wc -l < "$tmp/types" | tr -d ' ')"
+if [ "$ntypes" -gt 1 ]; then
+  err "$ntypes Type lines; a pull request does one kind of thing, so it carries one"
+elif [ "$ntypes" -eq 0 ] && [ ! -s "$tmp/badtypes" ]; then
+  warn "no \"Type: <kind>\" line (one of: ${types_re//|/, }); pr-labels.sh cannot label the kind of change"
+fi
 
 if [ ! -s "$tmp/markers" ]; then
   [ -n "$branch" ] || branch="$(git rev-parse --abbrev-ref "$head" 2>/dev/null || true)"

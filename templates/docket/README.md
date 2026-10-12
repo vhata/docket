@@ -98,7 +98,8 @@ kinds of content:
 | `VERSION` | The skill commit and date these files were installed from. |
 | `scripts/ci.sh` | The single entry point CI calls; runs every validator below in order and stops at the first failure. On pull requests it reads the PR body from the event payload (`GITHUB_EVENT_PATH`, with `jq`) and falls back to `gh pr view`, which needs `pull-requests: read`. |
 | `scripts/check-queues.sh` | Validates the structure of `TODO.md` and `review/BACKLOG.md`: entry format, unique slugs, `Source` lines, cross-references and dependencies. |
-| `scripts/check-pr-markers.sh` | Validates a pull request description's markers against the queues at the base and head commits. |
+| `scripts/check-pr-markers.sh` | Validates a pull request description's markers against the queues at the base and head commits, and its `Type:` line. |
+| `scripts/pr-labels.sh` | Derives a pull request's labels from its branch, its `Type:` line and the queue entries it claims or resolves; `--apply` creates missing labels and sets them on the pull request. |
 | `scripts/check-links.sh` | Checks that relative Markdown links, images and `#anchors` resolve to existing files and headings. |
 | `scripts/claim-check.sh` | Looks for existing claims on a slug: open and merged pull requests (a body marker, or a head branch whose last path component is the slug), branches and worktrees. `--self` rechecks from inside the claimed worktree, ignoring the worker's own branch. |
 | `scripts/start-work.sh` | Runs the claim check, then creates the `<queue>/<slug>` branch and its worktree. |
