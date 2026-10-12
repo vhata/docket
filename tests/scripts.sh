@@ -300,6 +300,32 @@ reject 'blocked backlog' 'but is Blocked by' bash "$queues" --strict
 cp unblocked.md review/BACKLOG.md
 printf '  - Depends on: `prerequisite`\n' >> review/BACKLOG.md
 reject 'dependent backlog' 'depends on unresolved' bash "$queues" --strict
+cp unblocked.md review/BACKLOG.md
+cp TODO.md local-todo.md
+printf '  - Blocked by: `owner/other-repo:upstream-fix` landing upstream\n  - Related: `other-repo:upstream-note`, `prerequisite`\n' >> TODO.md
+pass 'cross-repository blocker and related' bash "$queues" --strict
+expect 'cross-repository references were not accepted' 'no errors'
+printf '  - Related: `missing-local`\n' >> TODO.md
+reject 'local related still checked' 'Related slug `missing-local` is not in any queue' bash "$queues" --strict
+cp local-todo.md TODO.md
+printf '  - Blocked by: `other-repo:upstream-fix` and `missing-local`\n' >> TODO.md
+reject 'local blocker still checked' 'depends on `missing-local` which is not in any queue' bash "$queues" --strict
+cp local-todo.md TODO.md
+printf '  - Depends on: `other-repo:upstream-fix`\n' >> TODO.md
+reject 'cross-repository dependency' 'in another repository' bash "$queues" --strict
+cp local-todo.md TODO.md
+cat >> TODO.md <<'QUEUE'
+
+## Ready for separate work
+
+### P2 Normal
+
+- [TOOLS] `waits-upstream` **Use the upstream fix.**
+  - Source: scripts regression fixture
+  - Blocked by: `other-repo:upstream-fix`
+QUEUE
+reject 'ready with cross-repository blocker' 'but is Blocked by' bash "$queues" --strict
+cp local-todo.md TODO.md
 
 # claim-check.sh against a fake forge
 cat > bin/gh <<'GH'

@@ -2,7 +2,9 @@
 # Validate the structure of the Markdown work queues (TODO.md and
 # review/BACKLOG.md): entry format, unique stable slugs, required Source
 # lines, resolvable cross-references, explicit dependencies, and the
-# one-finding-one-backlog-entry rule.
+# one-finding-one-backlog-entry rule. A `repo:slug` reference names an entry in
+# another repository's queue; Blocked by and Related lines may carry one and it
+# is not resolved here, while Depends on names only this repository's slugs.
 #
 # Usage: docket/scripts/check-queues.sh [--todo PATH] [--backlog PATH] [--strict]
 #   Defaults: TODO.md and review/BACKLOG.md relative to the repo root when
@@ -26,7 +28,7 @@ while [ $# -gt 0 ]; do
     --todo) todo="$(abs "$2")"; shift 2 ;;
     --backlog) backlog="$(abs "$2")"; shift 2 ;;
     --strict) strict=1; shift ;;
-    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
     *) echo "check-queues: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -56,6 +58,10 @@ function slugs_in(str, arr,   n, s, pos) {
     s = substr(s, RSTART + RLENGTH)
   }
   return n
+}
+# A `repo:slug` (or `owner/repo:slug`) names an entry in another repository.
+function is_foreign(t) {
+  return t ~ /^[A-Za-z0-9._\/-]+:[a-z0-9][a-z0-9-]*$/
 }
 function is_priority(h) {
   return h ~ /^(P0 Critical|P1 High|P2 Normal|P3 Low|Unprioritized)$/
@@ -128,20 +134,23 @@ FNR == 1 { finish_entry(); stage = ""; priority = ""; file_is_backlog = (FILENAM
   else if (key == "Depends on") {
     n = slugs_in(val, tmp)
     if (n == 0) report("warning", FILENAME, FNR, "Depends on line for `" cur "` names no `slug`; use \"Blocked by:\" for decisions or external conditions")
-    for (i = 1; i <= n; i++) { nd++; dep_from[nd] = cur; dep_to[nd] = tmp[i]; dep_file[nd] = FILENAME; dep_line[nd] = FNR }
+    for (i = 1; i <= n; i++) {
+      if (is_foreign(tmp[i])) { report("error", FILENAME, FNR, "`" cur "` depends on `" tmp[i] "` in another repository; Depends on names only slugs in these queues, so use \"Blocked by:\""); continue }
+      nd++; dep_from[nd] = cur; dep_to[nd] = tmp[i]; dep_file[nd] = FILENAME; dep_line[nd] = FNR
+    }
   }
   else if (key == "Blocked by") {
-    # A decision, a person or an external condition, in prose; any `slug` in it is also a dependency.
+    # A decision, a person or an external condition, in prose; any local `slug` in it is also a dependency.
     if (val == "" || val ~ /^[Nn]one\.?$/) ;
     else {
       if (is_ready(cur)) report("error", FILENAME, FNR, "`" cur "` " where(cur) " but is Blocked by: " val "; " (is_backlog[cur] ? "clear the blocker before promoting it (the backlog holds only ready work)" : "move it out of Ready until the blocker clears"))
       n = slugs_in(val, tmp)
-      for (i = 1; i <= n; i++) { nd++; dep_from[nd] = cur; dep_to[nd] = tmp[i]; dep_file[nd] = FILENAME; dep_line[nd] = FNR }
+      for (i = 1; i <= n; i++) if (!is_foreign(tmp[i])) { nd++; dep_from[nd] = cur; dep_to[nd] = tmp[i]; dep_file[nd] = FILENAME; dep_line[nd] = FNR }
     }
   }
   else if (key == "Related") {
     n = slugs_in(val, tmp)
-    for (i = 1; i <= n; i++) { nr++; rel_from[nr] = cur; rel_to[nr] = tmp[i]; rel_file[nr] = FILENAME; rel_line[nr] = FNR }
+    for (i = 1; i <= n; i++) if (!is_foreign(tmp[i])) { nr++; rel_from[nr] = cur; rel_to[nr] = tmp[i]; rel_file[nr] = FILENAME; rel_line[nr] = FNR }
   }
   # Remaining from / Split from / Starting point / Evidence and any other key are free-form.
   next

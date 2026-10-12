@@ -40,7 +40,7 @@ The user needs only these phrases; this skill works out the rest by inspecting t
 | --- | --- | --- |
 | Parallel work | One owner, one branch, one worktree per task. Shared interfaces land before dependents start. The coordinator integrates and serialises queue edits. | [parallel-work](references/parallel-work.md) |
 | Paired review | Every code-writing agent gets a separate reviewer agent before the PR is called ready. The reviewer verifies claims, the author fixes, the PR body records who reviewed what. | [parallel-work](references/parallel-work.md#writer-and-reviewer-pairs) |
-| Queues, not tangents | Discoveries become queue entries with a source, then the current task resumes. Ready means unblocked. Claims are exact slugs in draft PRs. | [queues](references/queues.md) |
+| Queues, not tangents | Discoveries become queue entries with a source, in the repository that owns them, then the current task resumes. Ready means unblocked. Claims are exact slugs in draft PRs. | [queues](references/queues.md) |
 | Gates everywhere | Fast hooks, full CI on PRs and on pushes to main, scheduled extended runs on main, protection that makes the user's merge safe rather than ceremonial. Empty suites never pass. | [quality-gates](references/quality-gates.md) |
 | Review ledger | Full reviews record a revision and findings; incremental reviews start from the last revision and verify claimed fixes. Findings are promoted deliberately into a review backlog. | [reviews](references/reviews.md) |
 

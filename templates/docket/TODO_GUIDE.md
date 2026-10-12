@@ -8,20 +8,22 @@ Work required for the requested outcome, its correctness or its verification sta
 
 Discoveries go to `TODO.md`, bugs included. `review/BACKLOG.md` holds only findings a codebase review promoted.
 
+A discovery that belongs to another repository goes in that repository's queue, not this one's, because that is where its work is picked up. When the other repository uses Docket, add the entry to its `TODO.md` as a direct commit to its `main`: search its queues for an existing entry first (slugs are unique only within a repository), work in a fresh worktree of its `origin/main` rather than a checkout someone may be using, run its `docket/scripts/check-queues.sh`, and push under the session's push authority, removing the worktree afterwards. When the push is held, leave the worktree and give the user the command that publishes it, with `<worktree>` as an absolute path: `git -C <worktree> fetch origin && git -C <worktree> rebase origin/main && (cd <worktree> && bash docket/scripts/check-queues.sh) && git -C <worktree> push origin HEAD:main`. `Source:` names the originating repository as well as the branch or PR (`Source: owner/repo#12, YYYY-MM-DD`). The PR here takes no `Files TODO` marker, because markers name entries in these queues only; name the entry in its prose as `` `repo:slug` `` instead. Work here that cannot proceed until that entry is resolved records `` Blocked by: `repo:slug` ``, and triage clears it. An unrelated P0 found in another repository is filed there, reported prominently, and work pauses for direction. A repository that does not use Docket gets the report in whatever tracker it uses. In a fan-out the coordinator files it, as with any discovery.
+
 ## Entry format
 
 ```md
 - [AREA] `stable-kebab-slug` — **One-sentence outcome.** One-sentence rationale.
   - Source: task, branch, PR or review file, YYYY-MM-DD
   - Starting point: where a future worker should begin (optional)
-  - Depends on: `other-slug` (when blocked by queued work)
-  - Blocked by: a decision, person or external condition, in prose (when blocked by something that is not queued work)
+  - Depends on: `other-slug` (when blocked by queued work in this repository)
+  - Blocked by: a decision, person or external condition, in prose, or `repo:slug` for another repository's entry (when blocked by anything else)
   - Related: `other-slug` (optional)
   - Findings: `finding-slug`, `finding-slug` (review backlog only, required)
   - Remaining from: `original-slug` / Split from: `original-slug` (lineage, when applicable)
 ```
 
-`Source` is required. Slugs are unique across all queues and never change when an entry moves. One area per entry, from the list in the Docket section of `AGENTS.md`. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
+`Source` is required. Slugs are unique across all queues and never change when an entry moves. `Blocked by:` and `Related:` may name an entry in another repository as `` `repo:slug` `` (or `` `owner/repo:slug` ``), which the validator does not resolve; `Depends on:` names only slugs in these queues. One area per entry, from the list in the Docket section of `AGENTS.md`. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
 
 Review backlog entries additionally carry a `Findings:` line naming every raw review finding they cover, each slug in backticks (``Findings: `finding-slug`, `finding-slug` ``), and `Source` names the review file. Each finding maps to at most one backlog entry.
 
@@ -29,11 +31,11 @@ Review backlog entries additionally carry a `Findings:` line naming every raw re
 
 TODO stages: **Needs triage** (outcome, value or dependencies unclear), **Needs proof of concept** (a focused experiment is needed first), **Ready for separate work** (understood well enough to implement and verify, and unblocked). Priorities within each stage: **P0 Critical** (active data loss, security exposure or release blocker; the Docket section of `AGENTS.md` may extend this definition), **P1 High**, **P2 Normal**, **P3 Low**, **Unprioritized**. New entries are Unprioritized unless the user assigned a priority or the item objectively qualifies as P0. The review backlog has priority sections only; its entries are ready by construction.
 
-An entry with a `Depends on:` naming unresolved queued work, or any `Blocked by:` line, is not ready whatever its section. When the dependency lands or the blocker clears, the resolving PR drops the line and moves the entry to Ready if nothing else blocks it. A remainder records what is left; it cannot waive an acceptance condition the original entry carried.
+An entry with a `Depends on:` naming unresolved queued work, or any `Blocked by:` line, is not ready whatever its section. When the dependency lands or the blocker clears, the resolving PR drops the line and moves the entry to Ready if nothing else blocks it. A blocker in another repository is cleared by triage here, since the PR that resolves it cannot see this queue. A remainder records what is left; it cannot waive an acceptance condition the original entry carried.
 
 ## Triage
 
-Triage runs when the user asks, when Needs triage holds more than about a dozen entries, or every few weeks. For each entry: decide the stage, set a priority, add or verify `Depends on:`, merge duplicates, remove obsolete entries with the reason in the commit message. Triage records work rather than doing it, so it lands as a direct commit to `main` (see `CONTRACT.md`) with no resolution markers.
+Triage runs when the user asks, when Needs triage holds more than about a dozen entries, or every few weeks. For each entry: decide the stage, set a priority, add or verify `Depends on:`, merge duplicates, remove obsolete entries with the reason in the commit message. Then, across every stage, check each `` Blocked by: `repo:slug` `` against that repository's queues; when the entry is gone because it was resolved, drop the line and move the dependent to Ready if nothing else blocks it; when it was rejected or removed as obsolete, reassess the dependent instead. Triage records work rather than doing it, so it lands as a direct commit to `main` (see `CONTRACT.md`) with no resolution markers.
 
 ## Selecting and claiming
 

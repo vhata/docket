@@ -10,14 +10,14 @@ Natural-language selection follows the file boundary: "grab a TODO" means `TODO.
 - [AREA] `stable-kebab-slug` — **One-sentence outcome.** One-sentence rationale.
   - Source: task, branch, PR or review file, YYYY-MM-DD          (required)
   - Starting point: where a future worker should begin            (optional)
-  - Depends on: `other-slug`                                       (when blocked by queued work)
-  - Blocked by: a decision, person or external condition, in prose (when blocked by something that is not queued work)
+  - Depends on: `other-slug`                                       (when blocked by queued work in this repository)
+  - Blocked by: a decision, person or external condition, in prose, or `repo:slug` (when blocked by anything else)
   - Related: `other-slug`                                          (optional)
   - Findings: `finding-slug`, `finding-slug`                       (review backlog only, required)
   - Remaining from: `original-slug` / Split from: `original-slug` (lineage, when applicable)
 ```
 
-Slugs are unique across all queues and never change when an entry moves. One area marker per entry; the repository defines its area list. Free-form indented lines for evidence are fine. `bash docket/scripts/check-queues.sh` validates all of this.
+Slugs are unique across all queues and never change when an entry moves. `Blocked by:` and `Related:` may also name an entry in another repository's queue as `` `repo:slug` `` (or `` `owner/repo:slug` `` where the bare name is ambiguous); the validator leaves those unresolved, and rejects them in `Depends on:`, which orders work within one repository. One area marker per entry; the repository defines its area list. Free-form indented lines for evidence are fine. `bash docket/scripts/check-queues.sh` validates all of this.
 
 ## Stages and priorities
 
@@ -40,9 +40,24 @@ Exceptions: work required for the requested outcome, its correctness or its veri
 
 Who edits the queue file: in a fan-out, writers report discoveries and the coordinator files them, serialising edits, and acknowledges each one back to the writer with its slug; until that acknowledgement the discovery is pending, and the coordinator reconciles pending discoveries against the queue before any handoff or ready flag. Alone, the agent files them in its own PR.
 
+### Discoveries in another repository
+
+A bug in one repository often turns up while working in another, for instance in a library while working on an application that uses it. The entry belongs in the queue of the repository that owns the problem. Filing it locally would put it where nobody working on the owning repository looks, and the local validator cannot check a slug that lives elsewhere.
+
+When the owning repository uses Docket, the entry lands there as a direct commit to its `main`, which the [direct-to-main](pr-and-landing.md#direct-to-main) exception for adding queue entries already covers. The steps are the ordinary capture steps, done in the other repository:
+
+1. Search its queues, not the current one's; slugs are unique only within a repository.
+2. Work in a fresh worktree of its `origin/main` (`git -C <path> fetch origin && git -C <path> worktree add --detach .worktrees/file-<slug> origin/main`). The user's checkout of that repository, or another session's, may be mid-change.
+3. Write the entry with a `Source:` that names the originating repository as well as the branch or PR (`Source: owner/repo#12, YYYY-MM-DD`); a bare `PR #12` would be read as one of the owning repository's PRs. Free-form evidence lines carry what was found.
+4. Run that repository's `docket/scripts/check-queues.sh`, commit, and push with `git push origin HEAD:main` under the session's push authority, then remove the worktree. Under an unattended grant the push is held like any other; the worktree stays (detached, so `cleanup-landed.sh` does not list it), and the report and the audit log give the command that publishes it, with `<worktree>` the absolute path `<path>/.worktrees/file-<slug>`: `git -C <worktree> fetch origin && git -C <worktree> rebase origin/main && (cd <worktree> && bash docket/scripts/check-queues.sh) && git -C <worktree> push origin HEAD:main`. The rebase and re-check matter because `main` has usually moved by the time the user gets to it. When the rebase stops on a conflict, which is likely when another entry landed in the same section, resolve it, run `git -C <worktree> rebase --continue`, and rerun the rest of the command.
+
+The PR in the originating repository records the filing in prose, naming the entry as `` `repo:slug` ``. It takes no `Files TODO` marker: markers name entries in the local queues, and `check-pr-markers.sh` rejects a qualified slug as malformed and a bare one as missing. If local work cannot proceed until the other entry is resolved, the local entry carries `` Blocked by: `repo:slug` `` and stays out of Ready; `Depends on:` is for local entries only, because the validator can see when a local dependency lands but not when a foreign one does. Whoever resolves the foreign entry has no way to find its dependents, so the dependent repository's triage clears the blocker (see below).
+
+In a fan-out the coordinator files the entry, as with local discoveries; writers never commit to another repository. The P0 rule applies unchanged: an unrelated P0 found in another repository is filed there, reported prominently, and work pauses for direction. When the owning repository does not use Docket, the report goes to whatever tracker it does use (an issue, say), and the local `Blocked by:` names that instead.
+
 ## Triage
 
-Triage is a scheduled ritual, not something that happens when an agent trips over the triage section. Run it when the user asks, when Needs triage exceeds roughly a dozen entries, or at least every few weeks. For each entry in Needs triage: decide the stage (or that a proof of concept is needed), set a priority, add or verify `Depends on:`, merge duplicates, and remove obsolete entries with the reason in the commit message. Triage records work rather than doing it, so it lands as a direct commit to `main` (subject "Triage TODO.md, YYYY-MM-DD"; see [pr-and-landing](pr-and-landing.md#direct-to-main)); it uses no resolution markers because nothing was implemented.
+Triage is a scheduled ritual, not something that happens when an agent trips over the triage section. Run it when the user asks, when Needs triage exceeds roughly a dozen entries, or at least every few weeks. For each entry in Needs triage: decide the stage (or that a proof of concept is needed), set a priority, add or verify `Depends on:`, merge duplicates, and remove obsolete entries with the reason in the commit message. Then, across every stage and not only Needs triage, check each `` Blocked by: `repo:slug` `` against that repository's queues; when the entry is gone, its removal commit or PR says whether it was resolved. If it was, drop the line and move the dependent to Ready if nothing else blocks it; if it was rejected or removed as obsolete, reassess the dependent instead. Triage records work rather than doing it, so it lands as a direct commit to `main` (subject "Triage TODO.md, YYYY-MM-DD"; see [pr-and-landing](pr-and-landing.md#direct-to-main)); it uses no resolution markers because nothing was implemented.
 
 Review-close triage of findings is a separate step owned by codebase reviews (see reviews.md).
 
