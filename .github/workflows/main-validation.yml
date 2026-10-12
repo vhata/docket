@@ -1,0 +1,54 @@
+# Scheduled validation of main. The PR checks already cover everything this
+# repository can test, so this run repeats them on main's current tip, on both
+# operating systems, to catch a change in the runner images or tools under an
+# unchanged tree, and reports whether a codebase review is due. Advisory: a red
+# run is answered the same day by a revert or a P1 queue entry. A missing
+# scheduled run is not a pass. See docs/QUALITY.md.
+name: Main validation
+
+on:
+  schedule:
+    - cron: '23 11 * * 1'   # weekly, Mondays
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/main-validation.yml
+      - docket/**
+      - scripts/**
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: main-validation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  extended:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Record the commit
+        run: mkdir -p evidence && git rev-parse HEAD | tee evidence/commit.txt
+      - name: Full gates
+        run: bash scripts/check.sh 2>&1 | tee evidence/check.log
+      - name: Review cadence
+        run: bash docket/scripts/review-due.sh --paths "install.sh SKILL.md references templates tests" | tee evidence/review-due.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: main-validation-${{ matrix.os }}-${{ github.run_attempt }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: warn

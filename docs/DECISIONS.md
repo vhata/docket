@@ -1,0 +1,13 @@
+# Decisions
+
+Non-obvious choices and their trade-offs, dated, newest section first. Read the relevant entry before changing a mechanism that looks odd. Choices made autonomously under a delegation are recorded here for the user to review; an entry is a record, not a claim that the capability is complete.
+
+## 2026-10-12
+
+| Decision | Reason and trade-off |
+| --- | --- |
+| The skill repository runs on docket itself, with a committed copy of `templates/docket/` at `docket/`. | The contract, guides and CI all name `docket/` paths, and a repository that ships the drift check should be held to it. A symlink `docket -> templates/docket` was discarded: the guides link outward with `../TODO.md` and `../docs/QUALITY.md`, which the filesystem resolves against `templates/` (reaching the template files) while lexical tools and GitHub resolve them against the root, so agents would read different files depending on the tool. The cost of the copy is that a PR changing `templates/docket/` shows each change twice. |
+| `install.sh` keeps refusing to install into its own repository unless `--self` is given, and `--self` is refused for any other repository. | Running the installer from inside the skill when a project was meant is an easy mistake, and the refusal catches it. Self-hosting is a deliberate act, so it gets an explicit flag rather than a removed guard. |
+| In self mode `docket/VERSION` is the fixed line `self`, and `--self --check` compares files only. | A sha and date would change on every PR that touches `templates/docket/`, so parallel PRs would conflict on `VERSION`; and while a change is being developed the repository root is the skill directory, so the recorded sha would always be dirty. The commit already pins both copies, so the line carries no information here. |
+| Branches stay under the harness's names (`vhata/<slug>` from Conductor) rather than `todo/<slug>`. | `claim-check.sh` matches a branch whose last path component is the slug, so a harness branch named after the slug is still found, and the draft PR's `Claims` marker is the claim of record. The trade-off: the marker validator only enforces a claim marker for `todo/`, `review/` and `roadmap/` branches, so a harness-named branch relies on the PR body carrying the marker. |
+| Hooks are a tracked `.githooks/` directory wired with `core.hooksPath` by `scripts/setup.sh`. | The repository has no package manager to host a hook framework, and the checks are already shell scripts. Pre-commit runs lint, the vendored-copy check and queue hygiene; the regression suites run on pre-push because they build scratch repositories. |

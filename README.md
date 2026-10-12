@@ -26,6 +26,7 @@ The user stays in charge of the one-way doors: merging, force-pushing, tagging, 
 | `templates/` | Files the skill installs into a repository, laid out as they land there. `templates/docket/` is vendored as `docket/` and never edited in the project: the generic contract, the queue and review guides, and portable bash tools (bash 3.2, git, and `gh` where PRs are involved) for queue validation, PR marker checks, claim checks, branch and worktree creation, review drift, post-merge cleanup, and the CI entry point. The rest are starting points edited per project: the Docket section the installer adds to `AGENTS.md`, CI workflows, a PR template, and `scripts/check.sh` and `scripts/setup.sh` skeletons. See `templates/README.md` for where each one goes. |
 | `tests/` | `scripts.sh` checks the vendored scripts against a disposable git repository, with a fake forge for the pull request cases; `install.sh` runs the installer against a scratch project and a scratch clone of this checkout. CI runs both under Linux bash and macOS `/bin/bash` 3.2. |
 | `agents/openai.yaml` | Display metadata so the skill shows up in Codex. |
+| `docket/`, `AGENTS.md`, `CLAUDE.md`, `ARCHITECTURE.md`, `TODO.md`, `review/`, `docs/`, `scripts/`, `.githooks/`, `.github/`, `.gitignore` | This repository's own docket installation: it is run with docket like any adopting project. `docket/` is generated from `templates/docket/` by `bash install.sh --self` and CI fails when the two differ. These files describe this repository only and are not installed anywhere. See `ARCHITECTURE.md`. |
 
 ## Installing the skill
 
@@ -87,7 +88,7 @@ bash docket/scripts/check-links.sh                # relative Markdown links reso
 bash docket/scripts/ci.sh                         # what CI runs: check-queues --strict, check-links, and check-pr-markers on PRs
 ```
 
-The copies in this repository's `templates/docket/scripts/` are what you edit when developing the skill; they reach a project only through `install.sh`, and `bash ~/.claude/skills/docket/install.sh --check` shows where a project's `docket/` has drifted from them. The scripts act on the repository of the current directory, so run them from inside the project.
+The copies in this repository's `templates/docket/scripts/` are what you edit when developing the skill, and this repository's own `docket/` is regenerated from them with `bash install.sh --self`. They reach a project only through `install.sh`, and `bash ~/.claude/skills/docket/install.sh --check` shows where a project's `docket/` has drifted from them. The scripts act on the repository of the current directory, so run them from inside the project.
 
 ## Licence
 

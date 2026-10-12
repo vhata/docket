@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Fast checks on every commit: parse and shellcheck, the vendored copy
+# against templates/docket/, queue hygiene and Markdown links. Checks the
+# working tree, not only the staged files. See docs/QUALITY.md.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+bash scripts/lint.sh >/dev/null
+bash scripts/vendor-check.sh >/dev/null
+bash docket/scripts/ci.sh >/dev/null

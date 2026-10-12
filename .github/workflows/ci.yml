@@ -1,16 +1,33 @@
-# Checks for the skill repository itself: the vendored scripts and install.sh
-# parse and pass their regression fixtures under both bash 5 (Linux) and bash
-# 3.2 (macOS), shellcheck is clean where it is installed, and every relative
-# link in the Markdown resolves.
+# Merge-blocking checks for the skill repository. The scripts job runs
+# scripts/check.sh's gates under bash 5 (Linux) and bash 3.2 (macOS): every
+# shell script parses and is shellcheck-clean where shellcheck is installed,
+# docket/ matches templates/docket/, and both regression suites pass. The
+# hygiene job runs the vendored docket/scripts/ci.sh: queue hygiene, Markdown
+# links and, on pull requests, the PR markers. See docs/QUALITY.md.
 name: CI
 
 on:
   pull_request:
+    # edited: a re-run reuses the original event payload, so without this
+    # trigger an edited PR body is re-validated as it was before the edit.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
 permissions:
   contents: read
+  # ci.sh reads the PR body from the event payload; pull-requests: read covers
+  # its fallback to `gh pr view`.
+  pull-requests: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Cancel superseded runs on PR branches only, never on main.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   scripts:
@@ -18,23 +35,32 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           # tests/install.sh clones this checkout and compares commits in it.
           fetch-depth: 0
-      - name: Syntax
-        run: for f in templates/docket/scripts/*.sh install.sh tests/*.sh; do /bin/bash -n "$f"; done
-      - name: Shellcheck
-        run: |
-          if command -v shellcheck >/dev/null 2>&1; then
-            shellcheck -S warning templates/docket/scripts/*.sh install.sh tests/*.sh
-          else
-            echo "shellcheck not installed on this runner; skipped"
-          fi
-      - name: Script fixtures
-        run: /bin/bash tests/scripts.sh
-      - name: Installer fixtures
-        run: /bin/bash tests/install.sh
-      - name: Links
-        run: /bin/bash templates/docket/scripts/check-links.sh
+      - name: Lint
+        run: bash scripts/lint.sh
+      - name: Vendored copy
+        run: bash scripts/vendor-check.sh
+      - name: Tests
+        run: bash scripts/test.sh
+
+  hygiene:
+    name: Queue and PR hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # The PR variables are empty on push events and ci.sh then skips the
+      # marker check.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: bash docket/scripts/ci.sh
