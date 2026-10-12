@@ -573,7 +573,9 @@ git update-ref -d refs/remotes/origin/todo/fixture-self-task
 
 # review-due.sh. Index rows are dated today, so the 21-day trigger never
 # fires on its own and these verdicts hold whenever the suite runs; the
-# trigger itself is checked against a fixed date long past.
+# trigger itself is checked against a fixed date long past. The verdicts
+# assume the default thresholds, whatever the caller has exported.
+unset REVIEW_DUE_COMMITS REVIEW_DUE_DAYS REVIEW_FULL_FRACTION
 today="$(date -u +%Y-%m-%d)"
 head="$(git rev-parse HEAD)"
 printf '| Date | Type | Commit |\n| %s | full | `%s` |\n' "$today" "$head" > review-index.md
