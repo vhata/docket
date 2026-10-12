@@ -265,6 +265,10 @@ git -C "$me" checkout --quiet --detach "$snapshot"
 git -C "$me" config user.name 'Self fixture'
 git -C "$me" config user.email 'self-fixture@example.invalid'
 git -C "$me" config core.hooksPath /dev/null
+# The skill repository commits its own docket installation; remove it so the
+# first --self below is a first install.
+git -C "$me" rm -rq --ignore-unmatch docket AGENTS.md CLAUDE.md
+git -C "$me" commit --quiet --allow-empty -m 'Remove the self installation'
 run 0 '--self install' bash "$me/install.sh" --self "$me"
 printf 'self\n' | cmp -s - "$me/docket/VERSION" || fail "--self wrote VERSION '$(cat "$me/docket/VERSION")', expected the line 'self'"
 grep -qxF "$begin" "$me/AGENTS.md" || fail '--self did not write the Docket section of AGENTS.md'
@@ -309,6 +313,24 @@ run 2 '--self into a sibling worktree' bash "$me/install.sh" --self "$work/selfw
 expect '--self into a sibling worktree was not refused' 'installs only into the checkout it runs from'
 run 2 'sibling worktree without --self' bash "$me/install.sh" "$work/selfwt"
 expect 'sibling worktree without --self was not refused' 'refusing to install the skill into its own repository'
+# From inside the sibling worktree, targeting itself, --self is the everyday
+# case for a harness that gives each task its own worktree.
+run 0 '--self inside a worktree' bash "$work/selfwt/install.sh" --self "$work/selfwt"
+fill "$work/selfwt"
+run 0 '--self --check inside a worktree' bash "$work/selfwt/install.sh" --self --check "$work/selfwt"
+# Only install.sh and templates/ decide what an install writes, so uncommitted
+# work in the skill repository's own docket files does not make a project's
+# install dirty, while an uncommitted template edit does.
+git -C "$me" add -A && git -C "$me" commit --quiet -m 'Self fixture state'
+printf 'scratch\n' > "$me/scratch-notes.md"
+printf '\n' >> "$me/AGENTS.md"
+newproj fromself; p="$work/fromself"
+run 0 'install with uncommitted non-template work in the skill' bash "$me/install.sh" "$p"
+grep -q -- '-dirty' "$p/docket/VERSION" && fail "uncommitted non-template work made the install dirty: $(cat "$p/docket/VERSION")"
+printf '\n' >> "$me/templates/README.md"
+run 0 'install with an uncommitted template edit' bash "$me/install.sh" "$p"
+grep -q -- '-dirty' "$p/docket/VERSION" || fail "an uncommitted template edit did not make the install dirty: $(cat "$p/docket/VERSION")"
+git -C "$me" checkout --quiet -- templates/README.md AGENTS.md; rm -f "$me/scratch-notes.md"
 # A project holding a copy of the skill's own docket/ (VERSION 'self') is
 # compared on its files by a normal --check.
 newproj selfcopy; p="$work/selfcopy"

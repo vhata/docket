@@ -159,9 +159,11 @@ else
   # name: uncommitted changes under it, or, in a subtree host, a tree that no
   # longer matches the upstream commit (committed local edits, or a subtree
   # pull made without --squash, which leaves no new trailer). Unrelated work
-  # elsewhere in a host repository is not dirt.
+  # elsewhere in a host repository is not dirt, and neither is the skill
+  # repository's own docket installation (docket/, AGENTS.md, TODO.md and the
+  # rest): only install.sh and templates/ decide what an install writes.
   if [ "$sha" != unknown ]; then
-    if [ -n "$(git -C "$skill" status --porcelain -- . 2>/dev/null)" ]; then
+    if [ -n "$(git -C "$skill" status --porcelain -- install.sh templates 2>/dev/null)" ]; then
       sha="$sha-dirty"
     elif [ "$from_subtree" -eq 1 ] && git -C "$skill_top" cat-file -e "$head_sha^{commit}" 2>/dev/null \
       && ! git -C "$skill_top" diff --quiet "$head_sha" "HEAD:$prefix" -- 2>/dev/null; then
