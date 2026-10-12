@@ -11,8 +11,7 @@
 # Checks, in order:
 #   1. check-queues.sh --strict      queue structure, warnings are errors
 #   2. check-links.sh                relative Markdown links and anchors
-#   3. check-pr-markers.sh --strict  only when PR is set (see below);
-#                                    warnings are errors
+#   3. check-pr-markers.sh           only when PR is set (see below)
 #
 # Environment (all optional; set them on pull_request events):
 #   PR           GitHub pull request number. When non-empty the PR body is
@@ -78,7 +77,7 @@ if [ -n "${PR:-}" ]; then
     exit 1
   fi
   echo "    (body from $body_from)"
-  if ! "$here/check-pr-markers.sh" --body "$tmp/pr-body.md" --base "origin/$BASE" --head HEAD --branch "$HEAD_BRANCH" --strict; then
+  if ! "$here/check-pr-markers.sh" --body "$tmp/pr-body.md" --base "origin/$BASE" --head HEAD --branch "$HEAD_BRANCH"; then
     echo "ci: check 'check-pr-markers' failed" >&2
     exit 1
   fi

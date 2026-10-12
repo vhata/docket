@@ -84,7 +84,7 @@ bash docket/scripts/pr-labels.sh --pr N --apply   # label a PR by type, queue, a
 bash docket/scripts/review-due.sh                 # is a review due?
 bash docket/scripts/cleanup-landed.sh --apply     # remove worktrees and branches for merged PRs
 bash docket/scripts/check-links.sh                # relative Markdown links resolve
-bash docket/scripts/ci.sh                         # what CI runs: check-queues --strict, check-links, and check-pr-markers --strict on PRs
+bash docket/scripts/ci.sh                         # what CI runs: check-queues --strict, check-links, and check-pr-markers on PRs
 ```
 
 The copies in this repository's `templates/docket/scripts/` are what you edit when developing the skill; they reach a project only through `install.sh`, and `bash ~/.claude/skills/docket/install.sh --check` shows where a project's `docket/` has drifted from them. The scripts act on the repository of the current directory, so run them from inside the project.
