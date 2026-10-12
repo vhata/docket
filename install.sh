@@ -155,9 +155,9 @@ else
   fi
   sha=unknown
   [ "$head_sha" = unknown ] || sha="$(printf '%.12s' "$head_sha")"
-  # Dirty means the skill's own directory differs from the commit VERSION will
-  # name: uncommitted changes under it, or, in a subtree host, a tree that no
-  # longer matches the upstream commit (committed local edits, or a subtree
+  # Dirty means what an install writes differs from the commit VERSION will
+  # name: uncommitted changes to install.sh or templates/, or, in a subtree
+  # host, those paths no longer matching the upstream commit (committed local edits, or a subtree
   # pull made without --squash, which leaves no new trailer). Unrelated work
   # elsewhere in a host repository is not dirt, and neither is the skill
   # repository's own docket installation (docket/, AGENTS.md, TODO.md and the
@@ -166,8 +166,8 @@ else
     if [ -n "$(git -C "$skill" status --porcelain -- install.sh templates 2>/dev/null)" ]; then
       sha="$sha-dirty"
     elif [ "$from_subtree" -eq 1 ] && git -C "$skill_top" cat-file -e "$head_sha^{commit}" 2>/dev/null \
-      && ! git -C "$skill_top" diff --quiet "$head_sha" "HEAD:$prefix" -- 2>/dev/null; then
-      echo "install: the skill directory $skill differs from upstream commit $sha (committed local edits, or a subtree pull without --squash); recording it as dirty" >&2
+      && ! git -C "$skill_top" diff --quiet "$head_sha" "HEAD:$prefix" -- install.sh templates 2>/dev/null; then
+      echo "install: install.sh or templates/ in $skill differs from upstream commit $sha (committed local edits, or a subtree pull without --squash); recording it as dirty" >&2
       sha="$sha-dirty"
     fi
   fi

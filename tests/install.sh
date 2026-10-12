@@ -17,8 +17,10 @@
 # skill's own clone (VERSION 'self', --self --check passing, failing on an
 # unsynced templates/docket/ edit and on a VERSION other than 'self'), refused
 # for another repository, a sibling worktree and a subtree host; a normal
-# --check of a copied VERSION 'self'; a squashed-subtree host, reached directly and through a symlink, with an
-# unrelated host change (clean) and a committed edit under the skill (dirty).
+# --check of a copied VERSION 'self'; a squashed-subtree host, reached
+# directly and through a symlink, with an unrelated host change and a
+# committed README edit under the skill (both clean) and a committed edit
+# under its templates/ (dirty).
 #
 # Usage: bash tests/install.sh   (from anywhere; needs git and bash 3.2+)
 set -euo pipefail
@@ -436,9 +438,16 @@ ln -s "$host" "$work/hostlink"
 newproj nine; p="$work/nine"
 run 0 'install from a subtree host through a symlink' bash "$work/hostlink/skills/docket/install.sh" "$p"
 [ "$(cut -d' ' -f1 "$p/docket/VERSION")" = "$(printf '%.12s' "$upstream")" ] || { echo "install-test: VERSION through a symlinked host is $(cat "$p/docket/VERSION"), expected the upstream commit" >&2; exit 1; }
-# A committed edit under the skill directory makes the install dirty, since
-# the files no longer match the commit VERSION names.
+# A committed edit to the skill's README changes nothing an install writes, so
+# the install stays clean.
 echo 'local edit' >> "$host/skills/docket/README.md"
+git -C "$host" commit --quiet -am 'Edit the skill README locally'
+newproj ten-a; p="$work/ten-a"
+run 0 'install from a subtree host with a committed README edit' bash "$host/skills/docket/install.sh" "$p"
+grep -q -- '-dirty' "$p/docket/VERSION" && { echo "install-test: a committed README edit in the subtree made the install dirty: $(cat "$p/docket/VERSION")" >&2; exit 1; }
+# A committed edit under templates/ makes the install dirty, since what it
+# writes no longer matches the commit VERSION names.
+echo 'local edit' >> "$host/skills/docket/templates/README.md"
 git -C "$host" commit --quiet -am 'Edit the vendored skill locally'
 newproj ten; p="$work/ten"
 run 0 'install from a subtree host with a committed local edit' bash "$host/skills/docket/install.sh" "$p"
