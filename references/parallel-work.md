@@ -95,7 +95,7 @@ In the unattended mode, claims are not globally visible. Say so in the audit log
 
 ### Audit log
 
-`.docket/AUDIT.md`, under the local `.docket/` directory that `install.sh` excludes from git through `.git/info/exclude` (so it never reaches a PR; see [setup](setup.md#3-install-order) steps 2 and 3), append-only. Each session opens with a scope entry stating what is authorised. Each load-bearing decision (interface change, approach chosen over alternatives, dependency added, behaviour changed, work held back) gets:
+`.docket/AUDIT.md`, under the local `.docket/` directory that `install.sh` excludes from git through `.git/info/exclude` (so it never reaches a PR; see [setup](setup.md#3-install-order) steps 1 and 3), append-only. Each session opens with a scope entry stating what is authorised. Each load-bearing decision (interface change, approach chosen over alternatives, dependency added, behaviour changed, work held back) gets:
 
 ```markdown
 ## 2026-09-23 00:12 — <title>
