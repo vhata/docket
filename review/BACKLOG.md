@@ -6,11 +6,6 @@ Only work promoted from whole-codebase reviews belongs here. Every entry is read
 
 ## P1 High
 
-- [TOOLING] `fix-review-due-fixture-dates` — **The review-due fixtures pass on any date.** They hard-code 2026-10-06 and expect no review due, so both required CI jobs fail from 2026-10-27.
-  - Source: review/2026-10-12-1702-full.md, 2026-10-12
-  - Starting point: `tests/scripts.sh:576-603`; write the index rows with `date -u +%Y-%m-%d`.
-  - Findings: `review-due-fixture-date-time-bomb`
-
 - [INSTALLER] `keep-wrapped-settings-on-resync` — **A resync keeps every settings bullet whole, including wrapped continuation lines and sub-bullets, and recognises a filled value that contains angle brackets.** Today the continuation lines are silently deleted while the installer reports keeping the settings.
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
   - Starting point: `install.sh:190-211` (`expected`, `unfilled`).
