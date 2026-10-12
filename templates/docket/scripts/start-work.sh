@@ -33,9 +33,17 @@ branch="$queue/$slug"
 path="$dir/$queue-$slug"
 # Make sure the worktree directory and the local docket state directory are
 # ignored. Only directories git does not already ignore are appended, so
-# repeated runs never duplicate a line.
+# repeated runs never duplicate a line. A worktree directory outside the
+# repository needs no ignoring, and git cannot answer for it, so it is skipped;
+# one inside is checked by its path relative to the root.
 exclude="$(git rev-parse --git-path info/exclude)"
-for ignored in "$dir" ".docket"; do
+ignore=(".docket")
+root_abs="$(pwd -P)"
+dir_abs="$(mkdir -p "$dir" && cd "$dir" && pwd -P)"
+case "$dir_abs" in
+  "$root_abs"/*) ignore=("${dir_abs#"$root_abs"/}" "${ignore[@]}") ;;
+esac
+for ignored in "${ignore[@]}"; do
   if ! git check-ignore -q "$ignored/probe" 2>/dev/null; then
     mkdir -p "$(dirname "$exclude")"
     printf '%s/\n' "$ignored" >> "$exclude"
