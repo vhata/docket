@@ -44,7 +44,7 @@ Checks: run <entrypoint> and <specific checks>; report exact commands and result
 Git: commit incrementally with single-purpose messages in the repo's style; no attribution trailers; do not change `git config` (the coordinator sets the repository's identity once, before the first commit); never push, never merge, never tag.
 If you discover something separately shippable, do not fix it; report it as a discovery with the evidence and where it belongs.
 If blocked on a decision the brief does not settle, stop and report the options.
-Return: a short report with what changed, what was verified (commands and results), what was left out and why, discoveries, and the PR body draft (## Why first, hard-wrapped at 72 columns except code blocks, tables and URLs, list continuation lines indented).
+Return: a short report with what changed, what was verified (commands and results), what was left out and why, discoveries, and the PR body draft (## Why first, hard-wrapped at 72 columns except code blocks, tables and URLs, list continuation lines indented; it describes the final change for a `git log` reader, with no stacking or merge-order notes, review history, status, to-dos or instructions to reviewers, which go in your report).
 ```
 
 Why these lines: an agent briefed with absolute paths into the main checkout wrote its half-finished files there and broke the main thread's typecheck; an agent that set `git config user.email` changed the shared repository config; an agent allowed to open the GUI popped windows on the user's desktop; agents that stalled on long tasks were recovered by "commit incrementally" and by resuming the same agent rather than starting over.
@@ -62,18 +62,18 @@ Hunt for correctness bugs, missing error handling, scope creep beyond the slug, 
 Do not edit files or comment on the forge. Report: verdict (approve, approve with nits, changes needed), each finding with location, failure scenario and evidence, which claims you verified and how, and anything you could not check.
 ```
 
-After the review: confirmed findings are fixed on the same branch by the writer or a fix agent; the reviewer (or a fresh one) confirms the fixes against the original failure. A reviewer who starts fixing has become an author for that scope and needs a different reviewer for it; one reviewer may cover several independent authors. Then the PR body gets:
+After the review: confirmed findings are fixed on the same branch by the writer or a fix agent; the reviewer (or a fresh one) confirms the fixes against the original failure. A reviewer who starts fixing has become an author for that scope and needs a different reviewer for it; one reviewer may cover several independent authors. Then the review is posted as a PR comment (`gh pr comment <pr> --body-file <file>`), never added to the body, which becomes the commit message:
 
 ```markdown
 ## Review
 Independent review by <agent/model> at <commit>: <verdict>. Verified: <claims rechecked and how>. Findings: <n> (<fixed in <commit> | disposition with reason>). Not checked: <gaps, e.g. GUI appearance>.
 ```
 
-A fix agent writes the review section only after reading the review itself; one wrote a section without having seen the review and the coordinator had to redo it.
+A fix agent writes the review comment only after reading the review itself; one wrote a review record without having seen the review and the coordinator had to redo it.
 
-Review depth follows risk. A routine change gets one careful reviewer who runs the brief above; specialist passes (security, performance, accessibility) are for changes that touch those surfaces, not a stack applied to every PR. When several writers contributed to one PR, keep each author's work in its own commits so the reviewer can name whose change a finding concerns. When no reviewer can be dispatched (no capacity, no budget), the PR body says so and the PR stays pending review; a PR without an independent review is never marked ready. A PR already marked ready goes back to draft when a rebase or a fix reopens a gate.
+Review depth follows risk. A routine change gets one careful reviewer who runs the brief above; specialist passes (security, performance, accessibility) are for changes that touch those surfaces, not a stack applied to every PR. When several writers contributed to one PR, keep each author's work in its own commits so the reviewer can name whose change a finding concerns. When no reviewer can be dispatched (no capacity, no budget), a PR comment says so and the PR stays pending review; a PR without an independent review is never marked ready. A PR already marked ready goes back to draft when a rebase or a fix reopens a gate.
 
-Why the pair is mandatory: in one repository a single post-merge pass over 25 self-checked overnight PRs found three real bugs the authors' own checks had missed. On the forge, all three repositories studied show zero review records; the PR body section is what makes the review auditable later.
+Why the pair is mandatory: in one repository a single post-merge pass over 25 self-checked overnight PRs found three real bugs the authors' own checks had missed. On the forge, all three repositories studied show zero review records; the review comment is what makes the review auditable later.
 
 ## Integration
 
@@ -87,11 +87,11 @@ Which mode is in force is said at the top of the session and written to the audi
 
 | Mode | Push | Draft PRs | Merge | What the user finds |
 | --- | --- | --- | --- | --- |
-| Interactive | yes | yes, after first commit | user, or agent when told in that turn | ready PRs with review sections |
+| Interactive | yes | yes, after first commit | user, or agent when told in that turn | ready PRs with review comments |
 | Fan-out with PRs ("put PRs up while I'm away") | yes | yes | user | ready PRs, one per item, plus a summary |
-| Unattended without push authority ("I'm going to bed") | no | no | no | local branches, `.docket/pr-<slug>.md` bodies, `.docket/AUDIT.md`, a report |
+| Unattended without push authority ("I'm going to bed") | no | no | no | local branches, `.docket/pr-<slug>.md` bodies and `.docket/review-<slug>.md` review comments, `.docket/AUDIT.md`, a report |
 
-In the unattended mode, claims are not globally visible. Say so in the audit log. Stack dependent plan steps branch on branch rather than waiting for merges, and record the merge order in the report. Publishing in the morning is one command per branch: `git push -u origin <branch> && gh pr create --head <branch> --title "<title>" --body-file .docket/pr-<slug>.md && bash docket/scripts/pr-labels.sh --pr <branch> --apply`.
+In the unattended mode, claims are not globally visible. Say so in the audit log. Stack dependent plan steps branch on branch rather than waiting for merges, and record the merge order in the report. Publishing in the morning is one command per branch: `git push -u origin <branch> && gh pr create --head <branch> --title "<title>" --body-file .docket/pr-<slug>.md && gh pr comment <branch> --body-file .docket/review-<slug>.md && bash docket/scripts/pr-labels.sh --pr <branch> --apply`.
 
 ### Audit log
 
@@ -107,7 +107,7 @@ In the unattended mode, claims are not globally visible. Say so in the audit log
 
 ### Report
 
-End every fan-out or unattended run with: branches and their state in merge order; decisions logged (count, pointer to the audit); discoveries reported by writers and the slug each was filed under (any still pending are listed as pending, not dropped); items held back and why; what needs the user (design calls, GUI checks, encoding choices); expected rebase conflicts. The detail lives in the audit and PR bodies; the report is the index.
+End every fan-out or unattended run with: branches and their state in merge order; decisions logged (count, pointer to the audit); discoveries reported by writers and the slug each was filed under (any still pending are listed as pending, not dropped); items held back and why; what needs the user (design calls, GUI checks, encoding choices); expected rebase conflicts. The detail lives in the audit, the PR bodies and the review comments; the report is the index.
 
 ## Harness pitfalls seen in practice
 

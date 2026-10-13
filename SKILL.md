@@ -39,7 +39,7 @@ The user needs only these phrases; this skill works out the rest by inspecting t
 | Pillar | Non-negotiable | Reference |
 | --- | --- | --- |
 | Parallel work | One owner, one branch, one worktree per task. Shared interfaces land before dependents start. The coordinator integrates and serialises queue edits. | [parallel-work](references/parallel-work.md) |
-| Paired review | Every code-writing agent gets a separate reviewer agent before the PR is called ready. The reviewer verifies claims, the author fixes, the PR body records who reviewed what. | [parallel-work](references/parallel-work.md#writer-and-reviewer-pairs) |
+| Paired review | Every code-writing agent gets a separate reviewer agent before the PR is called ready. The reviewer verifies claims, the author fixes, a PR comment records who reviewed what. | [parallel-work](references/parallel-work.md#writer-and-reviewer-pairs) |
 | Queues, not tangents | Discoveries become queue entries with a source, in the repository that owns them, then the current task resumes. Ready means unblocked. Claims are exact slugs in draft PRs. | [queues](references/queues.md) |
 | Gates everywhere | Fast hooks, full CI on PRs and on pushes to main, scheduled extended runs on main, protection that makes the user's merge safe rather than ceremonial. Empty suites never pass. | [quality-gates](references/quality-gates.md) |
 | Review ledger | Full reviews record a revision and findings; incremental reviews start from the last revision and verify claimed fixes. Findings are promoted deliberately into a review backlog. | [reviews](references/reviews.md) |
@@ -56,7 +56,7 @@ Script paths below are the installed paths (`docket/scripts/`), the only ones an
 4. **Commit early, draft early.** After the first meaningful commit, open a draft PR whose body starts with `## Why` and carries a `Type: <kind>` line and `Claims <queue>: <slug>`, then label it with `bash docket/scripts/pr-labels.sh --pr <number> --apply` (see [pr-and-landing](references/pr-and-landing.md#labels)). Keep the queue entry in place while the work is underway. When no PR can be opened (no remote, no forge access, no push authority), save the body as `.docket/pr-<slug>.md`, record in the report that the claim is local-only, and leave the branch and worktree in place for the user.
 5. **Stay on task.** Fixes needed for the requested outcome, its correctness or its verification are in scope. Anything separately shippable gets a queue entry with a `Source:` line and, when the entry is added on the branch rather than committed to `main`, a `Files TODO: <slug>` marker in the PR; then the work continues. An unrelated P0 (data loss, security, release blocker) is reported immediately and work pauses for direction.
 6. **Verify.** Run the repository's check entrypoint (`scripts/check.sh` by convention) plus whatever the change needs beyond it. Record what was run and what was not.
-7. **Independent review.** A reviewer agent that did not write the code reads the diff against the PR's claims, reruns the decisive checks, and reports findings. Authors fix; the reviewer confirms the fixes. The PR body gains a `## Review` section naming reviewer, commit reviewed, and dispositions.
+7. **Independent review.** A reviewer agent that did not write the code reads the diff against the PR's claims, reruns the decisive checks, and reports findings. Authors fix; the reviewer confirms the fixes. A PR comment headed `## Review` names reviewer, commit reviewed, and dispositions; the body, which becomes the commit message, carries none of it.
 8. **Resolve the queue.** Remove the entry in the same PR and change the marker to `Resolves <queue>: <slug>`, or file a remainder with a new slug and `Remaining from:` for partial work. `bash docket/scripts/check-pr-markers.sh --body <file>` validates the markers against the queue files (compares `origin/main` to `HEAD` by default; pass `--base`/`--head` for anything else).
 9. **Ready, then the user merges.** Ready means checks and independent review are complete for this PR's own scope. Eligible to land is separate: base is main, required checks are green on the current base, any parent in a stack has landed, and no acceptance gate the queue entry carried is outstanding. A remainder entry never waives an acceptance gate the original entry carried. Merge only when told to in that turn or under a recorded delegation: squash, PR title as subject, PR body as commit body.
 10. **Clean up.** After landing: `bash docket/scripts/cleanup-landed.sh --apply` removes the worktree and branch, rebase any stacked children onto main and retarget them, and re-check main's CI. Nothing of the task survives except the commit and the queue change.
@@ -76,7 +76,7 @@ Autonomy grants cover implementation. Which other actions need the user's word, 
 | Delete a branch with unmerged commits, remove a dirty worktree | Yes |
 | Commit directly to main | Work-recording documentation (TODO entries, triage, plans, design specs): normal. Housekeeping metadata such as `.git-blame-ignore-revs`: only when the user says so for that case. Nothing else; pushing the commit follows the session's push authority |
 
-Under an autonomy grant without push authority, work lands on local branches with the finished PR body saved to `.docket/pr-<slug>.md` and every load-bearing decision appended to `.docket/AUDIT.md` with an undo line. See [parallel-work](references/parallel-work.md#autonomy-modes).
+Under an autonomy grant without push authority, work lands on local branches with the finished PR body saved to `.docket/pr-<slug>.md`, the review comment to `.docket/review-<slug>.md` and every load-bearing decision appended to `.docket/AUDIT.md` with an undo line. See [parallel-work](references/parallel-work.md#autonomy-modes).
 
 ## Bundled tools
 
@@ -105,7 +105,7 @@ Any of these thoughts means stop and do the step you were about to skip.
 | "The TODO is empty so I'll take a triage item instead" | Report that the requested queue has nothing ready. Switching queues or stages is the user's call. |
 | "Nobody else is working here, I'll skip the claim check" | The check takes seconds and also finds merged work that already resolved the entry. |
 | "The author's tests pass, a second reviewer is overkill" | Independent review of self-checked overnight PRs has found bugs the authors' own checks missed. Every code PR gets one. |
-| "Checks are green, I'll mark it ready" | Ready means checks and independent review are complete and recorded in the body. |
+| "Checks are green, I'll mark it ready" | Ready means checks and independent review are complete, and the review comment is posted. |
 | "I'll clean the worktrees up later" | Later is when twelve prunable worktrees and sixty placeholder branches make claim checks unreadable. Clean up at landing. |
 | "The user said go wild, so pushing is fine" | Autonomy covers implementation. Push, merge, tag and protection changes each need their own word. |
 | "The review ledger says 47 open findings, I'll fix a few while I'm here" | Findings are inventory. Work comes from the review backlog or an explicit assignment. |

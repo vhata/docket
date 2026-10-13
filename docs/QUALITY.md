@@ -59,7 +59,7 @@ Read by `docket/CODE_REVIEW_GUIDE.md`, which links this section by its heading, 
 `main` is protected by the repository ruleset "Protect main", not by classic branch protection, so `gh api repos/vhata/docket/rulesets` shows it and `.../branches/main/protection` returns 404.
 
 - Required checks: `scripts (ubuntu-latest)` and `scripts (macos-latest)`; up-to-date-with-base: off. `Queue and PR hygiene` is not required.
-- Pull request required, with 0 approving reviews; independent agent review is recorded in each PR's `## Review` section. Conversation resolution: not required.
+- Pull request required, with 0 approving reviews; independent agent review is recorded in a review comment on each PR. Conversation resolution: not required.
 - Force pushes (non-fast-forward) and deletion of `main`: blocked. There is no separate linear-history rule; squash-only merging keeps history linear.
 - Administrator bypass: always allowed (the repository admin role is a bypass actor).
 - Merge method: the repository allows squash only; title from the PR title, message from the PR body; head branches deleted on merge.

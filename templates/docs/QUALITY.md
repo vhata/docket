@@ -59,7 +59,7 @@ The scheduled workflow (`main-validation.yml` in the template) runs <daily at HH
 
 - Required checks: <job names>; up-to-date-with-base: <on|off>.
 - Linear history: <on>. Conversation resolution: <on>. Force pushes and deletions: blocked.
-- Approving reviews required: 0; independent agent review is recorded in each PR's `## Review` section.
+- Approving reviews required: 0; independent agent review is recorded in a review comment on each PR.
 - Administrator enforcement: <on | off, with the exceptions listed in AGENTS.md>.
 - Merge method: squash only; title from PR title, message from PR body; head branches deleted on merge.
 

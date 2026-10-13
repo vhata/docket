@@ -80,13 +80,15 @@ migration notes. Install also removes a stale `.feral/` line from
 
 `docket/` is tracked and vendored. `.docket/` at the project root is local
 state, excluded from git (`install.sh` adds it to `.git/info/exclude` of the
-clone it ran in; add it to `.gitignore` so every clone agrees), and holds two
-kinds of content:
+clone it ran in; add it to `.gitignore` so every clone agrees), and holds
+three kinds of content:
 
 - `.docket/AUDIT.md`: the append-only decision log kept during unattended
   runs, one entry per load-bearing decision with an undo line.
 - `.docket/pr-<slug>.md`: a prepared pull request body, saved when work is
   ready but no PR can be opened from the current environment.
+- `.docket/review-<slug>.md`: the matching independent review, posted as a
+  PR comment when the PR is opened.
 
 ## Files
 

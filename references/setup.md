@@ -31,7 +31,7 @@ Also check what lives outside the repository: harness memory files and the user'
 | Review ledger | `review/README.md`, `review/BACKLOG.md`, `review/<timestamp>-<type>.md`, `docket/CODE_REVIEW_GUIDE.md`; project review inputs in `docs/QUALITY.md` | Snapshots, inventory, promoted work, closure rules. |
 | Quality | `docs/QUALITY.md`, `scripts/*.sh`, `docket/scripts/ci.sh`, hook config (no template; see quality-gates.md), `.github/workflows/ci.yml`, `.github/workflows/main-validation.yml` | What runs where, current state only. |
 | PR shape | `.github/pull_request_template.md` | Why, what changed, the `Type:` line and markers, validation, review. |
-| Audit (unattended runs) | `.docket/AUDIT.md` and `.docket/pr-<slug>.md`; the installer adds `.docket/` to `.git/info/exclude` and the install PR adds it to `.gitignore` (step 3) | Append-only decisions with undo lines; prepared PR bodies. |
+| Audit (unattended runs) | `.docket/AUDIT.md`, `.docket/pr-<slug>.md` and `.docket/review-<slug>.md`; the installer adds `.docket/` to `.git/info/exclude` and the install PR adds it to `.gitignore` (step 3) | Append-only decisions with undo lines; prepared PR bodies and review comments. |
 | Plans | `plans/YYYY-MM-DD-<slug>.md` | Dated plans for work; may be committed direct to main (see pr-and-landing.md). |
 | Design specs | `docs/specs/YYYY-MM-DD-<slug>.md` | Dated designs written ahead of the work; may be committed direct to main (see pr-and-landing.md). |
 
@@ -87,7 +87,7 @@ Symptoms and the fix, from the studied repositories:
 | A formatting hook rewrites `docket/` or the Docket section | Exclude `docket/` from the formatter; resync to restore the files |
 | Quality doc describes a past state | Rewrite as current state; move history to decisions |
 | Red main nobody noticed | Concurrency fix for main pushes; red-main policy; badge for the scheduled run |
-| Zero review records on the forge | `## Review` section in every code PR body |
+| Zero review records on the forge | A review comment on every code PR |
 
 ### Migrating from the hand-copied layout
 
