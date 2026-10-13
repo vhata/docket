@@ -107,7 +107,7 @@ In the unattended mode, claims are not globally visible. Say so in the audit log
 
 ### Report
 
-End every fan-out or unattended run with: branches and their state in merge order; decisions logged (count, pointer to the audit); discoveries reported by writers and the slug each was filed under (any still pending are listed as pending, not dropped); items held back and why; what needs the user (design calls, GUI checks, encoding choices); expected rebase conflicts. The detail lives in the audit and PR bodies; the report is the index.
+End every fan-out or unattended run with: branches and their state in merge order; decisions logged (count, pointer to the audit); discoveries reported by writers and the slug each was filed under (any still pending are listed as pending, not dropped); items held back and why; what needs the user (design calls, GUI checks, encoding choices); expected rebase conflicts. The detail lives in the audit, the PR bodies and the review comments; the report is the index.
 
 ## Harness pitfalls seen in practice
 

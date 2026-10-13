@@ -9,7 +9,7 @@ still renders on GitHub, and keep headings within 72.
 Describe the final change for someone reading git log months from now.
 Leave out rebase, stacking and merge-order notes, review history, status
 and to-dos, and instructions to reviewers: post those, and the
-independent review, as PR comments. When the change moves on, rewrite
+independent review, as PR comments. When the change is revised, rewrite
 this description rather than appending to it. Delete this comment and
 the hints below as you fill in the sections.
 -->

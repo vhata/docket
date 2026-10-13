@@ -105,7 +105,7 @@ Any of these thoughts means stop and do the step you were about to skip.
 | "The TODO is empty so I'll take a triage item instead" | Report that the requested queue has nothing ready. Switching queues or stages is the user's call. |
 | "Nobody else is working here, I'll skip the claim check" | The check takes seconds and also finds merged work that already resolved the entry. |
 | "The author's tests pass, a second reviewer is overkill" | Independent review of self-checked overnight PRs has found bugs the authors' own checks missed. Every code PR gets one. |
-| "Checks are green, I'll mark it ready" | Ready means checks and independent review are complete and recorded in the body. |
+| "Checks are green, I'll mark it ready" | Ready means checks and independent review are complete, and the review comment is posted. |
 | "I'll clean the worktrees up later" | Later is when twelve prunable worktrees and sixty placeholder branches make claim checks unreadable. Clean up at landing. |
 | "The user said go wild, so pushing is fine" | Autonomy covers implementation. Push, merge, tag and protection changes each need their own word. |
 | "The review ledger says 47 open findings, I'll fix a few while I'm here" | Findings are inventory. Work comes from the review backlog or an explicit assignment. |
