@@ -36,4 +36,8 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 
 ### P3 Low
 
+- [SCRIPTS] `review-due-local-midnight` — **`review-due.sh` counts days from midnight of the review date on macOS as it does on GNU.** BSD `date -j -f %Y-%m-%d` takes the time of day from the clock, so west of UTC a review dated today can report `-1 days`; the verdict is unaffected.
+  - Source: review/fix-review-due-fixture-dates (PR #22), 2026-10-12
+  - Starting point: `templates/docket/scripts/review-due.sh:124`; parse `"$date 00:00:00"` with `-f '%Y-%m-%d %H:%M:%S'`, or clamp `days` at 0.
+
 ### Unprioritized

@@ -571,10 +571,20 @@ git worktree remove --force "$wt"
 git branch --quiet -D todo/fixture-self-task
 git update-ref -d refs/remotes/origin/todo/fixture-self-task
 
-# review-due.sh
+# review-due.sh. Index rows are dated today, so the 21-day trigger never
+# fires on its own and these verdicts hold whenever the suite runs; the
+# trigger itself is checked against a fixed date long past. The verdicts
+# assume the default thresholds, whatever the caller has exported.
+unset REVIEW_DUE_COMMITS REVIEW_DUE_DAYS REVIEW_FULL_FRACTION
+today="$(date -u +%Y-%m-%d)"
 head="$(git rev-parse HEAD)"
-printf '| Date | Type | Commit |\n| 2026-10-06 | full | `%s` |\n' "$head" > review-index.md
+printf '| Date | Type | Commit |\n| %s | full | `%s` |\n' "$today" "$head" > review-index.md
 pass 'zero review churn' bash "$due" --index review-index.md --base "$head"
+expect 'zero review churn gave the wrong verdict' 'verdict: no review due'
+printf '| Date | Type | Commit |\n| 2000-01-01 | full | `%s` |\n' "$head" > review-index.md
+pass 'old review' bash "$due" --index review-index.md --base "$head"
+expect 'old review did not trigger an incremental review' 'verdict: INCREMENTAL review due ('
+expect 'old review did not report the day trigger' 'days >= 21)'
 
 # A tracked source file deleted in the working tree must not abort the report.
 mkdir -p src
@@ -583,7 +593,7 @@ printf 'three\n' > src/deleted.sh
 git add src
 git commit --quiet -m 'Add fixture sources'
 head="$(git rev-parse HEAD)"
-printf '| Date | Type | Commit |\n| 2026-10-06 | full | `%s` |\n' "$head" > review-index.md
+printf '| Date | Type | Commit |\n| %s | full | `%s` |\n' "$today" "$head" > review-index.md
 rm src/deleted.sh
 pass 'deleted tracked source' bash "$due" --index review-index.md --base "$head"
 expect 'deleted tracked source gave the wrong verdict' 'verdict: no review due'
@@ -596,7 +606,7 @@ printf 'PK\003\004\000\001\n\n\n\n\n\n\n\n\n\n' > src/asset.bin
 git add src/asset.bin
 git commit --quiet -m 'Add binary fixture asset'
 head="$(git rev-parse HEAD)"
-printf '| Date | Type | Commit |\n| 2026-10-06 | full | `%s` |\n' "$head" > review-index.md
+printf '| Date | Type | Commit |\n| %s | full | `%s` |\n' "$today" "$head" > review-index.md
 pass 'binary asset in src' bash "$due" --index review-index.md --base "$head" --paths src
 expect 'binary asset was not skipped' 'note: 1 binary file(s) skipped'
 expect 'binary asset was counted as source lines' 'against 3 current source lines'
