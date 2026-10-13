@@ -16,11 +16,12 @@
 # inside the markers; self-install refused without --self; --self into the
 # skill's own clone (VERSION 'self', --self --check passing, failing on an
 # unsynced templates/docket/ edit and on a VERSION other than 'self'), refused
-# for another repository, a sibling worktree and a subtree host; a normal
-# --check of a copied VERSION 'self'; a squashed-subtree host, reached
-# directly and through a symlink, with an unrelated host change and a
-# committed README edit under the skill (both clean) and a committed edit
-# under its templates/ (dirty).
+# for another repository, a sibling worktree and a subtree host; any install
+# into a separate clone of the skill refused, --self and --check included, and
+# into a repository whose docket/ is the skill; a normal --check of a copied
+# VERSION 'self'; a squashed-subtree host, reached directly and through a
+# symlink, with an unrelated host change and a committed README edit under
+# the skill (both clean) and a committed edit under its templates/ (dirty).
 #
 # Usage: bash tests/install.sh   (from anywhere; needs git and bash 3.2+)
 set -euo pipefail
@@ -320,6 +321,34 @@ expect 'sibling worktree without --self was not refused' 'refusing to install th
 run 0 '--self inside a worktree' bash "$work/selfwt/install.sh" --self "$work/selfwt"
 fill "$work/selfwt"
 run 0 '--self --check inside a worktree' bash "$work/selfwt/install.sh" --self --check "$work/selfwt"
+# A separate clone of the skill, such as the installed copy run against the
+# development repository, is refused as a target: it installs only from its
+# own install.sh, so its docket/ and VERSION 'self' are left alone.
+cp -R "$me/docket" "$work/selfbefore"
+run 2 'install into another checkout of the skill' bash "$inst" "$me"
+expect 'another checkout of the skill was not refused' 'which is another checkout of the skill'
+expect 'the refusal did not name the target checkout installer' "run $me/install.sh --self there"
+run 2 'install into a subdirectory of another checkout of the skill' bash "$inst" "$me/references"
+expect 'a subdirectory of another checkout of the skill was not refused' 'which is another checkout of the skill'
+run 2 '--check of another checkout of the skill' bash "$inst" --check "$me"
+expect '--check of another checkout of the skill was not refused' 'which is another checkout of the skill'
+expect 'the --check refusal did not suggest --self --check' "run $me/install.sh --self --check there"
+run 2 '--self into another checkout of the skill' bash "$inst" --self "$me"
+expect '--self into another checkout of the skill was not refused' "run $me/install.sh --self for $me"
+run 2 'install into another checkout of the skill from inside it' sh -c 'cd "$1" && bash "$2"' sh "$me" "$inst"
+expect 'another checkout of the skill from inside it was not refused' 'which is another checkout of the skill'
+diff -r "$work/selfbefore" "$me/docket" >/dev/null || fail 'a refused install changed docket/ in another checkout of the skill'
+# A skills repository holding the skill as its docket/ subdirectory is refused
+# whether the target is the repository or the skill inside it: docket/ there
+# is the skill, and an install would write the vendored files over it.
+newproj skills; p="$work/skills"
+git -C "$skill" archive --prefix=docket/ HEAD | tar -x -C "$p"
+git -C "$p" add -A && git -C "$p" commit --quiet -m 'Add the skill under docket/'
+run 2 'install into the skill inside a skills repository' bash "$inst" "$p/docket"
+expect 'the skill inside a skills repository was not refused' 'whose docket/ is a copy of the skill'
+run 2 'install into a skills repository' bash "$inst" "$p"
+expect 'a skills repository was not refused' 'whose docket/ is a copy of the skill'
+[ -z "$(git -C "$p" status --porcelain)" ] || fail "a refused install changed the skills repository: $(git -C "$p" status --porcelain)"
 # Only install.sh and templates/ decide what an install writes, so uncommitted
 # work in the skill repository's own docket files does not make a project's
 # install dirty, while an uncommitted template edit does.
