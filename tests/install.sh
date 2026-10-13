@@ -19,10 +19,9 @@
 # for another repository, a sibling worktree and a subtree host; any install
 # into a separate clone of the skill refused, --self and --check included, and
 # into a repository whose docket/ is the skill; a normal --check of a copied
-# VERSION 'self'; a squashed-subtree host, reached
-# directly and through a symlink, with an unrelated host change and a
-# committed README edit under the skill (both clean) and a committed edit
-# under its templates/ (dirty).
+# VERSION 'self'; a squashed-subtree host, reached directly and through a
+# symlink, with an unrelated host change and a committed README edit under
+# the skill (both clean) and a committed edit under its templates/ (dirty).
 #
 # Usage: bash tests/install.sh   (from anywhere; needs git and bash 3.2+)
 set -euo pipefail

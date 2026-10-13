@@ -129,11 +129,12 @@ elif is_skill "$top"; then
   # from the installed copy in ~/.claude/skills. Its docket/ comes from its own
   # templates/docket/ with VERSION 'self', so an install from here would
   # overwrite both with this checkout's copy.
-  again=--self; [ "$check" -eq 0 ] || again="--self --check"
+  again=--self; hint="there to vendor docket/ from its own templates/"
+  [ "$check" -eq 0 ] || { again="--self --check"; hint="there to audit docket/ against its own templates/"; }
   if [ "$self" -eq 1 ]; then
     echo "install: --self installs only into the checkout it runs from ($skill_top); run $top/install.sh $again for $top" >&2
   else
-    echo "install: refusing to install into $top, which is another checkout of the skill; run $top/install.sh $again there to vendor docket/ from its own templates/" >&2
+    echo "install: refusing to install into $top, which is another checkout of the skill; run $top/install.sh $again $hint" >&2
   fi
   exit 2
 elif is_skill "$top/docket"; then
