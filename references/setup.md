@@ -87,7 +87,7 @@ Symptoms and the fix, from the studied repositories:
 | A formatting hook rewrites `docket/` or the Docket section | Exclude `docket/` from the formatter; resync to restore the files |
 | Quality doc describes a past state | Rewrite as current state; move history to decisions |
 | Red main nobody noticed | Concurrency fix for main pushes; red-main policy; badge for the scheduled run |
-| Zero review records on the forge | `## Review` section in every code PR body |
+| Zero review records on the forge | A review comment on every code PR |
 
 ### Migrating from the hand-copied layout
 
