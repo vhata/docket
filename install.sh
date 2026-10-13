@@ -20,6 +20,9 @@
 #           whose root holds this install.sh. docket/VERSION is then the fixed
 #           line 'self' (templates/docket/ at the same commit is the source),
 #           and --check requires that line and skips the commit comparison.
+#           Any other checkout of the skill (a root holding install.sh,
+#           templates/docket/ and templates/AGENTS.md) is refused as a target,
+#           with or without --self: it installs only from its own install.sh.
 #
 # The same command performs the first install and every later update. Files
 # present in the project's docket/ but absent from the skill are reported,
@@ -65,7 +68,7 @@ for arg in "$@"; do
   --check) check=1 ;;
   --self) self=1 ;;
   -h | --help)
-    sed -n '2,46p' "$0"
+    sed -n '2,49p' "$0"
     exit 0
     ;;
   -*)
@@ -116,6 +119,17 @@ if [ "$top" = "$skill_top" ] || [ "$common" = "$skill_common" ]; then
     echo "install: --self installs only into the checkout it runs from ($skill_top); run $top/install.sh --self for $top" >&2
     exit 2
   fi
+elif [ -f "$top/install.sh" ] && [ -d "$top/templates/docket" ] && [ -f "$top/templates/AGENTS.md" ]; then
+  # Another checkout of the skill, such as the development repository reached
+  # from the installed copy in ~/.claude/skills. Its docket/ comes from its own
+  # templates/docket/ with VERSION 'self', so an install from here would
+  # overwrite both with this checkout's copy.
+  if [ "$self" -eq 1 ]; then
+    echo "install: --self installs only into the checkout it runs from ($skill_top); run $top/install.sh --self for $top" >&2
+  else
+    echo "install: refusing to install into $top, which is another checkout of the skill; run $top/install.sh --self there to vendor docket/ from its own templates/" >&2
+  fi
+  exit 2
 elif [ "$self" -eq 1 ]; then
   echo "install: --self is only for the skill's own repository ($skill_top); $top is another repository" >&2
   exit 2
