@@ -328,7 +328,7 @@ if [ "$check" -eq 1 ]; then
       echo "install: the installed commit ($installed) and this skill checkout ($sha) have diverged; comparing the files anyway" >&2
     fi
   fi
-  show_diff -u -r -x VERSION "$src" "$dst" || status=1
+  show_diff -u -r -x VERSION "$dst" "$src" || status=1
   # diff -r ignores modes; start-work.sh runs claim-check.sh directly, so a
   # lost executable bit is drift too, on disk and in the committed mode.
   for f in "$dst"/scripts/*.sh; do
@@ -345,7 +345,7 @@ if [ "$check" -eq 1 ]; then
   if agents_state; then
     block "$agents" >"$tmp/have"
     expected "$tmp/have" >"$tmp/want"
-    show_diff -u --label "expected Docket section" --label "$agents" "$tmp/want" "$tmp/have" || status=1
+    show_diff -u --label "expected Docket section" --label "$agents" "$tmp/have" "$tmp/want" || status=1
     unfilled "$tmp/have" >"$tmp/unfilled"
     if [ -s "$tmp/unfilled" ]; then
       echo "install: settings not filled in $agents: $(paste -sd, "$tmp/unfilled" | sed 's/,/, /g')" >&2
