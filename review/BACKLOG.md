@@ -58,6 +58,7 @@ Only work promoted from whole-codebase reviews belongs here. Every entry is read
 - [SCRIPTS] `check-links-parsing` — **`check-links.sh` skips code, understands CommonMark link targets and reference definitions, and slugs headings with emphasis or inline HTML as GitHub does.** Example links in code are reported broken and some valid links fail.
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
   - Findings: `check-links-checks-code-spans-and-fences`, `check-links-target-forms`, `check-links-anchor-emphasis-html`, `tests-check-links-and-start-work-gaps`
+  - Also hit in vhata/partlet, 2026-10-15: a plan's fenced Python tests contained string literals holding Markdown link syntax, which the link checker reported as four broken links and blocked the plan's direct commit to main. Partlet worked around it by splitting the string literals.
 
 - [SCRIPTS] `review-due-accuracy` — **`review-due.sh` counts churn with one root-anchored exclusion list, compares the unrounded ratio, warns on `--paths` that match nothing, survives blank `--paths` under 3.2, and has a fixture per threshold.** Several of these make the full-review verdict wrong or silent.
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
