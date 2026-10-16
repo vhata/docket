@@ -407,6 +407,38 @@ cat >> TODO.md <<'QUEUE'
 QUEUE
 reject 'ready with cross-repository blocker' 'but is Blocked by' bash "$queues" --strict
 cp local-todo.md TODO.md
+# Waiting holds understood entries that are blocked; the fixtures above have
+# no Waiting section, as an older TODO.md does not, and still pass.
+cat >> TODO.md <<'QUEUE'
+
+## Waiting
+
+### P1 High
+
+- [TOOLS] `waits-local` **Build on the prerequisite.**
+  - Source: scripts regression fixture
+  - Depends on: `prerequisite`
+
+- [TOOLS] `waits-decision` **Ship the decided thing.**
+  - Source: scripts regression fixture
+  - Blocked by: operator decision on the format
+QUEUE
+cp TODO.md waiting-todo.md
+pass 'waiting entries with dependencies and blockers' bash "$queues" --strict
+expect 'waiting entries were not accepted' 'no errors'
+printf -- '- [TOOLS] `waits-nothing` **Wait for nothing.**\n  - Source: scripts regression fixture\n  - Blocked by: none\n' >> TODO.md
+pass 'waiting entry without a blocker is only a warning' bash "$queues"
+expect 'waiting entry without a blocker was not warned' '`waits-nothing` is in Waiting but names nothing it waits on'
+reject 'waiting entry without a blocker under --strict' '`waits-nothing` is in Waiting' bash "$queues" --strict
+pass 'check-queues --help' bash "$queues" --help
+expect 'check-queues --help cut its header short' 'Portable to bash 3.2 and POSIX awk.'
+cp waiting-todo.md TODO.md
+printf -- '- [TOOLS] `waits-upstream` **Use the upstream fix.**\n  - Source: scripts regression fixture\n  - Blocked by: `other-repo:upstream-fix`\n' >> TODO.md
+pass 'waiting on another repository' bash "$queues" --strict
+cp waiting-todo.md TODO.md
+awk '/`prerequisite`/ && /^- / { skip = 2 } skip > 0 { skip--; next } { print }' TODO.md > TODO.next && mv TODO.next TODO.md
+reject 'waiting on a landed dependency' '`waits-local` depends on `prerequisite` which is not in any queue' bash "$queues" --strict
+cp local-todo.md TODO.md
 
 # claim-check.sh against a fake forge
 cat > bin/gh <<'GH'

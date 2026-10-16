@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Validate the structure of the Markdown work queues (TODO.md and
 # review/BACKLOG.md): entry format, unique stable slugs, required Source
-# lines, resolvable cross-references, explicit dependencies, and the
-# one-finding-one-backlog-entry rule. A `repo:slug` reference names an entry in
-# another repository's queue; Blocked by and Related lines may carry one and it
-# is not resolved here, while Depends on names only this repository's slugs.
+# lines, resolvable cross-references, explicit dependencies, Waiting entries
+# that name what they wait on, and the one-finding-one-backlog-entry rule. A
+# `repo:slug` reference names an entry in another repository's queue; Blocked
+# by and Related lines may carry one and it is not resolved here, while
+# Depends on names only this repository's slugs.
 #
 # Usage: docket/scripts/check-queues.sh [--todo PATH] [--backlog PATH] [--strict]
 #   Defaults: TODO.md and review/BACKLOG.md relative to the repo root when
@@ -28,7 +29,7 @@ while [ $# -gt 0 ]; do
     --todo) todo="$(abs "$2")"; shift 2 ;;
     --backlog) backlog="$(abs "$2")"; shift 2 ;;
     --strict) strict=1; shift ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
     *) echo "check-queues: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -67,7 +68,7 @@ function is_priority(h) {
   return h ~ /^(P0 Critical|P1 High|P2 Normal|P3 Low|Unprioritized)$/
 }
 function is_stage(h) {
-  return h ~ /^(Needs triage|Needs proof of concept|Ready for separate work)$/
+  return h ~ /^(Needs triage|Needs proof of concept|Waiting|Ready for separate work)$/
 }
 # Ready entries may not carry blockers or unresolved dependencies. The review
 # backlog has no stages: every entry there is ready by construction.
@@ -81,6 +82,8 @@ function finish_entry() {
   if (cur == "") return
   if (!has_source[cur]) report("error", efile[cur], eline[cur], "entry `" cur "` has no \"Source:\" line")
   if (is_backlog[cur] && !has_findings[cur]) report("error", efile[cur], eline[cur], "review backlog entry `" cur "` has no \"Findings:\" line")
+  # A Waiting entry with nothing left to wait on is ready, or still undecided.
+  if (estage[cur] == "Waiting" && !waits[cur]) report("warning", efile[cur], eline[cur], "`" cur "` is in Waiting but names nothing it waits on (no local \"Depends on:\" slug, no \"Blocked by:\"); move it to Ready for separate work, or back to Needs triage if it is not yet understood")
   cur = ""
 }
 FNR == 1 { finish_entry(); stage = ""; priority = ""; file_is_backlog = (FILENAME == backlog_path); FILENAMES = FILENAMES (FILENAMES == "" ? "" : " and ") FILENAME }
@@ -137,12 +140,14 @@ FNR == 1 { finish_entry(); stage = ""; priority = ""; file_is_backlog = (FILENAM
     for (i = 1; i <= n; i++) {
       if (is_foreign(tmp[i])) { report("error", FILENAME, FNR, "`" cur "` depends on `" tmp[i] "` in another repository; Depends on names only slugs in these queues, so use \"Blocked by:\""); continue }
       nd++; dep_from[nd] = cur; dep_to[nd] = tmp[i]; dep_file[nd] = FILENAME; dep_line[nd] = FNR
+      waits[cur] = 1
     }
   }
   else if (key == "Blocked by") {
     # A decision, a person or an external condition, in prose; any local `slug` in it is also a dependency.
     if (val == "" || val ~ /^[Nn]one\.?$/) ;
     else {
+      waits[cur] = 1
       if (is_ready(cur)) report("error", FILENAME, FNR, "`" cur "` " where(cur) " but is Blocked by: " val "; " (is_backlog[cur] ? "clear the blocker before promoting it (the backlog holds only ready work)" : "move it out of Ready until the blocker clears"))
       n = slugs_in(val, tmp)
       for (i = 1; i <= n; i++) if (!is_foreign(tmp[i])) { nd++; dep_from[nd] = cur; dep_to[nd] = tmp[i]; dep_file[nd] = FILENAME; dep_line[nd] = FNR }
