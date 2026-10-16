@@ -428,8 +428,10 @@ pass 'waiting entries with dependencies and blockers' bash "$queues" --strict
 expect 'waiting entries were not accepted' 'no errors'
 printf -- '- [TOOLS] `waits-nothing` **Wait for nothing.**\n  - Source: scripts regression fixture\n  - Blocked by: none\n' >> TODO.md
 pass 'waiting entry without a blocker is only a warning' bash "$queues"
-expect 'waiting entry without a blocker was not warned' '`waits-nothing` is in Waiting but has no "Depends on:" or "Blocked by:" line'
+expect 'waiting entry without a blocker was not warned' '`waits-nothing` is in Waiting but names nothing it waits on'
 reject 'waiting entry without a blocker under --strict' '`waits-nothing` is in Waiting' bash "$queues" --strict
+pass 'check-queues --help' bash "$queues" --help
+expect 'check-queues --help cut its header short' 'Portable to bash 3.2 and POSIX awk.'
 cp waiting-todo.md TODO.md
 printf -- '- [TOOLS] `waits-upstream` **Use the upstream fix.**\n  - Source: scripts regression fixture\n  - Blocked by: `other-repo:upstream-fix`\n' >> TODO.md
 pass 'waiting on another repository' bash "$queues" --strict
