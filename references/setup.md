@@ -60,7 +60,7 @@ Land the installation as one or a few PRs, each with the usual body. The install
 
 ## 4. Adapting to an issue tracker
 
-Issues and labels can replace the Markdown queues when they express the same states: triage, proof of concept, ready, blocked (with the blocking issue linked), claimed (assignee plus draft PR), resolved. Identifiers are issue numbers; markers become `Claims #123` / `Resolves #123` with the same validator logic applied through the tracker's API. Review snapshots and the promoted backlog still live in the repository, because they are evidence tied to commits.
+Issues and labels can replace the Markdown queues when they express the same states: triage, proof of concept, waiting (with the blocking issue or decision linked), ready, claimed (assignee plus draft PR), resolved. Identifiers are issue numbers; markers become `Claims #123` / `Resolves #123` with the same validator logic applied through the tracker's API. Review snapshots and the promoted backlog still live in the repository, because they are evidence tied to commits.
 
 ## 5. What not to import
 
@@ -77,7 +77,8 @@ Symptoms and the fix, from the studied repositories:
 | --- | --- |
 | Rules exist only in harness memory or a global instruction file | Move them into the Docket section of `AGENTS.md` or the relevant project doc in a docs PR |
 | `AGENTS.md` and `CLAUDE.md` are divergent copies | Make one the import of the other |
-| Ready entries that are blocked by other entries | Add `Depends on:` lines and move them; validator enforces it |
+| Ready entries that are blocked by other entries | Add `Depends on:` lines and move them to Waiting; validator enforces it |
+| Needs triage full of settled entries that are only blocked | Move them to Waiting ([Adding the Waiting stage](#adding-the-waiting-stage)) |
 | Claim markers never used, PRs not opened as drafts | Put `start-work.sh` and the draft rule into the contract; add the marker validator to CI so a missing or malformed marker is visible |
 | Review index stale for months | Run `review-due.sh` in the scheduled workflow; request the review |
 | Stale worktrees and placeholder branches | `bash docket/scripts/cleanup-landed.sh --apply --empty` at the end of every session; `.worktrees/` inside the repo |
@@ -99,6 +100,16 @@ Repositories set up before the vendored `docket/` directory existed carry copies
 4. Swap `.feral/` and a root `AUDIT.md` for `.docket/` (the installer removes the stale `.feral/` exclude line); add `.docket/` to `.gitignore`.
 5. Leave review snapshots untouched; they are evidence tied to commits.
 6. Expect the installer's warnings about the hand-copied layout until the removal lands.
+
+### Adding the Waiting stage
+
+`TODO.md` belongs to the project, so a resync does not add the Waiting stage to one written before it existed; the vendored guide and validator describe it, and `check-queues.sh` accepts a file without the section. Add it in the next triage, or the first time an entry needs it:
+
+1. Insert `## Waiting` with the five priority subsections between Needs proof of concept and Ready for separate work, as in the skill's `templates/TODO.md`.
+2. Update the header paragraph to the template's wording, which says where blocked entries go.
+3. Move each entry in Needs triage whose outcome and approach are settled and which carries a `Depends on:` or `Blocked by:` line to Waiting, keeping its priority. Run `bash docket/scripts/check-queues.sh --strict`.
+
+It lands as a direct commit to `main`, like any triage.
 
 ### Migrating tool-named directories
 
