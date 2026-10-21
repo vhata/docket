@@ -14,6 +14,11 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 
 ### Unprioritized
 
+- [SCRIPTS] `finding-membership-sigpipe` — **Finding markers are recognised reliably when a claimed backlog entry exists at both base and head.** The finding-membership pipeline can report a false warning under `pipefail` when `grep -q` exits before the second entry producer finishes.
+  - Source: vhata/bw-reconcile#5 and #6, 2026-10-20
+  - Starting point: `templates/docket/scripts/check-pr-markers.sh`, the pipeline combining base/head `entry_block` output before `grep -q`; drain the producer or avoid a short-circuit consumer and add a regression fixture.
+  - Evidence: a body with `Claims review backlog: redaction-gaps` and `Claims review finding: redaction-gaps` warns that the finding is absent although both queue revisions list it; both findings in `totp-parsing-hardening` also warn. Strict mode fails. Resolving the entry (removing it at head) makes the warning disappear. Repeat enough times to expose the pipe scheduling race.
+
 ## Needs proof of concept
 
 ### P0 Critical
