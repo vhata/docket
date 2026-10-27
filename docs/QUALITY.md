@@ -54,11 +54,11 @@ Read by `docket/CODE_REVIEW_GUIDE.md`, which links this section by its heading, 
 
 `.github/workflows/main-validation.yml` runs weekly (Mondays 11:23 UTC), on demand, and on pull requests that touch it, `docket/` or `scripts/`. On Ubuntu and macOS it runs `bash scripts/check.sh` on main's tip and `docket/scripts/review-due.sh`, and uploads the logs as evidence for 14 days. The PR checks already cover everything this repository can test, so the scheduled run is there to catch changes in the runner images and tools under an unchanged tree, and to report whether a codebase review is due. A red main, from the push run or the schedule, is reverted or filed as a P1 the same day. A missing scheduled run is not a pass.
 
-## Branch protection (as configured on 2026-10-12)
+## Branch protection (verified on 2026-10-27)
 
 `main` is protected by the repository ruleset "Protect main", not by classic branch protection, so `gh api repos/vhata/docket/rulesets` shows it and `.../branches/main/protection` returns 404.
 
-- Required checks: `scripts (ubuntu-latest)` and `scripts (macos-latest)`; up-to-date-with-base: off. `Queue and PR hygiene` is not required.
+- Required checks: `scripts (ubuntu-latest)`, `scripts (macos-latest)` and `Queue and PR hygiene`; up-to-date-with-base: off.
 - Pull request required, with 0 approving reviews; independent agent review is recorded in a review comment on each PR. Conversation resolution: not required.
 - Force pushes (non-fast-forward) and deletion of `main`: blocked. There is no separate linear-history rule; squash-only merging keeps history linear.
 - Administrator bypass: always allowed (the repository admin role is a bypass actor).
