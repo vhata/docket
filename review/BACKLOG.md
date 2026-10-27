@@ -13,14 +13,20 @@ Only work promoted from whole-codebase reviews belongs here. Every entry is read
 
 ## P2 Normal
 
+- [SCRIPTS] `check-links-parsing` — **`check-links.sh` skips code, understands CommonMark link targets and reference definitions, and slugs headings with emphasis or inline HTML as GitHub does.** Example links in code are reported broken and valid early anchors in large documents fail after SIGPIPE.
+  - Source: review/2026-10-12-1702-full.md, 2026-10-12
+  - Findings: `check-links-checks-code-spans-and-fences`, `check-links-target-forms`, `check-links-anchor-emphasis-html`, `tests-check-links-and-start-work-gaps`, `check-links-anchor-sigpipe`
+  - Also hit in vhata/partlet, 2026-10-15: a plan's fenced Python tests contained string literals holding Markdown link syntax, which the link checker reported as four broken links and blocked the plan's direct commit to main. Partlet worked around it by splitting the string literals.
+  - Also reviewed: review/2026-10-27-1626-full.md, 2026-10-27. Large-anchor SIGPIPE verified; the batch is now P2.
+
 - [INSTALLER] `installer-marker-detection` — **The installer finds the Docket markers and the `@AGENTS.md` line in CRLF files and ignores markers inside fenced code.** A CRLF `AGENTS.md` gets a second section and loses its filled values.
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
   - Starting point: `install.sh:183`, `install.sh:216-220`, `install.sh:449`.
   - Findings: `crlf-agents-md-duplicate-section`, `fenced-marker-example-replaced`, `header-claims-outside-never-read-or-written`
 
-- [INSTALLER] `installer-file-shape-safety` — **The installer refuses or safely handles a symlinked, looping or directory `AGENTS.md`/`CLAUDE.md`, a pre-existing project `docket/`, and an exclude file without a final newline.** Several of these write outside the installer's write set or destroy project files.
-  - Source: review/2026-10-12-1702-full.md, 2026-10-12
-  - Findings: `agents-md-symlink-written-through`, `existing-docket-dir-overwritten`, `symlink-loop-hangs-installer`, `agents-md-directory-gets-nested-file`, `exclude-append-corrupts-last-line`
+- [INSTALLER] `installer-file-shape-safety` — **The installer refuses or safely handles a symlinked, looping or directory `AGENTS.md`/`CLAUDE.md`, a pre-existing project `docket/`, symlinks at vendored destination paths, and an exclude file without a final newline.** Several of these write outside the installer's write set or destroy project files.
+  - Source: review/2026-10-12-1702-full.md, 2026-10-12; review/2026-10-27-1626-full.md, 2026-10-27
+  - Findings: `agents-md-symlink-written-through`, `existing-docket-dir-overwritten`, `symlink-loop-hangs-installer`, `agents-md-directory-gets-nested-file`, `exclude-append-corrupts-last-line`, `vendored-path-symlinks-written-through`
 
 - [INSTALLER] `installer-version-guard` — **A plain install refuses a skill checkout older than `docket/VERSION`, and subtree hosts compare correctly when the upstream commit object is absent.** Today a stale checkout silently downgrades the vendored copy, and fresh clones of a subtree host hide local edits.
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
@@ -48,17 +54,17 @@ Only work promoted from whole-codebase reviews belongs here. Every entry is read
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
   - Findings: `start-work-branch-tracks-origin-main`, `start-work-queue-unvalidated`, `start-work-misreports-forge-failure`, `start-work-nests-in-linked-worktree`, `scripts-resolve-own-path-after-cd`
 
-- [TOOLING] `honest-local-gates` — **The local gates run the scripts under `/bin/bash`, fail on an empty suite, lint every shipped script and print the reason a hook refused a commit.** Locally, 3.2 breakage passes when a newer bash is first on PATH, and the pre-commit hook fails silently.
-  - Source: review/2026-10-12-1702-full.md, 2026-10-12
+- [TOOLING] `honest-local-gates` — **The local gates run the scripts under `/bin/bash`, fail on an empty suite, lint every shipped script, isolate fixture Git state and print the reason a hook refused a commit.** Locally, 3.2 breakage passes when a newer bash is first on PATH, and the pre-commit hook fails silently.
+  - Source: review/2026-10-12-1702-full.md, 2026-10-12; review/2026-10-27-1626-full.md, 2026-10-27
   - Starting point: `scripts/test.sh`, `scripts/lint.sh:9`, `.githooks/pre-commit:7-9`.
-  - Findings: `fixtures-run-scripts-under-path-bash`, `pre-commit-hides-failure-reasons`, `lint-skips-template-scripts`, `test-gate-passes-empty-suite`
+  - Findings: `fixtures-run-scripts-under-path-bash`, `pre-commit-hides-failure-reasons`, `lint-skips-template-scripts`, `test-gate-passes-empty-suite`, `fixture-inherits-git-selectors`
 
 ## P3 Low
 
-- [SCRIPTS] `check-links-parsing` — **`check-links.sh` skips code, understands CommonMark link targets and reference definitions, and slugs headings with emphasis or inline HTML as GitHub does.** Example links in code are reported broken and some valid links fail.
-  - Source: review/2026-10-12-1702-full.md, 2026-10-12
-  - Findings: `check-links-checks-code-spans-and-fences`, `check-links-target-forms`, `check-links-anchor-emphasis-html`, `tests-check-links-and-start-work-gaps`
-  - Also hit in vhata/partlet, 2026-10-15: a plan's fenced Python tests contained string literals holding Markdown link syntax, which the link checker reported as four broken links and blocked the plan's direct commit to main. Partlet worked around it by splitting the string literals.
+- [SCRIPTS] `label-application-hardening` — **Label application tolerates concurrent creation and removes obsolete managed labels regardless of their casing.** Today a create race aborts the run and an uppercase type label survives a change of type.
+  - Source: review/2026-10-27-1626-full.md, 2026-10-27
+  - Starting point: `templates/docket/scripts/pr-labels.sh:199-210`.
+  - Findings: `label-create-races-in-fan-out`, `managed-label-casing-survives-removal`
 
 - [SCRIPTS] `review-due-accuracy` — **`review-due.sh` counts churn with one root-anchored exclusion list, compares the unrounded ratio, warns on `--paths` that match nothing, survives blank `--paths` under 3.2, and has a fixture per threshold.** Several of these make the full-review verdict wrong or silent.
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
