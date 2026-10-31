@@ -214,7 +214,12 @@ bash docket/scripts/cleanup-landed.sh --apply --empty  # also deletes placeholde
 
 The script deletes a branch only when a merged PR or a verified local
 landing receipt proves its exact tip landed; later commits are kept and
-reported. Local receipts come from `land-local.sh`, and are verified
+reported. Deletion succeeds only if the branch still points to the
+verified tip, so a concurrently advanced branch is retained. Cleanup
+leaves branch-specific Git configuration in place to avoid deleting
+settings another worker may be using. When creating a branch,
+`start-work.sh` clears stale upstream tracking but preserves other
+branch settings. Local receipts come from `land-local.sh`, and are verified
 against the current base history and squash tree. Without a PR-capable
 remote, use local mode and run local main gates instead of forge CI.
 Preserve `.docket/` review artifacts in the retained main checkout

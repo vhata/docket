@@ -106,7 +106,10 @@ separately in the common Git directory at `docket/landed/<branch>`, with an audi
 `refs/docket/landed/<branch>` retaining the approved commit through Git
 garbage collection. These proof records survive work branch cleanup.
 `land-local.sh` writes them and `cleanup-landed.sh` verifies them before
-removing an exact landed tip.
+removing an exact landed tip. Branch deletion requires that tip still to
+match, preserving a branch that advanced concurrently. Cleanup retains
+branch-specific Git configuration; `start-work.sh` clears stale upstream
+tracking when creating a branch and preserves its other settings.
 
 ## Files
 
