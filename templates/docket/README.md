@@ -98,8 +98,11 @@ every clone agrees), and holds the review and coordination artifacts:
 
 After landing preserve these files and unique evidence under
 `.docket/landed-<slug>/` in the retained main checkout before removing
-the task worktree. Local landing receipts live separately in the common
-Git directory at `docket/landed/<branch>`, with an audit reference at
+the task worktree. Verify preservation before removing only those source
+artifacts; use `rmdir` for now-empty directories, including `.docket/`.
+Other content stays for inspection, and blanket `--discard-ignored` is
+not a substitute for preserving it. Local landing receipts live
+separately in the common Git directory at `docket/landed/<branch>`, with an audit reference at
 `refs/docket/landed/<branch>` retaining the approved commit through Git
 garbage collection. These proof records survive work branch cleanup.
 `land-local.sh` writes them and `cleanup-landed.sh` verifies them before

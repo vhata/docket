@@ -66,8 +66,11 @@ After the user explicitly approves landing that reviewed head:
    landing approval.
 2. Preserve the title, description, state, review and other unique
    evidence in `.docket/landed-<slug>/` under the retained main
-   checkout. Verify the copies before removing them from the task
-   worktree. Do not blanket-discard ignored files to make cleanup pass.
+   checkout. Verify the copies, then remove only those preserved source
+   artifacts from the task worktree. Use `rmdir` for now-empty directories,
+   including `.docket/`; an empty ignored directory can still hold cleanup
+   back. If other content remains, preserve and inspect it. Do not use
+   blanket `--discard-ignored` to make cleanup pass.
 3. From a clean checkout of `main`, run the helper below with the title,
    preserved description and full approved commit ID. Both task and main
    worktrees must be clean, with no operation in progress; the task must
@@ -78,6 +81,19 @@ After the user explicitly approves landing that reviewed head:
    ```bash
    bash docket/scripts/land-local.sh task/<slug> --title "<change title>" --body .docket/landed-<slug>/change-<slug>.md --approved-head <full-reviewed-sha>
    ```
+
+   On the first installation, or an upgrade whose main lacks the helper,
+   keep the working directory at clean main and invoke the installed
+   script in the task worktree by absolute path:
+
+   ```bash
+   bash /absolute/task-worktree/docket/scripts/land-local.sh task/<slug> --title "<change title>" --body .docket/landed-<slug>/change-<slug>.md --approved-head <full-reviewed-sha>
+   ```
+
+   Its script location supplies the installed helpers; the current
+   directory supplies the repository and base checkout. After landing,
+   main contains the helper and cleanup can use its ordinary installed
+   path. Never run the skill's `templates/` copies against the project.
 
 4. Verify the resulting single-parent squash commit and its full
    message. Run main's applicable local gates. The helper records the

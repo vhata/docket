@@ -108,12 +108,17 @@ publication.
   <full-sha>` from a clean main checkout. It creates one squash commit
   with the title and full description, never a merge commit. Its
   approval argument records a decision already given by the user, not
-  permission for the agent to approve itself.
+  permission for the agent to approve itself. If main lacks the helper
+  during initial installation or upgrade, invoke the installed helper by
+  absolute path from the task worktree while keeping the working
+  directory at clean main; never invoke the skill's template copy.
 - After landing verify the commit message and run main's applicable
   checks (hosted CI where present, local gates otherwise). Preserve
   local review evidence in the retained main checkout's
-  `.docket/landed-<slug>/` before removing the task worktree. Run
-  `cleanup-landed.sh` as a dry run, then with `--apply`; local landing
+  `.docket/landed-<slug>/` before removing the task worktree. After
+  verifying preservation, remove only those source artifacts and use
+  `rmdir` for now-empty directories, including `.docket/`; other content
+  stays for inspection. Run `cleanup-landed.sh` as a dry run, then with `--apply`; local landing
   receipts and retained audit refs let it verify the exact landed tip
   without a forge. Rebase stacked children onto main and retarget hosted
   PRs. Never remove dirty worktrees, discard unique ignored evidence or
