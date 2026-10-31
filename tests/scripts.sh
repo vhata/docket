@@ -812,6 +812,10 @@ BODY
 cp .docket/change.md "$local_wt/.docket/change-local-task.md"
 local_land="$local_repo/docket/scripts/land-local.sh"
 local_cleanup="$local_repo/docket/scripts/cleanup-landed.sh"
+# Simulate tracking metadata that must survive safe atomic branch deletion.
+git config branch.todo/local-task.remote .
+git config branch.todo/local-task.merge refs/heads/main
+git config branch.todo/local-task.description 'Preserve this branch note'
 reject 'approval is required' 'Usage:' bash "$local_land" todo/local-task --title 'Land local task' --body .docket/change.md
 reject 'ref is not approval' 'full current task' bash "$local_land" todo/local-task --title 'Land local task' --body .docket/change.md --approved-head todo/local-task
 reject 'abbreviated approval' 'full current task' bash "$local_land" todo/local-task --title 'Land local task' --body .docket/change.md --approved-head "${local_head:0:10}"
@@ -899,14 +903,50 @@ pass 'local cleanup retains uninspectable worktree' env PATH="$local_env" REAL_G
 expect 'status failure was not retained' 'cannot inspect worktree'
 [ -d "$local_wt" ] || exit 1
 rm bin/git
+# Advance the ref exactly at deletion, after cleanup's earlier tip check.
+# Atomic expected-old-value deletion must retain the newly committed work.
+race_head="$(git commit-tree -p "$local_head" -m 'Concurrent local work' "$(git rev-parse "$local_head^{tree}")")"
+cat > bin/git <<'GIT'
+#!/usr/bin/env bash
+case "$*" in
+  'update-ref --no-deref -d refs/heads/todo/local-task '*|'update-ref -d refs/heads/todo/local-task '*|'branch -D todo/local-task')
+    "$REAL_GIT" update-ref refs/heads/todo/local-task "$RACE_HEAD" "$RACE_OLD" || exit 92 ;;
+esac
+exec "$REAL_GIT" "$@"
+GIT
+chmod +x bin/git
+pass 'cleanup retains concurrent tip at deletion' env PATH="$local_env" REAL_GIT="$real_git" RACE_HEAD="$race_head" RACE_OLD="$local_head" bash "$local_cleanup" --apply
+[ "$(git rev-parse refs/heads/todo/local-task)" = "$race_head" ] || { echo 'scripts-test: cleanup deleted concurrent work' >&2; exit 1; }
+expect 'concurrent branch advance was not reported' 'branch moved during cleanup'
+rm bin/git
+git update-ref refs/heads/todo/local-task "$local_head" "$race_head"
 pass 'local cleanup apply' env PATH="$local_env" bash "$local_cleanup" --apply
 [ ! -d "$local_wt" ] || { echo 'scripts-test: local cleanup kept landed clean worktree' >&2; exit 1; }
 ! git show-ref --verify --quiet refs/heads/todo/local-task || { echo 'scripts-test: local cleanup kept landed branch' >&2; exit 1; }
+# Atomic ref deletion must not follow a symbolic branch alias into main.
+git symbolic-ref refs/heads/local-main-alias refs/heads/main
+pass 'cleanup does not dereference a main alias' env PATH="$local_env" bash "$local_cleanup" --apply --empty
+[ "$(git rev-parse refs/heads/main)" = "$local_landed" ] || { echo 'scripts-test: cleanup deleted main through an alias' >&2; exit 1; }
+! git symbolic-ref --quiet refs/heads/local-main-alias >/dev/null || { echo 'scripts-test: empty alias was not removed' >&2; exit 1; }
 reject 'local completion remains claimed after cleanup' 'locally landed todo/local-task' env PATH="$local_env" bash docket/scripts/claim-check.sh local-task
 expect 'main resolution marker was not recognized' 'local main records resolution of local-task'
 # Garbage collection must preserve approved-head proof, not just its text SHA.
 git gc --prune=now --quiet
 reject 'local completion survives garbage collection' 'locally landed todo/local-task' env PATH="$local_env" bash docket/scripts/claim-check.sh local-task
+[ "$(git config branch.todo/local-task.description)" = 'Preserve this branch note' ] || { echo 'scripts-test: cleanup erased branch metadata' >&2; exit 1; }
+pass 'recreated task drops retained tracking' env PATH="$local_env" bash docket/scripts/start-work.sh todo local-task --no-check
+[ -z "$(git for-each-ref --format='%(upstream)' refs/heads/todo/local-task)" ] || { echo 'scripts-test: recreated task inherited old upstream' >&2; exit 1; }
+! git config --get branch.todo/local-task.remote >/dev/null || { echo 'scripts-test: recreated task retained old remote' >&2; exit 1; }
+[ "$(git config branch.todo/local-task.description)" = 'Preserve this branch note' ] || { echo 'scripts-test: start-work erased unrelated branch metadata' >&2; exit 1; }
+git worktree remove "$local_repo/.worktrees/todo-local-task"
+git branch --quiet -D todo/local-task
+# Partially retained tracking configuration is cleared too; Git's
+# --unset-upstream refuses a merge key without a remote key.
+git config branch.task/partial-tracking.merge refs/heads/main
+pass 'new task clears partial tracking metadata' env PATH="$local_env" bash docket/scripts/start-work.sh task partial-tracking --no-check
+! git config --get branch.task/partial-tracking.merge >/dev/null || { echo 'scripts-test: partial tracking metadata survived creation' >&2; exit 1; }
+git worktree remove "$local_repo/.worktrees/task-partial-tracking"
+git branch --quiet -D task/partial-tracking
 git commit --quiet --allow-empty -m 'Record fixture finding completion' -m 'Resolves review finding: mapped-local-finding'
 local_landed="$(git rev-parse main)"
 reject 'mapped finding completion on local main' 'local main records resolution of mapped-local-finding' env PATH="$local_env" bash docket/scripts/claim-check.sh mapped-local-finding

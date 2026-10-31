@@ -160,8 +160,13 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     echo "delete branch $br ($reason)"
   fi
   if [ "$apply" -eq 1 ]; then
-    [ "$(git rev-parse "refs/heads/$br")" = "$tip" ] || { echo "keep $br: branch moved during cleanup"; kept=$((kept + 1)); continue; }
-    git branch -D "$br" >/dev/null
+    # Delete only the tip whose landing was proved, atomically. Keep branch
+    # config: deleting it afterwards could erase a concurrent recreation's
+    # settings. Git's branch -D has no expected-old-value guard.
+    if ! git update-ref --no-deref -d "refs/heads/$br" "$tip"; then
+      echo "keep $br: branch moved during cleanup or ref deletion failed"
+      kept=$((kept + 1)); continue
+    fi
   fi
   removed=$((removed + 1))
 done

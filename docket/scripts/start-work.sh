@@ -61,6 +61,14 @@ if [ "$local_only" -eq 0 ] && git remote get-url origin >/dev/null 2>&1; then
   git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null && start="origin/$base"
 fi
 git worktree add --quiet --no-track -b "$branch" "$path" "$start"
+# Atomic cleanup preserves branch metadata to avoid erasing a concurrent
+# recreation's settings. A reused name may therefore inherit an old upstream
+# despite --no-track. Only clear tracking on the branch just created here.
+for setting in remote merge; do
+  if git config --get-all "branch.$branch.$setting" >/dev/null; then
+    git config --unset-all "branch.$branch.$setting"
+  fi
+done
 echo "created branch $branch at $path (from $start)"
 case "$queue" in
   todo) marker="Claims TODO: $slug" ;;
