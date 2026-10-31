@@ -9,9 +9,14 @@ An agent skill for running a project with many coding agents working on it at on
 It gives Claude Code (and Codex, via `agents/openai.yaml`) a documented way to adopt, audit and operate a workflow built on:
 
 - **Queues, not tangents.** Deferred work lives in `TODO.md` and a review backlog, with sources and exact slugs. Ideas get filed immediately and the current task continues.
-- **One branch, one worktree, one draft PR per task.** Claims are visible in the PR body, so two agents never race on the same entry.
-- **Paired review.** Every code-writing agent gets a separate reviewer agent before a PR is called ready.
-- **Gates everywhere.** Fast hooks, full CI on PRs and main, scheduled extended runs, and branch protection that makes merging safe rather than ceremonial.
+- **One branch and worktree per task.** Use a draft PR with a PR-capable
+  remote, or retain the branch and worktree for local review without
+  one. Change descriptions and exact claims serve both modes.
+- **Paired review.** Every code-writing agent gets a separate reviewer
+  agent before a change is called ready.
+- **Gates everywhere.** The same local checks in either mode; hosted
+  repositories add CI on PRs and main, scheduled extended runs and
+  branch protection.
 - **A review ledger.** Full and incremental codebase reviews record what was looked at, at which commit, and what was found.
 
 The user stays in charge of the one-way doors: merging, force-pushing, tagging, releasing, and changing CI or protection all need an explicit go-ahead.
@@ -59,10 +64,21 @@ You do not need to know the internals. Open a session in the repository you want
 | --- | --- |
 | "Use docket to set up this project" | The agent inspects the repository. A repository with no workflow gets the contract, queues, scripts, CI and review ledger installed on a branch. An empty repository gets initialised first. |
 | "Use docket to audit this project" | Same inspection, but against an existing workflow. Drift between what the docs say, what CI enforces, and what the records prove becomes a list of findings and repairs. |
-| "Use docket to do a full review" / "an incremental review" | A codebase review landed as its own PR, recorded in the review ledger. |
+| "Use docket to do a full review" / "an incremental review" | A codebase review landed as its own reviewed change, recorded in the review ledger. |
 | "Use docket to fan out the ready TODOs" / "run overnight" | The agent acts as coordinator: one writer and one reviewer per ready queue entry, each in its own worktree, with the autonomy mode stated up front. |
 | "Use docket to triage the queues" | Sort new entries into stages and priorities, split batches, reconcile stale claims. |
-| "Use docket to clean up after the merged PRs" | Remove worktrees and branches whose PRs have landed. |
+| "Use docket to clean up after the merged PRs" | Remove worktrees and branches proved landed by PRs or local squash receipts. |
+
+A repository needs no remote to use Docket. Local review keeps the
+title, change description, independent review and approval state in
+`.docket/`, and leaves the branch and worktree for you. After you
+explicitly approve landing the reviewed head, the agent squash-lands it
+into main with that title and full description as the commit message,
+runs main's local checks, preserves review evidence and cleans up. A
+non-PR remote uses the same mode with `--local` on claim/start/cleanup
+helpers. A temporary forge or authentication failure on a PR-capable
+remote instead keeps work pending publication under its existing hosted
+policy.
 
 Branch protection settings are proposed, never applied; you apply them yourself on the hosting side.
 
@@ -80,10 +96,12 @@ In a project where docket is installed, the scripts live under `docket/scripts/`
 bash docket/scripts/check-queues.sh --strict      # validate TODO.md and review/BACKLOG.md
 bash docket/scripts/claim-check.sh <slug>         # who already claims this entry?
 bash docket/scripts/start-work.sh <queue> <slug>  # branch + worktree for a task
-bash docket/scripts/check-pr-markers.sh --pr N    # validate Claims/Resolves markers on a PR
+bash docket/scripts/check-pr-markers.sh --pr N    # validate hosted description markers
+bash docket/scripts/check-pr-markers.sh --body FILE --base main --strict # local description
 bash docket/scripts/pr-labels.sh --pr N --apply   # label a PR by type, queue, area and priority
 bash docket/scripts/review-due.sh                 # is a review due?
-bash docket/scripts/cleanup-landed.sh --apply     # remove worktrees and branches for merged PRs
+bash docket/scripts/land-local.sh BRANCH --title TEXT --body FILE --approved-head SHA # after user approval
+bash docket/scripts/cleanup-landed.sh --apply     # remove proved landed branches/worktrees
 bash docket/scripts/check-links.sh                # relative Markdown links resolve
 bash docket/scripts/ci.sh                         # what CI runs: check-queues --strict, check-links, and check-pr-markers on PRs
 ```

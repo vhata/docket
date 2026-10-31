@@ -1,15 +1,35 @@
 # Installing or adapting the workflow in a repository
 
-Setup is complete when another agent, with no conversation history, can determine what is being worked on, what is available, what was decided, and what checks a PR must pass, from the repository alone. Adding headings is not setup.
+Setup is complete when another agent, with no conversation history, can
+determine what is being worked on, what is available, what was decided,
+and what checks a change must pass, from the repository alone. Adding
+headings is not setup.
+
+First determine the review mode from the repository's actual remote
+capabilities and policy. No remote, or a non-PR remote, uses local
+review; missing credentials or a temporary forge failure does not change
+a hosted repository's policy. Local setup needs Git and the project's
+own check tools, not `gh`, a new remote, hosting, hosted CI or branch
+protection. Record the mode and applicable local gates in
+`docs/QUALITY.md`, and use the [local review and landing
+procedure](pr-and-landing.md#local-review-and-approved-landing).
 
 ## 1. Inspect before changing anything
 
 ```bash
 ls AGENTS.md CLAUDE.md docket/ docs/ review/ TODO.md .github/workflows/ scripts/ 2>/dev/null
 bash ~/.claude/skills/docket/install.sh --check   # vendored docket/ against the skill's copy
-git worktree list; git branch -a; gh pr list --state open
-gh api repos/{owner}/{repo}/branches/main/protection 2>/dev/null | head -c 400
+git remote -v
+git worktree list
+git branch -a
 cat .pre-commit-config.yaml lefthook.yml .husky/* package.json 2>/dev/null | head -80
+```
+
+For a PR-capable remote, also inspect hosted claims and protection:
+
+```bash
+gh pr list --state open
+gh api repos/{owner}/{repo}/branches/main/protection 2>/dev/null | head -c 400
 ```
 
 The skill path is wherever the skill is installed; `~/.claude/skills/docket` is the Claude Code default. `--check` compares against the skill checkout it runs from, which must be at or beyond the commit in `docket/VERSION` (see [The vendored directory](#the-vendored-directory)). `VERSION` always names a docket commit: from a squashed subtree the installer reads it from the subtree's `git-subtree-split` trailer, so copies installed from a subtree and from a clone of the skill compare correctly.
@@ -30,8 +50,8 @@ Also check what lives outside the repository: harness memory files and the user'
 | Deferred work | `TODO.md`, `docket/TODO_GUIDE.md` | Stages, priorities, entry format, claims, markers, resolution. |
 | Review ledger | `review/README.md`, `review/BACKLOG.md`, `review/<timestamp>-<type>.md`, `docket/CODE_REVIEW_GUIDE.md`; project review inputs in `docs/QUALITY.md` | Snapshots, inventory, promoted work, closure rules. |
 | Quality | `docs/QUALITY.md`, `scripts/*.sh`, `docket/scripts/ci.sh`, hook config (no template; see quality-gates.md), `.github/workflows/ci.yml`, `.github/workflows/main-validation.yml` | What runs where, current state only. |
-| PR shape | `.github/pull_request_template.md` | Why, what changed, the `Type:` line and markers, validation, review. |
-| Audit (unattended runs) | `.docket/AUDIT.md`, `.docket/pr-<slug>.md` and `.docket/review-<slug>.md`; the installer adds `.docket/` to `.git/info/exclude` and the install PR adds it to `.gitignore` (step 3) | Append-only decisions with undo lines; prepared PR bodies and review comments. |
+| Change description | `.github/pull_request_template.md` | Why, what changed, the `Type:` line and markers, validation; independent review is a separate record. |
+| Audit (unattended runs) | `.docket/AUDIT.md`, title/change/review/state files; the installer adds `.docket/` to `.git/info/exclude` and the install PR adds it to `.gitignore` (step 3) | Append-only decisions with undo lines; prepared change descriptions and independent review records. |
 | Plans | `plans/YYYY-MM-DD-<slug>.md` | Dated plans for work; may be committed direct to main (see pr-and-landing.md). |
 | Design specs | `docs/specs/YYYY-MM-DD-<slug>.md` | Dated designs written ahead of the work; may be committed direct to main (see pr-and-landing.md). |
 
@@ -50,13 +70,37 @@ The skill's own repository vendors its `docket/` the same way, with `bash instal
 3. **Hooks.** One manager, config tracked, installed by `scripts/setup.sh`. Measure the pre-commit time; move anything slow to pre-push. Add `.worktrees/`, `.docket/` and the evidence and cache directories to `.gitignore` in the install PR; until it lands, `start-work.sh` excludes `.worktrees/` locally and the installer excludes `.docket/` through `.git/info/exclude`, which covers only the clone where install ran, so every other clone and worktree needs the `.gitignore` entry. A Markdown formatter hook must exclude `docket/`, which is vendored byte-for-byte; the Docket section of `AGENTS.md` is written so Prettier leaves it unchanged (see quality-gates.md).
 4. **Queues.** `TODO.md`; the guide is the vendored `docket/TODO_GUIDE.md`. Bring known deferred work in with sources; everything starts Unprioritized in Needs triage unless evidence says otherwise. Run `bash docket/scripts/check-queues.sh --strict`.
 5. **Review ledger.** `review/README.md`, `review/BACKLOG.md`; the guide is the vendored `docket/CODE_REVIEW_GUIDE.md`. Empty index; the first review is a separate task the user requests. Install it even when the repository defers reviews for now (an empty ledger costs nothing), unless the Docket section of `AGENTS.md` records that the ledger is deliberately not in use.
-6. **CI.** `ci.yml` from the template: check job, optional browser or smoke job, a hygiene job that is one call to `bash docket/scripts/ci.sh`, concurrency that cancels only PR runs. Then `main-validation.yml` with whatever extended checks the project has, even if initially only the check entrypoint plus `docket/scripts/review-due.sh`; the template's `pull_request` trigger is filtered to the workflow file and `docket/**`, so a resync exercises the scheduled workflow before it lands.
-7. **PR template.** Copy `templates/.github/pull_request_template.md`. The installer does not sync it, so on repair compare the project's copy with the template (the `Type:` hint in the Markers section and the line-wrapping note at the top in particular).
-8. **Protection.** Propose the settings from quality-gates.md to the user; they apply them. Record the result in `docs/QUALITY.md`.
+6. **CI (hosted mode).** `ci.yml` from the template: check job, optional
+   browser or smoke job, a hygiene job that is one call to `bash
+   docket/scripts/ci.sh`, concurrency that cancels only PR runs. Then
+   `main-validation.yml` with whatever extended checks the project has,
+   even if initially only the check entrypoint plus
+   `docket/scripts/review-due.sh`; the template's `pull_request` trigger
+   is filtered to the workflow file and `docket/**`, so a resync
+   exercises the scheduled workflow before it lands.
+7. **Change description template.** In hosted mode copy
+   `templates/.github/pull_request_template.md`. The installer does not
+   sync it, so on repair compare the project's copy with the template
+   (the `Type:` hint in the Markers section and the line-wrapping note
+   at the top in particular).
+8. **Protection (hosted mode).** Propose the settings from
+   quality-gates.md to the user; they apply them. Record the result in
+   `docs/QUALITY.md`.
 9. **Quality doc.** Describe what was built, as built. No rollout narrative, no measurements from before the gates existed. The `## Review inputs` heading is required: it is the only anchor the vendored review guide links, and the installer warns when the file exists without it. Fill the section (focus areas, extra baseline commands, drift checks, the source paths for `review-due.sh --paths`).
-10. **Verify.** `bash ~/.claude/skills/docket/install.sh --check` is clean; `bash scripts/check.sh` passes on main; hooks fire on a scratch commit; the first PR shows the required checks; `docket/scripts/ci.sh` and `docket/scripts/review-due.sh` run clean; `gh api .../protection` matches the quality doc.
+10. **Verify.** In either mode, `bash ~/.claude/skills/docket/install.sh
+    --check` is clean; `bash scripts/check.sh` passes on the
+    installation branch and after landing on main; hooks fire on a
+    scratch commit. In hosted mode the first PR shows the required
+    checks; `docket/scripts/ci.sh` and `docket/scripts/review-due.sh`
+    run clean; `gh api .../protection` matches the quality doc.
 
-Land the installation as one or a few PRs, each with the usual body. The installation PR is the first PR that follows its own rules.
+Land the installation as one or a few reviewed changes, each with the
+usual description. It follows its own hosted or local review rules. In
+local mode validate the description with `check-pr-markers.sh --body
+<file> --base main --strict`, keep the branch/worktree for approval,
+then squash-land and clean up. Do not create CI files or request a
+remote just to satisfy setup; document hosted-only steps as not
+applicable.
 
 ## 4. Adapting to an issue tracker
 

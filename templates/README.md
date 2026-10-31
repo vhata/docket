@@ -13,7 +13,7 @@ Copy, then replace every `<placeholder>`. Keep headings and marker vocabulary in
 | `docket/` | `docket/` | Vendored verbatim by `install.sh` at the skill root; never edited in the project. See `docket/README.md`. |
 | `docs/QUALITY.md` | `docs/QUALITY.md` | Fill in after the gates exist; current state only. Keep the `## Review inputs` heading: the vendored review guide links it and the installer warns when it is missing. |
 | `review/README.md`, `review/BACKLOG.md` | same paths | Empty ledger. |
-| `.github/pull_request_template.md` | same path | |
-| `.github/workflows/ci.yml` | same path | Replace the setup steps for the language. Also expects `scripts/build.sh` and `scripts/e2e.sh`: add them or remove those steps. |
-| `.github/workflows/main-validation.yml` | same path | Replace the extended checks. |
+| `.github/pull_request_template.md` | same path in hosted mode | Use its description headings for local review too; a `.github/` directory is not required. |
+| `.github/workflows/ci.yml` | same path, hosted mode | Replace the setup steps for the language. Also expects `scripts/build.sh` and `scripts/e2e.sh`: add them or remove those steps. |
+| `.github/workflows/main-validation.yml` | same path, hosted mode | Replace the extended checks. |
 | `scripts/check.sh`, `scripts/setup.sh` | `scripts/` | Skeletons; add the per-check scripts they call. Gate scripts need the exec bit (`chmod +x scripts/*.sh`). |

@@ -2,6 +2,16 @@
 
 The point of the gates is to make "the user merges" safe rather than ceremonial, and to make agents' claims checkable. Agents drift toward whatever the tooling tolerates, so the mechanical layer tolerates nothing. The rule text for a repository lives in its `docs/QUALITY.md` (template in `templates/docs/QUALITY.md`), which describes the current state only and carries the project's review inputs for the vendored review guide; history and rollout plans belong in decision logs or git, because one repository's quality doc still described a state from before CI existed and could mislead a cold reader.
 
+The local-review mode runs the same applicable scripts before review and
+again on main after approved landing. Record results in the description,
+with review and approval in separate local files. No hosted CI, schedule
+or protection API is required without a PR-capable remote. The sections
+below describing forge jobs and settings apply to hosted repositories;
+local repositories document their manual or existing scheduled main
+checks and their limits instead. Do not skip a product check merely
+because its hosted runner is absent; run it locally or report the unmet
+gate and keep the work pending.
+
 ## One set of scripts, three callers
 
 Every check is a standalone executable in `scripts/`, runnable with no arguments from any directory, exiting non-zero on failure, forwarding extra arguments to its tool. Hooks, CI and agents all call the same scripts, so a red CI run is a surprise, not a discovery.
@@ -16,7 +26,7 @@ Every check is a standalone executable in `scripts/`, runnable with no arguments
 | `scripts/e2e.sh` | Browser, end-to-end or system tests; writes a unique evidence directory per run and prints it. |
 | `scripts/smoke.sh` | The cheapest end-to-end exercise of the built product (headless run, CLI invocation, installed-package import). |
 | `scripts/build.sh` | Production or release build and packaging. |
-| `scripts/check.sh` | Runs format check, lint, typecheck, test, in that order, stopping at the first failure and naming it. The thing an agent runs before presenting a PR. |
+| `scripts/check.sh` | Runs format check, lint, typecheck, test, in that order, stopping at the first failure and naming it. The thing an agent runs before presenting a change. |
 
 `scripts/check.sh` runs the project's gates; hooks and `docket/scripts/ci.sh` run the vendored validators (`check-queues.sh`, `check-links.sh`, `check-pr-markers.sh`), and including them in `check.sh` is optional.
 
@@ -95,4 +105,10 @@ Domain-specific lint rules (no clock or randomness in deterministic code, no cro
 
 ## Evidence
 
-Every PR records the commands actually run and their results, and names what was not run and why. Evidence directories from browser or system runs are unique per invocation and kept until the PR lands; a later run must never overwrite the failing run's traces. Measurements go in the PR body with the seed, the command and the before and after figures; a claim about performance or behaviour without a reproducible command is an opinion.
+Every change description records the commands actually run and their
+results, and names what was not run and why. Evidence directories from
+browser or system runs are unique per invocation and kept until the
+change lands; a later run must never overwrite the failing run's traces.
+Measurements go in the change description with the seed, the command and
+the before and after figures; a claim about performance or behaviour
+without a reproducible command is an opinion.
