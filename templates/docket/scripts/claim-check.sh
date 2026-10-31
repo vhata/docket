@@ -4,7 +4,7 @@
 # (already done). For a review backlog slug, also checks every finding slug
 # it maps.
 #
-# Usage: docket/scripts/claim-check.sh [--self | --exclude-branch NAME] <slug> [slug...]
+# Usage: docket/scripts/claim-check.sh [--local] [--self | --exclude-branch NAME] <slug> [slug...]
 #   --self                 recheck from inside the claimed worktree: ignore the
 #                          branch checked out here and its worktree, plus remote
 #                          copies and same-repository open PRs of that branch
@@ -18,15 +18,17 @@
 # Slugs are lowercase kebab-case ([a-z0-9-]); anything else is rejected.
 # Exit 1 when any claim or prior completion is found, 0 when all are free, 2
 # when a forge query fails (ownership is then unverified).
-# Needs git; uses gh when available and says so when it is not.
+# --local skips forge queries for repositories without a PR-capable remote.
+# With no configured remotes this is automatic. Needs git; gh for PRs.
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$root"
 usage() { sed -n '2,21p' "$0"; exit 2; }
-self=""
+self=""; local_only=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --local) local_only=1; shift ;;
     --self)
       self="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
       [ -n "$self" ] || { echo "claim-check: --self needs a checked-out branch, but no branch is checked out here (detached HEAD)" >&2; exit 2; }
@@ -42,6 +44,7 @@ done
 [ $# -ge 1 ] || usage
 case "$self" in *\"*|*\\*) echo "claim-check: unsupported character in branch name $self" >&2; exit 2 ;; esac
 tab="$(printf '\t')"
+[ -n "$(git remote)" ] || local_only=1
 
 # Own-branch exclusion. A ref or PR tip is "owned" when it is a commit of the
 # own branch that the base branch lacks: the worker's own push. A tip carrying
@@ -50,7 +53,9 @@ tab="$(printf '\t')"
 self_tip=""; base_tip=""
 if [ -n "$self" ]; then
   self_tip="$(git rev-parse --verify --quiet "refs/heads/$self^{commit}" || true)"
-  for b in refs/remotes/origin/HEAD refs/remotes/origin/main refs/heads/main; do
+  base_refs="refs/heads/main"
+  [ "$local_only" -eq 1 ] || base_refs="refs/remotes/origin/HEAD refs/remotes/origin/main $base_refs"
+  for b in $base_refs; do
     base_tip="$(git rev-parse --verify --quiet "$b^{commit}" || true)"
     [ -z "$base_tip" ] || break
   done
@@ -64,8 +69,11 @@ owned() {
   return 0
 }
 
+# Never let an inherited GH_REPO redirect queries to another repository.
+unset GH_REPO
 have_gh=0
-if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh repo view >/dev/null 2>&1; then have_gh=1; fi
+if [ "$local_only" -eq 0 ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh repo view >/dev/null 2>&1; then have_gh=1; fi
+[ "$local_only" -eq 0 ] || echo "note: local review mode; forge queries are disabled"
 [ "$have_gh" -eq 1 ] || echo "note: no authenticated gh for this repository (no remote, not logged in, or gh missing); pull requests were NOT checked, so this claim check covers branches and worktrees only"
 
 expand() {
@@ -126,6 +134,34 @@ for requested in "$@"; do
       done_line="$(gh api --paginate 'repos/{owner}/{repo}/pulls?state=closed&per_page=100' \
         --jq ".[] | select(.merged_at != null and ((((.body // \"\") | test(\"$done_re\")) or (.head.ref | test(\"$head_re\"))))) | \"  merged PR #\\(.number) (\\(.merged_at[0:10])) resolved or carried this slug: \\(.title)\"" || fail_query)"
       if [ -n "$done_line" ]; then echo "$done_line"; echo "  -> confirm the queue entry is still current (a remainder may have been filed) before claiming"; claims=$((claims + 1)); fi
+    fi
+    # Local squash receipts survive branch cleanup. Verify their commit proof,
+    # rather than inferring squash landing from patch similarity.
+    common="$(git rev-parse --git-common-dir)"
+    for proof in $(git for-each-ref --format='%(refname)' refs/docket/landed/); do
+      landed_branch="${proof#refs/docket/landed/}"
+      [ "${landed_branch##*/}" = "$slug" ] || continue
+      receipt="$common/docket/landed/$landed_branch"
+      [ -f "$receipt" ] || continue
+      receipt_base="$(sed -n '1p' "$receipt")"; before="$(sed -n '2p' "$receipt")"
+      approved="$(sed -n '3p' "$receipt")"; landed="$(sed -n '4p' "$receipt")"
+      if [ "$(wc -l < "$receipt" | tr -d ' ')" = 4 ] &&
+         [ "$(git rev-parse "$proof")" = "$approved" ] &&
+         git cat-file -e "$landed^{commit}" 2>/dev/null &&
+         [ "$(git show -s --format=%P "$landed")" = "$before" ] &&
+         git merge-base --is-ancestor "$before" "$approved" &&
+         git merge-base --is-ancestor "$landed" "refs/heads/$receipt_base" &&
+         [ "$(git rev-parse "$landed^{tree}")" = "$(git rev-parse "$approved^{tree}")" ]; then
+        echo "  locally landed $landed_branch at $landed; confirm any queue entry is a current remainder"
+        claims=$((claims + 1))
+      fi
+    done
+    if [ "$local_only" -eq 1 ] && git rev-parse --verify --quiet refs/heads/main >/dev/null; then
+      resolutions="$(git log refs/heads/main --format='%H%n%B' --extended-regexp --grep="^(Resolves|Partially resolves) (TODO|review backlog|review finding|roadmap): $slug$" --max-count=1)"
+      if [ -n "$resolutions" ]; then
+        echo "  local main records resolution of $slug; confirm any queue entry is a current remainder"
+        claims=$((claims + 1))
+      fi
     fi
     # Branches whose last path component is the slug (todo/<slug>, origin/fix/<slug>, <slug>).
     # Whole-component matching: a slug that is a substring of another branch name is not a claim.
