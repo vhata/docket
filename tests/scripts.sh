@@ -990,4 +990,137 @@ pass 'bootstrap landing with helper only on task branch' bash "$bootstrap/.workt
 unset GH_REPO GH_CALL_LOG
 cd "$fixture"
 
+# ---- pr-health.sh -------------------------------------------------------
+# A separate fake gh (its own bin directory) serves canned pull request JSON
+# and runs the script's real jq program over it, so this needs jq; it logs
+# every call with the GH_REPO it saw. PRs: 11 passing and clean, 12 failing
+# and behind with a landing comment, 13 pending, draft and conflicting, 14 no
+# checks, 15 merged, 16 changes requested.
+if command -v jq >/dev/null 2>&1; then
+  prh_repo="$external/pr-health"
+  prh_data="$external/pr-health-data"
+  mkdir -p "$prh_repo" "$prh_data/bin"
+  cat > "$prh_data/bin/gh" <<'GH'
+#!/usr/bin/env bash
+printf 'GH_REPO=%s %s\n' "${GH_REPO-unset}" "$(printf '%s' "$*" | tr '\n' ' ')" >> "$PRH_LOG"
+prog=""; prev=""
+for a in "$@"; do [ "$prev" = --jq ] && prog="$a"; prev="$a"; done
+case "$1" in
+  pr)
+    case "$2" in
+      list) printf '%s' "$PRH_LIST" | jq -r "$prog" ;;
+      view) [ -f "$PRH_DATA/pr-$3.json" ] || exit 1; jq -r "$prog" "$PRH_DATA/pr-$3.json" ;;
+      *) exit 2 ;;
+    esac ;;
+  api)
+    case "$2" in
+      repos/*/compare/*) f="$PRH_DATA/behind-${2##*...}"; [ -f "$f" ] || exit 1; cat "$f" ;;
+      *) exit 2 ;;
+    esac ;;
+  *) exit 2 ;;
+esac
+GH
+  chmod +x "$prh_data/bin/gh"
+  prh_pr() {
+    # prh_pr N STATE DRAFT HEAD REVIEW MERGEABLE MERGESTATE CHECKS COMMENTS BODY
+    printf '{"number":%s,"state":"%s","isDraft":%s,"headRefName":"%s","baseRefName":"main","headRefOid":"sha%s","reviewDecision":"%s","mergeable":"%s","mergeStateStatus":"%s","title":"Fixture PR %s","statusCheckRollup":%s,"comments":%s,"body":"%s"}\n' \
+      "$1" "$2" "$3" "$4" "$1" "$5" "$6" "$7" "$1" "$8" "$9" "${10}" > "$prh_data/pr-$1.json"
+  }
+  ok_run='{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}'
+  ok_status='{"__typename":"StatusContext","context":"ci/legacy","state":"SUCCESS"}'
+  prh_pr 11 OPEN false todo/present-task APPROVED MERGEABLE CLEAN "[$ok_run,$ok_status]" '[]' '## Why\n\nText.\n\nClaims TODO: present-task\nType: feature'
+  prh_pr 12 OPEN false task/failing APPROVED MERGEABLE BEHIND \
+    "[$ok_run,{\"__typename\":\"CheckRun\",\"name\":\"lint\",\"status\":\"COMPLETED\",\"conclusion\":\"FAILURE\"}]" \
+    '[{"body":"please /merge after review","createdAt":"2026-10-30T09:00:00Z"},{"body":"  /merge\n","createdAt":"2026-10-30T10:00:00Z"}]' \
+    '## Why\r\n\r\nText.\r\n\r\nResolves TODO: gone-task\r\nFiles TODO: new-task\r\n'
+  prh_pr 13 OPEN true todo/conflicted REVIEW_REQUIRED CONFLICTING DIRTY \
+    "[{\"__typename\":\"CheckRun\",\"name\":\"build\",\"status\":\"IN_PROGRESS\",\"conclusion\":\"\"},{\"__typename\":\"StatusContext\",\"context\":\"ci/legacy\",\"state\":\"PENDING\"}]" \
+    '[{"body":"please /merge","createdAt":"2026-10-30T11:00:00Z"}]' '## Why\n\nText.'
+  prh_pr 14 OPEN false task/unchecked '' MERGEABLE CLEAN '[]' '[]' ''
+  prh_pr 15 MERGED false task/merged APPROVED UNKNOWN UNKNOWN "[$ok_run]" '[]' 'Resolves TODO: gone-task'
+  prh_pr 16 OPEN false task/rejected CHANGES_REQUESTED MERGEABLE BLOCKED "[$ok_run]" '[]' ''
+  printf '0\n' > "$prh_data/behind-sha11"
+  printf '3\n' > "$prh_data/behind-sha12"
+  printf '0\n' > "$prh_data/behind-sha14"
+  printf '0\n' > "$prh_data/behind-sha16"
+  cd "$prh_repo"
+  git init --quiet
+  printf '# TODO\n\n## Ready for separate work\n\n### P2 Normal\n\n- [CORE] `present-task` **Still queued.**\n  - Source: scripts regression fixture\n' > TODO.md
+  prh="$fixture/docket/scripts/pr-health.sh"
+  prh_log="$prh_data/gh.log"
+  prh_env() { : > "$prh_log"; env PATH="$prh_data/bin:$PATH" PRH_LOG="$prh_log" PRH_DATA="$prh_data" PRH_LIST="${PRH_LIST:-[]}" GH_REPO=wrong/repository "$@"; }
+
+  # Default selection: the current user's open PRs, in this repository only.
+  PRH_LIST='[{"number":11},{"number":14}]'
+  pass 'pr-health default selection' prh_env bash "$prh"
+  expect 'pr-health missed the passing PR' '#11 todo/present-task [ready] Fixture PR 11'
+  expect 'pr-health passing rollup' 'checks: passing (2)'
+  expect 'pr-health approved review' 'review: approved'
+  expect 'pr-health clean merge state' 'merge: clean; up to date with main'
+  expect 'pr-health queue marker' 'queue: Claims TODO: present-task'
+  expect 'pr-health no-checks rollup' 'checks: none'
+  expect 'pr-health empty review decision' 'review: none'
+  expect 'pr-health summary' 'summary: 2 PR(s) in this repository; 0 need attention'
+  ! grep -q 'warning:' "$fixture/result.log" || { echo 'scripts-test: pr-health warned about a queued slug' >&2; cat "$fixture/result.log" >&2; exit 1; }
+  grep -q '^GH_REPO=unset pr list --author @me --state open ' "$prh_log" || { echo 'scripts-test: pr-health did not list the open PRs authored by @me' >&2; cat "$prh_log" >&2; exit 1; }
+  ! grep -v '^GH_REPO=unset ' "$prh_log" | grep -q . || { echo 'scripts-test: pr-health let an inherited GH_REPO through' >&2; cat "$prh_log" >&2; exit 1; }
+  ! grep -q -- '--repo' "$prh_log" || { echo 'scripts-test: pr-health passed --repo unasked' >&2; cat "$prh_log" >&2; exit 1; }
+  grep -q 'api repos/{owner}/{repo}/compare/main...sha11 ' "$prh_log" || { echo 'scripts-test: pr-health compared against the wrong repository' >&2; cat "$prh_log" >&2; exit 1; }
+  PRH_LIST='[]'
+  pass 'pr-health with no open PRs' prh_env bash "$prh"
+  expect 'pr-health with no open PRs' 'no open PRs authored by you in this repository'
+
+  # Failing, pending, behind, conflicting, landing requested, queue mismatch.
+  pass 'pr-health named PRs' prh_env bash "$prh" --pr 12 --pr 13 --land-comment /merge
+  expect 'pr-health failing rollup' 'checks: failing (lint)'
+  expect 'pr-health behind state' 'merge: behind; behind main by 3 commit(s)'
+  expect 'pr-health landing comment' 'landing: requested 2026-10-30T10:00:00Z, still open with failing checks; the merge attempt failed or expired'
+  expect 'pr-health missing queue entry' 'warning: Resolves TODO: gone-task, but TODO.md here has no entry `gone-task`'
+  expect 'pr-health draft PR' '#13 todo/conflicted [draft] Fixture PR 13'
+  expect 'pr-health pending rollup' 'checks: pending (2 of 2)'
+  expect 'pr-health review required' 'review: review required'
+  expect 'pr-health dirty state' 'merge: dirty, conflicting; behind base: unknown'
+  expect 'pr-health attention count' '2 need attention (failing checks, changes requested or conflicts); 1 queue warning(s)'
+  [ "$(grep -c 'landing:' "$fixture/result.log")" = 1 ] || { echo 'scripts-test: pr-health matched a comment that only mentions the land command' >&2; cat "$fixture/result.log" >&2; exit 1; }
+  ! grep -q 'warning: Files TODO' "$fixture/result.log" || { echo 'scripts-test: pr-health warned about a Files marker' >&2; cat "$fixture/result.log" >&2; exit 1; }
+  pass 'pr-health without --land-comment' prh_env bash "$prh" --pr 12
+  ! grep -q 'landing:' "$fixture/result.log" || { echo 'scripts-test: pr-health reported landing without --land-comment' >&2; exit 1; }
+  pass 'pr-health merged PR' prh_env bash "$prh" --pr 15
+  expect 'pr-health merged PR' '#15 task/merged [merged] Fixture PR 15'
+  ! grep -q 'warning:' "$fixture/result.log" || { echo 'scripts-test: pr-health cross-checked a merged PR' >&2; exit 1; }
+
+  # --strict: each of failing checks, conflicts and changes requested fails it.
+  pass 'pr-health --strict on healthy PRs' prh_env bash "$prh" --strict --pr 11 --pr 14
+  reject 'pr-health --strict on failing checks' '1 need attention' prh_env bash "$prh" --strict --pr 12
+  reject 'pr-health --strict on conflicts' '1 need attention' prh_env bash "$prh" --strict --pr 13
+  reject 'pr-health --strict on changes requested' 'review: changes requested' prh_env bash "$prh" --strict --pr 16
+  pass 'pr-health without --strict on changes requested' prh_env bash "$prh" --pr 16
+
+  # --repo is passed to every gh call, including the compare path.
+  pass 'pr-health --repo' prh_env bash "$prh" --repo owner/managed --pr 11
+  grep -q ' pr view 11 --json .* --repo owner/managed$' "$prh_log" || { echo 'scripts-test: pr-health did not pass --repo to pr view' >&2; cat "$prh_log" >&2; exit 1; }
+  grep -q ' api repos/owner/managed/compare/main...sha11 ' "$prh_log" || { echo 'scripts-test: pr-health did not compare in the named repository' >&2; cat "$prh_log" >&2; exit 1; }
+  expect 'pr-health --repo summary' 'summary: 1 PR(s) in owner/managed'
+  PRH_LIST='[{"number":11}]'
+  pass 'pr-health --repo default selection' prh_env bash "$prh" --repo owner/managed
+  grep -q ' pr list --author @me --state open .* --repo owner/managed$' "$prh_log" || { echo 'scripts-test: pr-health did not pass --repo to pr list' >&2; cat "$prh_log" >&2; exit 1; }
+
+  # Usage errors and failed queries exit 2.
+  set +e
+  prh_env bash "$prh" --pr abc > "$fixture/result.log" 2>&1; rc=$?
+  [ "$rc" = 2 ] && grep -q 'takes a PR number' "$fixture/result.log" || { echo "scripts-test: pr-health accepted a bad --pr ($rc)" >&2; exit 1; }
+  prh_env bash "$prh" --repo 'not a repo' > "$fixture/result.log" 2>&1; rc=$?
+  [ "$rc" = 2 ] || { echo "scripts-test: pr-health accepted a bad --repo ($rc)" >&2; exit 1; }
+  prh_env bash "$prh" --pr 99 > "$fixture/result.log" 2>&1; rc=$?
+  [ "$rc" = 2 ] && grep -q 'gh query failed (reading PR #99' "$fixture/result.log" || { echo "scripts-test: pr-health hid a failed query ($rc)" >&2; cat "$fixture/result.log" >&2; exit 1; }
+  set -e
+  pass 'pr-health --help' bash "$prh" --help
+  expect 'pr-health --help' 'Usage: docket/scripts/pr-health.sh'
+  unset PRH_LIST
+  cd "$fixture"
+else
+  echo 'scripts-test: note: jq not installed; pr-health.sh fixtures skipped'
+fi
+# ---- end pr-health.sh ---------------------------------------------------
+
 echo 'scripts-test: all checks passed'
