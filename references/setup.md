@@ -163,3 +163,39 @@ Plans and design specs live where [`docket/CONTRACT.md`](../templates/docket/CON
 2. Fix links to the old paths; `bash docket/scripts/check-links.sh` finds them.
 3. Drop any settings bullet in the Docket section of `AGENTS.md`, or other project rule text, that pointed at the old location.
 4. Expect the installer's warning until `docs/superpowers/` is gone and no settings bullet names it.
+
+## 7. A sidecar for a managed repository
+
+Some repositories cannot take a docket installation: a large shared monorepo has its own owners, CI, PR template, hooks and merge process, and one contributor cannot add `docket/`, `TODO.md` or a review ledger to it. Install docket in a small repository of the contributor's own instead, the sidecar, and point it at the managed repository. The sidecar holds the queues, plans, decisions, review ledger and audit; branches, worktrees, PRs and CI stay in the managed repository. Never copy docket, queues or hooks into the managed clone: one careless `git add -A` would commit them to someone else's repository.
+
+1. Create the sidecar repository and install docket in it as usual (steps 1 to 5, 9 and 10). Its own hooks and CI check only its own files: queue hygiene, Markdown links and formatting. It needs no PR template for the managed repository and no local landing of managed work.
+2. Clone the managed repository wherever the user keeps clones. Nothing docket needs goes inside it.
+3. Write `.docket-target` at the sidecar's root and commit it:
+
+   ```
+   # Managed repository for this sidecar
+   repo=owner/repo                  # gh slug of the managed repository
+   dir=~/src/repo                   # its local clone
+   base=main                        # default: main
+   remote=origin                    # default: origin
+   branch_prefix=me/                # default: docket's <queue>/<slug>
+   worktree_dir=~/src/repo-worktrees  # default: <dir>-worktrees
+   land_comment=                    # e.g. a merge-bot command; empty: the user merges
+   ```
+
+   `repo` and `dir` are required; the rest have the defaults shown. A leading `~/` expands to the home directory, and a relative `dir` or `worktree_dir` is taken from the sidecar root. `#` starts a comment when it begins a line or follows whitespace. An unknown key, a repeated key, a malformed line, a missing `dir` or a clone without the named remote stops every script that reads the file, naming the file and line. `DOCKET_TARGET_FILE` points the scripts at another file, which is how one sidecar can be tried against a second clone without editing the tracked one.
+4. Run `bash docket/scripts/target.sh` from the sidecar. It validates the file and prints the resolved repository, clone, base, branch names, worktree location and landing comment.
+5. Record the arrangement in an environment bullet in the Docket section of the sidecar's `AGENTS.md`: which repository it manages, that `.docket-target` is the authority for the target, and anything the managed repository's own contribution rules require (its PR template, required reviewers, how merges happen).
+
+With the file in place, the scripts that touch work in progress act on the managed repository:
+
+| Script | In a sidecar |
+| --- | --- |
+| `claim-check.sh` | Checks branches and worktrees in the managed clone, and PRs in `repo` by head branch name with `gh pr list --repo` (no body markers; the managed repository's PRs carry none). Backlog finding slugs still come from the sidecar's `review/BACKLOG.md`. `--self` runs from the managed worktree. |
+| `start-work.sh` | Runs that claim check, fetches `<remote> <base>` in the clone, and creates the branch (`<branch_prefix><slug>`, or `<queue>/<slug>` without a prefix) and its worktree at `<worktree_dir>/<queue>-<slug>` from `<remote>/<base>`. It writes the clone's exclude file only when `worktree_dir` is inside the clone. The sidecar's queue entry is the claim record. |
+| `cleanup-landed.sh` | Considers only docket's branch names in the clone (the prefix, or the queue prefixes), proves landing with `gh pr list --repo <repo> --head <branch> --state merged`, never deletes `<base>`, and with `--apply` fetches and prunes `<remote>` there. |
+| `review-due.sh` | Reads `review/README.md` from the sidecar and resolves its commits in the clone (`--repo-dir`, defaulting to `dir`), measuring up to `<remote>/<base>`. Scope a review of a large repository to the contributor's area with `--paths`. |
+
+Every one of them takes `--no-target` for work on the sidecar itself, such as a queue triage branch or a change to its own checks. `gh` calls in target mode always name the target with `--repo`, and `GH_REPO` is set to it, so an inherited `GH_REPO` or the current directory never redirects a query.
+
+`check-pr-markers.sh`, `pr-labels.sh` and `land-local.sh` still act on the sidecar: never run them against the managed repository's PRs, and never create docket labels there. The managed repository's own CI is the authority for its gates; run the contributor's own checks on the files the change touches before marking a PR ready. Several sidecars can share one clone when their `branch_prefix` values differ, since a prefix plus a slug must name one branch. Landing in a managed repository is described in [pr-and-landing](pr-and-landing.md#landing-in-a-managed-repository).

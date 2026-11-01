@@ -107,7 +107,7 @@ bash docket/scripts/check-links.sh                # relative Markdown links reso
 bash docket/scripts/ci.sh                         # what CI runs: check-queues --strict, check-links, and check-pr-markers on PRs
 ```
 
-The copies in this repository's `templates/docket/scripts/` are what you edit when developing the skill, and this repository's own `docket/` is regenerated from them with `bash install.sh --self`. They reach a project only through `install.sh`, and `bash ~/.claude/skills/docket/install.sh --check` shows where a project's `docket/` has drifted from them. The scripts act on the repository of the current directory, so run them from inside the project.
+The copies in this repository's `templates/docket/scripts/` are what you edit when developing the skill, and this repository's own `docket/` is regenerated from them with `bash install.sh --self`. They reach a project only through `install.sh`, and `bash ~/.claude/skills/docket/install.sh --check` shows where a project's `docket/` has drifted from them. The scripts act on the repository of the current directory, so run them from inside the project. The exception is a sidecar: a small repository holding docket and the queues for work in a managed repository docket cannot be installed in, named by a tracked `.docket-target` file. There `claim-check.sh`, `start-work.sh`, `cleanup-landed.sh` and `review-due.sh` work in the managed clone and query its PRs with `gh --repo`; see `references/setup.md`.
 
 ## Licence
 
