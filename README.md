@@ -99,6 +99,7 @@ bash docket/scripts/start-work.sh <queue> <slug>  # branch + worktree for a task
 bash docket/scripts/check-pr-markers.sh --pr N    # validate hosted description markers
 bash docket/scripts/check-pr-markers.sh --body FILE --base main --strict # local description
 bash docket/scripts/pr-labels.sh --pr N --apply   # label a PR by type, queue, area and priority
+bash docket/scripts/pr-health.sh                  # checks, review and merge state of your open PRs
 bash docket/scripts/review-due.sh                 # is a review due?
 bash docket/scripts/land-local.sh BRANCH --title TEXT --body FILE --approved-head SHA # after user approval
 bash docket/scripts/cleanup-landed.sh --apply     # remove proved landed branches/worktrees

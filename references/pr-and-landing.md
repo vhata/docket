@@ -171,6 +171,44 @@ autonomy grant. Branch protection has to permit this (administrator
 bypass or no required-PR rule), which is why admin enforcement stays off
 in repositories that use it.
 
+## Checking PR health
+
+`bash docket/scripts/pr-health.sh` reports, for each of your open PRs,
+the head branch, draft or ready, the CI rollup (passing, failing with
+the failing check names, pending, or none), the review decision, the
+merge state with any conflicts, and how many commits the head is behind
+its base. It also lists the queue markers in each body and warns when a
+`Claims`, `Resolves` or `Partially resolves` marker names a `TODO.md` or
+`review/BACKLOG.md` entry that this checkout no longer has, which means
+the queue and the PR disagree. It is read-only and exits 0; `--strict`
+exits 1 when any PR has failing checks, changes requested or conflicts.
+
+```bash
+bash docket/scripts/pr-health.sh                        # your open PRs here
+bash docket/scripts/pr-health.sh --pr 12 --pr 14        # named PRs
+bash docket/scripts/pr-health.sh --repo owner/repo      # another repository
+bash docket/scripts/pr-health.sh --land-comment "<merge-bot command>"
+```
+
+Run it from a checkout of the base branch, since a task worktree has
+already removed the entries its PR resolves. Use it:
+
+- at session start, before picking up or reporting on work, so a red
+  check or a review asking for changes is seen before anything new
+  starts;
+- before reporting the status of PRs to the user, instead of describing
+  them from memory or from an earlier session's handoff;
+- after a landing comment, where the repository lands through a merge
+  bot. `--land-comment` takes the command's exact text; an open PR that
+  carries it is reported as landing requested with the comment's time,
+  and flagged when its checks are failing, because the merge attempt
+  then failed or expired and needs a new comment or a fix.
+
+Without `--repo` the script queries the current directory's remote and
+ignores an inherited `GH_REPO`; with it, every query names that
+repository. Reading the health does not change who lands: merging, and
+posting a landing comment, stay the user's unless delegated.
+
 ## Keeping branches current
 
 Rebase, never merge main into a branch. In local mode use `git rebase
