@@ -995,7 +995,10 @@ cd "$fixture"
 # and runs the script's real jq program over it, so this needs jq; it logs
 # every call with the GH_REPO it saw. PRs: 11 passing and clean, 12 failing
 # and behind with a landing comment, 13 pending, draft and conflicting, 14 no
-# checks, 15 merged, 16 changes requested.
+# checks, 15 merged, 16 changes requested, 17 failing commit statuses and a
+# cancelled run with review backlog markers and two landing comments, 18
+# dirty with mergeability unknown, 19 conflicting but blocked (not dirty)
+# with only a stale check outstanding.
 if command -v jq >/dev/null 2>&1; then
   prh_repo="$external/pr-health"
   prh_data="$external/pr-health-data"
@@ -1042,10 +1045,22 @@ GH
   printf '0\n' > "$prh_data/behind-sha11"
   printf '3\n' > "$prh_data/behind-sha12"
   printf '0\n' > "$prh_data/behind-sha14"
-  printf '0\n' > "$prh_data/behind-sha16"
+  for n in 16 17 18 19; do printf '0\n' > "$prh_data/behind-sha$n"; done
+  prh_pr 17 OPEN false review/status-checks APPROVED MERGEABLE CLEAN \
+    "[$ok_run,{\"__typename\":\"StatusContext\",\"context\":\"ci/status-fail\",\"state\":\"FAILURE\"},{\"__typename\":\"StatusContext\",\"context\":\"ci/status-error\",\"state\":\"ERROR\"},{\"__typename\":\"CheckRun\",\"name\":\"deploy\",\"status\":\"COMPLETED\",\"conclusion\":\"CANCELLED\"}]" \
+    '[{"body":"/merge","createdAt":"2026-10-31T10:00:00Z"},{"body":"/merge please","createdAt":"2026-10-31T11:00:00Z"},{"body":"/merge","createdAt":"2026-10-31T12:00:00Z"}]' \
+    '## Why\n\nText.\n\nResolves review backlog: gone-entry\nClaims review backlog: kept-entry\nPartially resolves TODO: missing-partial\nRemaining TODO: missing-remainder'
+  prh_pr 18 OPEN false task/dirty '' UNKNOWN DIRTY "[$ok_run]" '[]' ''
+  prh_pr 19 OPEN false task/conflicting '' CONFLICTING BLOCKED \
+    "[$ok_run,{\"__typename\":\"CheckRun\",\"name\":\"superseded\",\"status\":\"COMPLETED\",\"conclusion\":\"STALE\"}]" '[]' ''
   cd "$prh_repo"
   git init --quiet
   printf '# TODO\n\n## Ready for separate work\n\n### P2 Normal\n\n- [CORE] `present-task` **Still queued.**\n  - Source: scripts regression fixture\n' > TODO.md
+  # gone-entry is a TODO slug but not a backlog one, so a backlog marker
+  # checked against the wrong queue file would pass silently.
+  printf -- '- [CORE] `gone-entry` **A TODO entry, not a backlog one.**\n  - Source: scripts regression fixture\n' >> TODO.md
+  mkdir -p review
+  printf '# Review backlog\n\n## P2 Normal\n\n- [CORE] `kept-entry` **Still in the backlog.**\n  - Source: scripts regression fixture\n' > review/BACKLOG.md
   prh="$fixture/docket/scripts/pr-health.sh"
   prh_log="$prh_data/gh.log"
   prh_env() { : > "$prh_log"; env PATH="$prh_data/bin:$PATH" PRH_LOG="$prh_log" PRH_DATA="$prh_data" PRH_LIST="${PRH_LIST:-[]}" GH_REPO=wrong/repository "$@"; }
@@ -1096,6 +1111,27 @@ GH
   reject 'pr-health --strict on changes requested' 'review: changes requested' prh_env bash "$prh" --strict --pr 16
   pass 'pr-health without --strict on changes requested' prh_env bash "$prh" --pr 16
 
+  # Commit statuses that failed or errored and a cancelled run all fail; a
+  # stale run is pending. Review backlog markers are checked against
+  # review/BACKLOG.md, Partially resolves TODO against TODO.md, and the
+  # latest exact landing comment wins.
+  pass 'pr-health statuses, backlog markers and repeated landing' prh_env bash "$prh" --pr 17 --land-comment '  /merge '
+  expect 'pr-health status and cancelled failures' 'checks: failing (ci/status-fail, ci/status-error, deploy)'
+  expect 'pr-health latest landing comment' 'landing: requested 2026-10-31T12:00:00Z, still open with failing checks'
+  expect 'pr-health missing backlog entry' 'warning: Resolves review backlog: gone-entry, but review/BACKLOG.md here has no entry `gone-entry`'
+  expect 'pr-health missing partial entry' 'warning: Partially resolves TODO: missing-partial, but TODO.md here has no entry `missing-partial`'
+  expect 'pr-health backlog warning count' '2 queue warning(s)'
+  ! grep -q 'warning: Claims review backlog: kept-entry' "$fixture/result.log" || { echo 'scripts-test: pr-health checked a backlog marker against the wrong file' >&2; exit 1; }
+  ! grep -q 'warning: Remaining TODO' "$fixture/result.log" || { echo 'scripts-test: pr-health warned about a Remaining marker' >&2; exit 1; }
+  reject 'pr-health --strict on failing statuses' '1 need attention' prh_env bash "$prh" --strict --pr 17
+  pass 'pr-health dirty with unknown mergeability' prh_env bash "$prh" --pr 18
+  expect 'pr-health dirty alone' 'merge: dirty, conflicting; up to date with main'
+  reject 'pr-health --strict on dirty alone' '1 need attention' prh_env bash "$prh" --strict --pr 18
+  pass 'pr-health conflicting but blocked' prh_env bash "$prh" --pr 19
+  expect 'pr-health conflicting alone' 'merge: blocked, conflicting; up to date with main'
+  expect 'pr-health stale check is pending' 'checks: pending (1 of 2)'
+  reject 'pr-health --strict on conflicting alone' '1 need attention' prh_env bash "$prh" --strict --pr 19
+
   # --repo is passed to every gh call, including the compare path.
   pass 'pr-health --repo' prh_env bash "$prh" --repo owner/managed --pr 11
   grep -q ' pr view 11 --json .* --repo owner/managed$' "$prh_log" || { echo 'scripts-test: pr-health did not pass --repo to pr view' >&2; cat "$prh_log" >&2; exit 1; }
@@ -1111,6 +1147,10 @@ GH
   [ "$rc" = 2 ] && grep -q 'takes a PR number' "$fixture/result.log" || { echo "scripts-test: pr-health accepted a bad --pr ($rc)" >&2; exit 1; }
   prh_env bash "$prh" --repo 'not a repo' > "$fixture/result.log" 2>&1; rc=$?
   [ "$rc" = 2 ] || { echo "scripts-test: pr-health accepted a bad --repo ($rc)" >&2; exit 1; }
+  prh_env bash "$prh" --pr '' > "$fixture/result.log" 2>&1; rc=$?
+  [ "$rc" = 2 ] && grep -q 'needs a PR number' "$fixture/result.log" || { echo "scripts-test: pr-health accepted an empty --pr ($rc)" >&2; exit 1; }
+  prh_env bash "$prh" --pr 11 --land-comment '  ' > "$fixture/result.log" 2>&1; rc=$?
+  [ "$rc" = 2 ] && grep -q 'needs non-empty text' "$fixture/result.log" || { echo "scripts-test: pr-health accepted an empty --land-comment ($rc)" >&2; exit 1; }
   prh_env bash "$prh" --pr 99 > "$fixture/result.log" 2>&1; rc=$?
   [ "$rc" = 2 ] && grep -q 'gh query failed (reading PR #99' "$fixture/result.log" || { echo "scripts-test: pr-health hid a failed query ($rc)" >&2; cat "$fixture/result.log" >&2; exit 1; }
   set -e

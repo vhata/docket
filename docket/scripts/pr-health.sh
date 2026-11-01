@@ -11,15 +11,20 @@
 #   --pr N               report this PR (repeatable); default: every open PR
 #                        authored by the current gh user
 #   --land-comment TEXT  a comment whose whole body is TEXT (surrounding
-#                        whitespace ignored), such as a merge-bot command,
+#                        whitespace ignored on both), such as a merge-bot
+#                        command,
 #                        requests landing; an open PR that carries one is
 #                        reported with its time, and flagged when its checks
 #                        are failing (the merge attempt failed or expired)
 #   --strict             exit 1 when any reported PR has failing checks,
-#                        changes requested, or merge conflicts
+#                        changes requested, or merge conflicts. Every check in
+#                        the rollup counts, required or not: the rollup does
+#                        not say which checks branch protection requires
 #
 # Per PR: number, head branch, draft or ready; checks (passing, failing with
-# the failing names, pending, or none); review decision; merge state (clean,
+# the failing names, pending, or none; a failed, errored, timed-out,
+# cancelled, action-required or startup-failure check fails, a stale or
+# unfinished one is pending); review decision; merge state (clean,
 # behind, dirty, blocked, unstable, unknown) and conflicts; commits behind the
 # base; landing requested; queue markers. Markers use the vocabulary of
 # check-pr-markers.sh. For an open PR, a Claims, Resolves or Partially
@@ -46,10 +51,23 @@ while [ $# -gt 0 ]; do
   esac
   case "$1" in
     --repo) repo="$2"; shift 2 ;;
-    --pr) prs="$prs $2"; shift 2 ;;
-    --land-comment) land_comment="$2"; shift 2 ;;
+    --pr)
+      [ -n "$2" ] || { echo "pr-health: --pr needs a PR number" >&2; exit 2; }
+      prs="$prs $2"; shift 2 ;;
+    --land-comment)
+      # Trimmed as comment bodies are, so the comparison is like for like.
+      land_comment="$2"
+      while :; do
+        case "$land_comment" in
+          [[:space:]]*) land_comment="${land_comment#?}" ;;
+          *[[:space:]]) land_comment="${land_comment%?}" ;;
+          *) break ;;
+        esac
+      done
+      [ -n "$land_comment" ] || { echo "pr-health: --land-comment needs non-empty text" >&2; exit 2; }
+      shift 2 ;;
     --strict) strict=1; shift ;;
-    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
     *) echo "pr-health: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -80,8 +98,9 @@ if [ -z "$prs" ]; then
 fi
 
 # One jq program (gh's built-in jq) flattens each PR into tab-separated lines.
-# A check is "fail" for a failed, errored, timed-out, cancelled or
-# action-required run or status, "pending" while it has not completed, and
+# A check is "fail" for a failed, errored, timed-out, cancelled,
+# action-required or startup-failure run or status, "pending" while it has
+# not completed or when it is stale (superseded, awaiting a rerun), and
 # "pass" otherwise (success, neutral, skipped).
 land_jq=""
 if [ -n "$land_comment" ]; then
@@ -93,7 +112,7 @@ prog='def flat: gsub("[\t\r\n]"; " ");
 def cls:
   if .__typename == "StatusContext" or (has("state") and (has("status") | not)) then
     (if .state == "SUCCESS" then "pass" elif (.state == "PENDING" or .state == "EXPECTED") then "pending" else "fail" end)
-  elif (.status // "") != "COMPLETED" then "pending"
+  elif (.status // "") != "COMPLETED" or .conclusion == "STALE" then "pending"
   elif ((.conclusion // "") | test("^(FAILURE|TIMED_OUT|CANCELLED|ACTION_REQUIRED|STARTUP_FAILURE|ERROR)$")) then "fail"
   else "pass" end;
 "state\t\(.state)", "draft\t\(.isDraft)", "head\t\(.headRefName)", "base\t\(.baseRefName)",
