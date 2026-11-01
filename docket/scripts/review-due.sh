@@ -2,10 +2,15 @@
 # Report how far the codebase has moved since the last recorded codebase
 # review and say whether an incremental or full review is due.
 #
-# Usage: docket/scripts/review-due.sh [--index review/README.md] [--paths "src crates"] [--base HEAD]
+# Usage: docket/scripts/review-due.sh [--index review/README.md] [--paths "src crates"] [--base HEAD] [--repo-dir PATH] [--no-target]
 #   --base defaults to HEAD, the checked-out commit, so the report describes
 #   the tree CI or a reviewer is looking at; pass --base main to measure the
 #   landed history instead.
+#   --repo-dir resolves commits, diffs and --paths in another repository while
+#   the index is still read from this one. With a managed-repository target
+#   (.docket-target; see target.sh) it defaults to the managed clone, and
+#   --base to <remote>/<base> there when that ref exists. --no-target ignores
+#   the target file.
 #
 # Reads the review index for the latest review and the latest FULL review
 # (first table rows with a backticked commit), measures commits, changed files
@@ -24,18 +29,38 @@
 # Always exits 0 (it is a report, not a gate) except on usage errors.
 set -euo pipefail
 
-root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-cd "$root"
-index="review/README.md"; paths=""; base="HEAD"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+index="review/README.md"; paths=""; base=""; repo_dir=""; no_target=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --index) index="$2"; shift 2 ;;
     --paths) paths="$2"; shift 2 ;;
     --base) base="$2"; shift 2 ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+    --repo-dir) repo_dir="$2"; shift 2 ;;
+    --no-target) no_target=--no-target; shift ;;
+    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
     *) echo "review-due: unknown argument $1" >&2; exit 2 ;;
   esac
 done
+# shellcheck source=target.sh
+. "$here/target.sh"
+docket_target_init "$here" "$no_target" || exit 2
+root="$DOCKET_SIDECAR_ROOT"
+cd "$root"
+if [ -n "$DOCKET_TARGET" ] && [ -z "$repo_dir" ]; then
+  repo_dir="$TARGET_DIR"
+  if [ -z "$base" ] && git -C "$repo_dir" rev-parse --verify --quiet "refs/remotes/$TARGET_REMOTE/$TARGET_BASE" >/dev/null; then
+    base="$TARGET_REMOTE/$TARGET_BASE"
+  fi
+fi
+[ -n "$base" ] || base="HEAD"
+if [ -n "$repo_dir" ]; then
+  # The index is read from this repository; everything else from repo_dir.
+  case "$index" in /*) ;; *) index="$root/$index" ;; esac
+  git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1 || { echo "review-due: --repo-dir $repo_dir is not a git repository" >&2; exit 2; }
+  cd "$(git -C "$repo_dir" rev-parse --show-toplevel)"
+  echo "repository: $(pwd -P); review index: $index"
+fi
 : "${REVIEW_DUE_COMMITS:=25}" "${REVIEW_DUE_DAYS:=21}" "${REVIEW_FULL_FRACTION:=0.33}"
 
 if [ ! -f "$index" ]; then

@@ -2,63 +2,90 @@
 # Claim a queue entry: run the claim check, then create the branch and its
 # worktree so the provisional claim is visible to other workers immediately.
 #
-# Usage: docket/scripts/start-work.sh <queue> <slug> [--base main] [--dir .worktrees] [--no-check] [--local]
+# Usage: docket/scripts/start-work.sh <queue> <slug> [--base main] [--dir .worktrees] [--no-check] [--local] [--no-target]
 #   queue: todo | review | roadmap | fix | task (becomes the branch prefix)
 #   The branch is "<queue>/<slug>" and the worktree "<dir>/<queue>-<slug>".
 #
 # --local uses the local base and skips forge queries; automatic without remotes.
+# With a managed-repository target (.docket-target; see target.sh) the branch
+# and worktree are created in the managed clone from <remote>/<base>: the
+# branch is "<branch_prefix><slug>" when a prefix is set, the worktree goes in
+# worktree_dir, and --base and --dir override the target's values. The
+# sidecar's queue entry is the claim record. --no-target ignores the target.
 # Prints the worktree path and the next steps. Does not push anything.
 set -euo pipefail
 
-root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "start-work: not in a git repository" >&2; exit 2; }
-cd "$root"
-[ $# -ge 2 ] || { sed -n '2,10p' "$0"; exit 2; }
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "start-work: not in a git repository" >&2; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,15p' "$0"; exit 2; }
 queue="$1"; slug="$2"; shift 2
-base="main"; dir=".worktrees"; check=1; local_only=0
+base=""; dir=""; check=1; local_only=0; no_target=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --base) base="$2"; shift 2 ;;
     --dir) dir="$2"; shift 2 ;;
     --local) local_only=1; shift ;;
     --no-check) check=0; shift ;;
+    --no-target) no_target=--no-target; shift ;;
     *) echo "start-work: unknown argument $1" >&2; exit 2 ;;
   esac
 done
 echo "$slug" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || { echo "start-work: slug must be lowercase kebab-case" >&2; exit 2; }
+# shellcheck source=target.sh
+. "$here/target.sh"
+docket_target_init "$here" "$no_target" || exit 2
+root="$DOCKET_SIDECAR_ROOT"
+cd "$root"
+if [ -n "$DOCKET_TARGET" ]; then
+  [ -n "$base" ] || base="$TARGET_BASE"
+  [ -n "$dir" ] || dir="$TARGET_WORKTREE_DIR"
+  repo_dir="$TARGET_DIR"; remote="$TARGET_REMOTE"
+  branch="$(docket_target_branch "$queue" "$slug")"
+else
+  [ -n "$base" ] || base="main"
+  [ -n "$dir" ] || dir=".worktrees"
+  repo_dir="$root"; remote="origin"
+  branch="$queue/$slug"
+fi
 
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-[ -n "$(git remote)" ] || local_only=1
+[ -n "$(git -C "$repo_dir" remote)" ] || local_only=1
 claim_args=()
 [ "$local_only" -eq 0 ] || claim_args=(--local)
+[ -z "$no_target" ] || claim_args+=(--no-target)
 if [ "$check" -eq 1 ]; then
   "$here/claim-check.sh" ${claim_args[@]+"${claim_args[@]}"} "$slug" || { echo "start-work: resolve the existing claim first (or pass --no-check if the overlap is already coordinated)"; exit 1; }
 fi
 
-branch="$queue/$slug"
 path="$dir/$queue-$slug"
 # Make sure the worktree directory and the local docket state directory are
 # ignored. Only directories git does not already ignore are appended, so
 # repeated runs never duplicate a line. A worktree directory outside the
 # repository needs no ignoring, and git cannot answer for it, so it is skipped;
-# one inside is checked by its path relative to the root.
-exclude="$(git rev-parse --git-path info/exclude)"
-ignore=(".docket")
-root_abs="$(pwd -P)"
+# one inside is checked by its path relative to the root. In target mode the
+# state directory lives in the sidecar, and the managed clone's exclude file
+# is written only for a worktree directory inside that clone.
 dir_abs="$(mkdir -p "$dir" && cd "$dir" && pwd -P)"
-case "$dir_abs" in
-  "$root_abs"/*) ignore=("${dir_abs#"$root_abs"/}" "${ignore[@]}") ;;
-esac
-for ignored in "${ignore[@]}"; do
-  if ! git check-ignore -q "$ignored/probe" 2>/dev/null; then
+[ -z "$DOCKET_TARGET" ] || path="$dir_abs/$queue-$slug"
+ensure_ignored() {
+  # ensure_ignored <repository> <directory relative to it>
+  local exclude
+  exclude="$(cd "$1" && cd "$(git rev-parse --git-common-dir)" && pwd -P)/info/exclude"
+  if ! git -C "$1" check-ignore -q "$2/probe" 2>/dev/null; then
     mkdir -p "$(dirname "$exclude")"
-    printf '%s/\n' "$ignored" >> "$exclude"
-    echo "start-work: $ignored was not ignored; added it to the local git exclude file ($exclude). Add '$ignored/' to .gitignore in your next PR."
+    printf '%s/\n' "$2" >> "$exclude"
+    echo "start-work: $2 was not ignored; added it to the local git exclude file ($exclude). Add '$2/' to .gitignore in your next PR."
   fi
-done
+}
+repo_abs="$(cd "$repo_dir" && pwd -P)"
+case "$dir_abs" in
+  "$repo_abs"/*) ensure_ignored "$repo_abs" "${dir_abs#"$repo_abs"/}" ;;
+esac
+ensure_ignored "$root" .docket
+cd "$repo_dir"
 start="$base"
-if [ "$local_only" -eq 0 ] && git remote get-url origin >/dev/null 2>&1; then
-  git fetch --quiet origin "$base" 2>/dev/null || true
-  git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null && start="origin/$base"
+if [ "$local_only" -eq 0 ] && git remote get-url "$remote" >/dev/null 2>&1; then
+  git fetch --quiet "$remote" "$base" 2>/dev/null || true
+  git rev-parse --verify --quiet "refs/remotes/$remote/$base" >/dev/null && start="$remote/$base"
 fi
 git worktree add --quiet --no-track -b "$branch" "$path" "$start"
 # Atomic cleanup preserves branch metadata to avoid erasing a concurrent
@@ -76,7 +103,10 @@ case "$queue" in
   roadmap) marker="Claims roadmap: $slug" ;;
   *) marker="" ;;
 esac
-if [ "$local_only" -eq 1 ]; then
+if [ -n "$DOCKET_TARGET" ]; then
+  echo "managed repository $TARGET_REPO: the sidecar's queue entry is the claim record; the PR body follows $TARGET_REPO's own template and carries no docket markers."
+  echo "next: cd $path; commit early; push to $remote and open a draft PR with 'gh pr create --repo $TARGET_REPO --base $base --draft' after the first meaningful commit; keep the change description and state in the sidecar's .docket/."
+elif [ "$local_only" -eq 1 ]; then
   echo "next: cd $path; run scripts/setup.sh if present; commit early; save the title in .docket/title-$slug.txt and description in .docket/change-$slug.md${marker:+ with '$marker'}; leave the branch and worktree for review and approval."
 else
   echo "next: cd $path; run scripts/setup.sh if present; commit early; open a draft PR after the first meaningful commit${marker:+ with '$marker' in the body}."
