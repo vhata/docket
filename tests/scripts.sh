@@ -7,6 +7,13 @@
 #
 # Usage: bash tests/scripts.sh   (from anywhere; needs git and bash 3.2+)
 set -euo pipefail
+# Git exports GIT_DIR (and, in some cases, GIT_WORK_TREE and GIT_INDEX_FILE) to
+# hooks; from a linked worktree GIT_DIR is absolute. Left set, every fixture
+# command below would act on the repository running the hook: `git init`
+# reinitialises it as bare, `git config` writes fixture settings into its
+# shared config and `git symbolic-ref HEAD` moves its HEAD.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
 root="$(cd "$(dirname "$0")/.." && pwd)"
 scripts="$root/templates/docket/scripts"
 # start-work.sh runs claim-check.sh directly, so every script must stay
