@@ -18,6 +18,9 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
   - Source: vhata/bw-reconcile#5 and #6, 2026-10-20
   - Starting point: `templates/docket/scripts/check-pr-markers.sh`, the pipeline combining base/head `entry_block` output before `grep -q`; drain the producer or avoid a short-circuit consumer and add a regression fixture.
   - Evidence: a body with `Claims review backlog: redaction-gaps` and `Claims review finding: redaction-gaps` warns that the finding is absent although both queue revisions list it; both findings in `totp-parsing-hardening` also warn. Strict mode fails. Resolving the entry (removing it at head) makes the warning disappear. Repeat enough times to expose the pipe scheduling race.
+- [SCRIPTS] `managed-repo-forks` — **Managed-repository mode works for contributors who push branches to a fork rather than to the managed repository.** Target mode expects branches on the managed repository itself; `claim-check.sh --self` reports the user's own fork PR as a competing claim, and `start-work.sh` names the managed remote for the push.
+  - Source: independent review of PR #30, 2026-11-01
+  - Starting point: an optional `push_remote` (or fork owner) key in `.docket-target`; accept a cross-repository head whose owner matches it in `claim-check.sh`, and name that remote in `start-work.sh`'s next steps.
 
 ## Needs proof of concept
 
