@@ -1,17 +1,117 @@
-# Pull requests, stacking, landing and cleanup
+# Change review, stacking, landing and cleanup
 
-## The PR body is the commit message
+## The change description is the commit message
 
-PRs are squash-merged with the title as subject and the body as commit body, so the body is the permanent record. Order, always:
+Hosted PRs and approved local branches are squash-landed with the title
+as subject and the change description as commit body. The description is
+the permanent record. Order, always:
 
 1. `## Why`: the unmet need, bug or risk and the outcome it produces, readable without opening a queue or a conversation. For a feature, the need and the capability; for a bug, the old behaviour and why it was wrong; for internal work, the concrete cost removed.
 2. `## What changed`: behaviour and structure, not a file list.
 3. The `Type:` line, then the queue markers, one per line (see queues.md and [Labels](#labels)).
 4. `## Validation`: exact commands run and their results; for behaviour changes a reproducible scenario with before and after; for review-finding fixes a human-runnable scenario (setup, actions, old failure, expected result); what was not checked (GUI appearance, production state) and why.
 
-The body is timeless: it describes the change as it will read in `git log` or `git blame` years later, to a reader with no access to the PR, its review thread or the state of other branches. The contract's workflow section lists what it leaves out, which is anything about getting the PR merged: "rebased on #4", "merge #12 first", "addressed review feedback", "v2 after discussion", "WIP", "CI flaky, re-running", "start with foo.py". The independent review is review-cycle history too, so it goes in a PR comment (see [parallel-work](parallel-work.md#writer-and-reviewer-pairs)); the rest goes in a PR comment or the coordinator's report. A revised PR gets a rewritten body, not a changelog of revisions. Never merge with a one-line body. The body is hard-wrapped at 72 columns like any commit message (the rule and its exceptions are in the contract's workflow section); a body wrapped wider lost its shape in one repository, where the squash re-wrapped every long line at 72 and left a word or two stranded on the line after it throughout the commit message. `check-pr-markers.sh` warns on prose lines over 72 characters and fails them under `--strict`. One PR does one thing; several commits inside it are fine because the squash folds them. After an agent-performed merge, confirm the resulting commit body is the full PR body and not just the subject (one commit on record has its body pasted twice; another has only the title).
+The description is timeless: it explains the final change for a future
+`git log` reader. The contract defines its content and 72-column
+wrapping rule. Review-cycle history belongs in PR comments or local
+review/state files, as described in
+[parallel-work](parallel-work.md#writer-and-reviewer-pairs). Rewrite a
+revised description as a whole. One change does one thing; several
+branch commits are fine because the squash folds them. After an
+agent-performed landing, verify that the resulting commit contains the
+full description once, with the title as subject.
 
-Template: `templates/.github/pull_request_template.md`. Keep the template's headings even when the sections are short; later PRs in two repositories dropped the template entirely and the marker and validation lines became hard to find.
+Use the headings in `templates/.github/pull_request_template.md` for
+both modes, even if the project has no `.github/` directory. Save local
+titles in `.docket/title-<slug>.txt` and descriptions in
+`.docket/change-<slug>.md`. Existing `.docket/pr-<slug>.md` files are
+usable descriptions and can be renamed when updated. The legacy script
+name `check-pr-markers.sh` remains valid for both modes:
+
+```bash
+bash docket/scripts/check-pr-markers.sh --body .docket/change-<slug>.md --base main --head HEAD --strict
+```
+
+## Local review and approved landing
+
+Choose review mode by repository capability, as the
+[contract](../templates/docket/CONTRACT.md#review-mode) specifies. No
+remote means local mode automatically. With a non-PR remote, pass
+`--local` to claim, start and cleanup helpers. Missing credentials or an
+unavailable forge on a PR-capable remote means work waits locally for
+publication; it does not turn off hosted policy. No remote or hosted CI
+is needed for local review, and local landing never pushes a remote
+main.
+
+```bash
+bash docket/scripts/claim-check.sh --local <slug>
+bash docket/scripts/start-work.sh task <slug> --local
+```
+
+Keep `.docket/state-<slug>.md` separate from the description. Record
+mode, branch, current base and head commits, actual check results and
+limits, independent review location, draft/ready status and the user's
+landing approval when given. The review file is
+`.docket/review-<slug>.md`. Once implementation, applicable local
+checks, marker validation and independent review are complete, report
+the branch/worktree, reviewed head, title, description and review paths
+and leave them available for the user.
+
+After the user explicitly approves landing that reviewed head:
+
+1. Confirm the branch still has that exact head and that its reviewed
+   base is the current local `main`. If main moved, rebase the task,
+   rerun gates and review the changed result, then obtain approval for
+   its new head. Independent agent approval and readiness are not user
+   landing approval.
+2. Preserve the title, description, state, review and other unique
+   evidence in `.docket/landed-<slug>/` under the retained main
+   checkout. Verify the copies, then remove only those preserved source
+   artifacts from the task worktree. Use `rmdir` for now-empty directories,
+   including `.docket/`; an empty ignored directory can still hold cleanup
+   back. If other content remains, preserve and inspect it. Do not use
+   blanket `--discard-ignored` to make cleanup pass.
+3. From a clean checkout of `main`, run the helper below with the title,
+   preserved description and full approved commit ID. Both task and main
+   worktrees must be clean, with no operation in progress; the task must
+   already be rebased on main. Complete project acceptance gates before
+   invoking it; the helper does not supply a human approval or perform
+   independent review.
+
+   ```bash
+   bash docket/scripts/land-local.sh task/<slug> --title "<change title>" --body .docket/landed-<slug>/change-<slug>.md --approved-head <full-reviewed-sha>
+   ```
+
+   On the first installation, or an upgrade whose main lacks the helper,
+   keep the working directory at clean main and invoke the installed
+   script in the task worktree by absolute path:
+
+   ```bash
+   bash /absolute/task-worktree/docket/scripts/land-local.sh task/<slug> --title "<change title>" --body .docket/landed-<slug>/change-<slug>.md --approved-head <full-reviewed-sha>
+   ```
+
+   Its script location supplies the installed helpers; the current
+   directory supplies the repository and base checkout. After landing,
+   main contains the helper and cleanup can use its ordinary installed
+   path. Never run the skill's `templates/` copies against the project.
+
+4. Verify the resulting single-parent squash commit and its full
+   message. Run main's applicable local gates. The helper records the
+   base, exact approved head and squash commit under the common Git
+   directory at `docket/landed/<branch>`, with an audit ref at
+   `refs/docket/landed/<branch>` retaining the approved commit through
+   Git garbage collection. These proof records survive work branch
+   cleanup. Cleanup uses the receipt and Git ancestry and tree checks; a
+   content match alone is not landing proof.
+5. Run cleanup as a dry run and then with `--apply` (with `--local` for
+   a non-PR remote). Preserve anything it reports for inspection. Rebase
+   stacked children onto the squash commit with the old parent tip: `git
+   rebase --onto main <old-parent-tip> <child>`. Revalidate and review
+   each child before requesting its own landing approval.
+
+If landing fails, inspect main, the index and the helper's output before
+retrying. A completed commit may already exist; never create another
+squash blindly or use a destructive reset to clear a partial operation.
 
 ## Labels
 
@@ -31,6 +131,8 @@ Run it once the PR is open and again after changing the `Type:` line or the mark
 
 ## Draft, ready, merge
 
+- The following forge states apply in hosted mode; local state uses the
+  same draft/ready gates and the approved landing procedure above.
 - **Draft** after the first meaningful commit. Draft is the claim and the coordination surface. Stays draft while implementation, required checks or independent review are incomplete. If a rebase or a fix reopens any of those, convert back to draft.
 - **Ready** when the check entrypoint and any change-specific checks passed on the final commit, the queue is resolved in the PR, the markers validate, and the review comment is posted. Ready describes the PR's own scope.
 - **Eligible to land** is separate: base is the default branch, required checks are green against the current base, every parent in a stack has landed, and no acceptance gate the queue entry carried is outstanding. A remainder entry cannot waive such a gate. A ready PR that is not eligible says why in a PR comment.
@@ -40,14 +142,44 @@ Run it once the PR is open and again after changing the `Type:` line or the mark
 
 Two kinds of change may go straight to `main` without a branch, a PR or a review:
 
-1. **Documentation that records work to be done** rather than describing behaviour: adding, triaging or splitting entries in `TODO.md` or `review/BACKLOG.md`, plans (dated files under `plans/`) and design specs (dated files under `docs/specs/`). Plans and specs are planning for work, not work; everything they describe still goes through branches, PRs and independent review. Going direct is an option, not a requirement: an entry, plan or spec drawn up in the middle of other work can be added in that work's PR instead, as long as the PR does not start doing what it records. Resolving an entry is not in this exception, because resolution happens in the PR that does the work. A discovery entry committed this way takes no `Files TODO` marker in the PR that found it; that marker is for entries added on the branch.
+1. **Documentation that records work to be done** rather than describing
+   behaviour: adding, triaging or splitting entries in `TODO.md` or
+   `review/BACKLOG.md`, plans (dated files under `plans/`) and design
+   specs (dated files under `docs/specs/`). Plans and specs are planning
+   for work, not work; everything they describe still goes through
+   branches and independent review in the repository's review mode.
+   Going direct is an option, not a requirement: an entry, plan or spec
+   drawn up in the middle of other work can be added in that work's PR
+   instead, as long as the PR does not start doing what it records.
+   Resolving an entry is not in this exception, because resolution
+   happens in the PR that does the work. A discovery entry committed
+   this way takes no `Files TODO` marker in the PR that found it; that
+   marker is for entries added on the branch.
 2. **Housekeeping metadata files** such as `.git-blame-ignore-revs`, and only when the user says so for that case. It is a per-case allowance, not a standing rule.
 
-Cases that extrapolate from these without violating the spirit of the rule are a judgement call; state it in the commit message. Everything else goes through a PR: all code, anything CI or the build reads, and any documentation that describes behaviour as built or policy (decisions, features, architecture, quality, the contract itself). Run the proportionate check before committing (`bash docket/scripts/check-queues.sh` for queue edits, `bash docket/scripts/check-links.sh` for plans and specs). Pushing the direct commit follows the session's push authority like any other push: normal in an interactive session, held for the user under an unattended autonomy grant. Branch protection has to permit this (administrator bypass or no required-PR rule), which is why admin enforcement stays off in repositories that use it.
+Cases that extrapolate from these without violating the spirit of the
+rule are a judgement call; state it in the commit message. Everything
+else goes through a reviewed branch, hosted or local: all code, anything
+CI or the build reads, and any documentation that describes behaviour as
+built or policy (decisions, features, architecture, quality, the
+contract itself). Run the proportionate check before committing (`bash
+docket/scripts/check-queues.sh` for queue edits, `bash
+docket/scripts/check-links.sh` for plans and specs). Pushing the direct
+commit follows the session's push authority like any other push: normal
+in an interactive session, held for the user under an unattended
+autonomy grant. Branch protection has to permit this (administrator
+bypass or no required-PR rule), which is why admin enforcement stays off
+in repositories that use it.
 
 ## Keeping branches current
 
-Rebase, never merge main into a branch. When a long branch would conflict in several commits, squashing it to one commit first keeps the conflict to a single round; the squash merge discards the internal history anyway. Keep the commits when their history is worth reviewing separately.
+Rebase, never merge main into a branch. In local mode use `git rebase
+main` and omit fetch and push; rerun local gates and review before new
+approval. The commands below are for a hosted `origin` remote. When a
+long branch would conflict in several commits, squashing it to one
+commit first keeps the conflict to a single round; the squash merge
+discards the internal history anyway. Keep the commits when their
+history is worth reviewing separately.
 
 ```bash
 git fetch origin
@@ -75,12 +207,37 @@ Stack when step N+1 cannot start until step N's code exists and waiting for N to
 Run after every merge, or at least at the end of every session:
 
 ```bash
-bash docket/scripts/cleanup-landed.sh                  # dry run: lists branches whose PRs merged and their worktrees
+bash docket/scripts/cleanup-landed.sh                  # dry run: lists proved landed branches and worktrees
 bash docket/scripts/cleanup-landed.sh --apply          # removes clean worktrees, deletes those branches, prunes stale worktree registrations, fetches with --prune
 bash docket/scripts/cleanup-landed.sh --apply --empty  # also deletes placeholder branches with no commits, no PR, no worktree
 ```
 
-The script deletes a branch only when its tip is the exact commit a merged PR landed; a branch with commits after that is kept and reported. Dirty worktrees are never removed. Ignored files that are known caches (`node_modules`, `target`, `.venv`, `__pycache__`, `.pytest_cache` and similar, at any depth) never hold a worktree back; any other ignored file (evidence, logs, `.docket/`, an audit log) does, unless `--discard-ignored` is passed, because it may be the only copy of a record. The allowlist goes by name, so a directory of records should not be called `build`, `out`, `dist`, `coverage` or `test-results`. Look at what is in them (`git -C <path> status --porcelain --ignored=matching`) and either commit, move or, with the user's word, discard. Branches with unmerged, unpushed commits are reported, not deleted; one repository carried an unpushed capacity-measurement branch for days that nobody knew about. Rebase stacked children onto the new main as part of the same cleanup. Then check the push CI run on main (`gh run list --branch main --limit 3`) and apply the red-main policy if needed.
+The script deletes a branch only when a merged PR or a verified local
+landing receipt proves its exact tip landed; later commits are kept and
+reported. Deletion succeeds only if the branch still points to the
+verified tip, so a concurrently advanced branch is retained. Cleanup
+leaves branch-specific Git configuration in place to avoid deleting
+settings another worker may be using. When creating a branch,
+`start-work.sh` clears stale upstream tracking but preserves other
+branch settings. Local receipts come from `land-local.sh`, and are verified
+against the current base history and squash tree. Without a PR-capable
+remote, use local mode and run local main gates instead of forge CI.
+Preserve `.docket/` review artifacts in the retained main checkout
+before removal. Dirty worktrees are never removed. Ignored files that
+are known caches (`node_modules`, `target`, `.venv`, `__pycache__`,
+`.pytest_cache` and similar, at any depth) never hold a worktree back;
+any other ignored file (evidence, logs, `.docket/`, an audit log) does,
+unless `--discard-ignored` is passed, because it may be the only copy of
+a record. The allowlist goes by name, so a directory of records should
+not be called `build`, `out`, `dist`, `coverage` or `test-results`. Look
+at what is in them (`git -C <path> status --porcelain
+--ignored=matching`) and either commit, move or, with the user's word,
+discard. Branches with unmerged, unpushed commits are reported, not
+deleted; one repository carried an unpushed capacity-measurement branch
+for days that nobody knew about. Rebase stacked children onto the new
+main as part of the same cleanup. In hosted mode check the push CI run
+on main (`gh run list --branch main --limit 3`); in local mode run
+main's local gates. Apply the red-main policy if needed.
 
 ## Releases
 

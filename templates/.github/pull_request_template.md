@@ -1,17 +1,17 @@
 <!--
-PRs are squash-merged, so this description becomes the commit message.
+Changes are squash-landed, so this description becomes the commit body.
 Hard-wrap it at 72 columns or fewer, as for any git commit message; that
-includes .docket/pr-<slug>.md drafts and bodies written by sub-agents.
+includes .docket/change-<slug>.md drafts and bodies written by sub-agents.
 Fenced code blocks, tables and unbreakable tokens such as URLs are
 exempt. Indent list continuation lines under their item so the Markdown
-still renders on GitHub, and keep headings within 72.
+still renders correctly, and keep headings within 72.
 
 Describe the final change for someone reading git log months from now.
 Leave out rebase, stacking and merge-order notes, review history, status
-and to-dos, and instructions to reviewers: post those, and the
-independent review, as PR comments. When the change is revised, rewrite
-this description rather than appending to it. Delete this comment and
-the hints below as you fill in the sections.
+and to-dos, and instructions to reviewers: post those, and the independent
+review, as PR comments or in local review/state files. When the change is
+revised, rewrite this description rather than appending to it. Delete
+this comment and the hints below as you fill in the sections.
 -->
 
 ## Why

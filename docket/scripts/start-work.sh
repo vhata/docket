@@ -2,10 +2,11 @@
 # Claim a queue entry: run the claim check, then create the branch and its
 # worktree so the provisional claim is visible to other workers immediately.
 #
-# Usage: docket/scripts/start-work.sh <queue> <slug> [--base main] [--dir .worktrees] [--no-check]
+# Usage: docket/scripts/start-work.sh <queue> <slug> [--base main] [--dir .worktrees] [--no-check] [--local]
 #   queue: todo | review | roadmap | fix | task (becomes the branch prefix)
 #   The branch is "<queue>/<slug>" and the worktree "<dir>/<queue>-<slug>".
 #
+# --local uses the local base and skips forge queries; automatic without remotes.
 # Prints the worktree path and the next steps. Does not push anything.
 set -euo pipefail
 
@@ -13,11 +14,12 @@ root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "start-work: not i
 cd "$root"
 [ $# -ge 2 ] || { sed -n '2,10p' "$0"; exit 2; }
 queue="$1"; slug="$2"; shift 2
-base="main"; dir=".worktrees"; check=1
+base="main"; dir=".worktrees"; check=1; local_only=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --base) base="$2"; shift 2 ;;
     --dir) dir="$2"; shift 2 ;;
+    --local) local_only=1; shift ;;
     --no-check) check=0; shift ;;
     *) echo "start-work: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -25,8 +27,11 @@ done
 echo "$slug" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || { echo "start-work: slug must be lowercase kebab-case" >&2; exit 2; }
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ -n "$(git remote)" ] || local_only=1
+claim_args=()
+[ "$local_only" -eq 0 ] || claim_args=(--local)
 if [ "$check" -eq 1 ]; then
-  "$here/claim-check.sh" "$slug" || { echo "start-work: resolve the existing claim first (or pass --no-check if the overlap is already coordinated)"; exit 1; }
+  "$here/claim-check.sh" ${claim_args[@]+"${claim_args[@]}"} "$slug" || { echo "start-work: resolve the existing claim first (or pass --no-check if the overlap is already coordinated)"; exit 1; }
 fi
 
 branch="$queue/$slug"
@@ -50,9 +55,20 @@ for ignored in "${ignore[@]}"; do
     echo "start-work: $ignored was not ignored; added it to the local git exclude file ($exclude). Add '$ignored/' to .gitignore in your next PR."
   fi
 done
-git fetch --quiet origin "$base" 2>/dev/null || true
-start="origin/$base"; git rev-parse --verify --quiet "$start" >/dev/null || start="$base"
-git worktree add --quiet -b "$branch" "$path" "$start"
+start="$base"
+if [ "$local_only" -eq 0 ] && git remote get-url origin >/dev/null 2>&1; then
+  git fetch --quiet origin "$base" 2>/dev/null || true
+  git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null && start="origin/$base"
+fi
+git worktree add --quiet --no-track -b "$branch" "$path" "$start"
+# Atomic cleanup preserves branch metadata to avoid erasing a concurrent
+# recreation's settings. A reused name may therefore inherit an old upstream
+# despite --no-track. Only clear tracking on the branch just created here.
+for setting in remote merge; do
+  if git config --get-all "branch.$branch.$setting" >/dev/null; then
+    git config --unset-all "branch.$branch.$setting"
+  fi
+done
 echo "created branch $branch at $path (from $start)"
 case "$queue" in
   todo) marker="Claims TODO: $slug" ;;
@@ -60,4 +76,8 @@ case "$queue" in
   roadmap) marker="Claims roadmap: $slug" ;;
   *) marker="" ;;
 esac
-echo "next: cd $path; run the repo's setup script if it exists (scripts/setup.sh); commit early; open a draft PR after the first meaningful commit${marker:+ with '$marker' in the body}."
+if [ "$local_only" -eq 1 ]; then
+  echo "next: cd $path; run scripts/setup.sh if present; commit early; save the title in .docket/title-$slug.txt and description in .docket/change-$slug.md${marker:+ with '$marker'}; leave the branch and worktree for review and approval."
+else
+  echo "next: cd $path; run scripts/setup.sh if present; commit early; open a draft PR after the first meaningful commit${marker:+ with '$marker' in the body}."
+fi

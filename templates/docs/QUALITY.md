@@ -1,10 +1,24 @@
 # Quality and validation
 
-Read when changing code or preparing a PR. This document describes the gates as they exist now; history and rationale for past changes live in `docs/DECISIONS.md` and git.
+Read when changing code or preparing a change. This document describes
+the gates as they exist now; history and rationale for past changes live
+in `docs/DECISIONS.md` and git.
 
 ## What quality means here
 
 <Two to four bullets on what matters for this project: e.g. determinism, accounting correctness, replay, privacy, and what deliberately stays manual (GUI appearance, judgement about emergent behaviour).>
+
+## Review mode
+
+<Hosted PRs | local review because there is no PR-capable remote>.
+Describe the actual mode, remote capability and required gates. For
+local review, run the applicable checks below before review and after
+landing on main; validate the saved description with
+`check-pr-markers.sh --body <file> --base main --strict`. Independent
+review and explicit user landing approval follow
+[docket/CONTRACT.md](../docket/CONTRACT.md#review-mode). The CI,
+schedule and protection sections below are hosted examples; replace them
+with the local arrangement or mark them not applicable.
 
 ## Gates
 
@@ -25,9 +39,13 @@ Each check is a standalone script in `scripts/` or `docket/scripts/`, runnable f
 
 `scripts/check.sh` is the composite entry point: `ci.yml` and `main-validation.yml` run it rather than the four gates individually, so its CI columns are those of the gates it runs. `scripts/check.sh` runs the project's gates; hooks and `docket/scripts/ci.sh` run the vendored validators, and including them in `check.sh` is optional.
 
-Hooks are managed by <manager> from <config file> and installed by `bash scripts/setup.sh`. Pre-commit <checks only | rewrites staged files>. Measured pre-commit time: <n> s warm. Bypassing a hook is for a broken toolchain only; state the bypass and the equivalent checks in the PR.
+Hooks are managed by <manager> from <config file> and installed by `bash
+scripts/setup.sh`. Pre-commit <checks only | rewrites staged files>.
+Measured pre-commit time: <n> s warm. Bypassing a hook is for a broken
+toolchain only; state the bypass and equivalent checks in the change
+description.
 
-Toolchain pins: <files>. Bumping a pin is its own PR.
+Toolchain pins: <files>. Bumping a pin is its own reviewed change.
 
 ## Test policy
 
@@ -63,6 +81,10 @@ The scheduled workflow (`main-validation.yml` in the template) runs <daily at HH
 - Administrator enforcement: <on | off, with the exceptions listed in AGENTS.md>.
 - Merge method: squash only; title from PR title, message from PR body; head branches deleted on merge.
 
-## PR evidence
+## Change evidence
 
-Every PR lists the commands run and their results, a reproducible scenario for behaviour changes, what was not run and why, and the independent review. See [docket/CODE_REVIEW_GUIDE.md](../docket/CODE_REVIEW_GUIDE.md).
+Every change description lists actual commands and results, a
+reproducible behaviour scenario, and anything not checked. Independent
+review lives separately in a PR comment or `.docket/review-<slug>.md`;
+local state records reviewed base/head and user approval. See
+[docket/CODE_REVIEW_GUIDE.md](../docket/CODE_REVIEW_GUIDE.md).

@@ -46,13 +46,19 @@ Only work promoted from whole-codebase reviews belongs here. Every entry is read
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
   - Findings: `marker-queue-rules-lack-negative-fixtures`, `unnamed-remainder-passes`, `ci-sh-untested-and-test-header-drift`
 
-- [SCRIPTS] `cleanup-landed-safety` — **`cleanup-landed.sh` keeps any worktree it cannot prove clean, survives a locked worktree, and reports un-PR'd branches ahead of base.** A failing `git status` currently reads as clean and the worktree is force-removed.
+- [SCRIPTS] `cleanup-landed-reporting` — **Report unlanded work.**
+  - Report branches ahead of base and test hosted cleanup with
+    independently recorded merged heads.
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
-  - Findings: `cleanup-landed-status-error-treated-clean`, `cleanup-landed-locked-worktree-aborts-run`, `cleanup-landed-unpushed-branches-not-reported`, `tests-cleanup-landed-fake-gh-always-tip`
+  - Remaining from: `cleanup-landed-safety`
+  - Findings: `cleanup-landed-unpushed-branches-not-reported`, `tests-cleanup-landed-fake-gh-always-tip`
 
-- [SCRIPTS] `start-work-hardening` — **`start-work.sh` creates an untracked branch, validates its queue, separates forge failure from a claim, and works from a subdirectory or linked worktree.** Today the new branch tracks `origin/main`, so a plain push can target main.
+- [SCRIPTS] `start-work-inputs-and-paths` — **Validate inputs and paths.**
+  - Validate the queue, separate forge failure from an existing claim,
+    and support invocation from a subdirectory or linked worktree.
   - Source: review/2026-10-12-1702-full.md, 2026-10-12
-  - Findings: `start-work-branch-tracks-origin-main`, `start-work-queue-unvalidated`, `start-work-misreports-forge-failure`, `start-work-nests-in-linked-worktree`, `scripts-resolve-own-path-after-cd`
+  - Remaining from: `start-work-hardening`
+  - Findings: `start-work-queue-unvalidated`, `start-work-misreports-forge-failure`, `start-work-nests-in-linked-worktree`, `scripts-resolve-own-path-after-cd`
 
 - [TOOLING] `honest-local-gates` — **The local gates run the scripts under `/bin/bash`, fail on an empty suite, lint every shipped script, isolate fixture Git state and print the reason a hook refused a commit.** Locally, 3.2 breakage passes when a newer bash is first on PATH, and the pre-commit hook fails silently.
   - Source: review/2026-10-12-1702-full.md, 2026-10-12; review/2026-10-27-1626-full.md, 2026-10-27

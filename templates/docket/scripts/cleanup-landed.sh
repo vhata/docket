@@ -3,10 +3,12 @@
 # placeholder branches. Dry run by default and the dry run changes nothing;
 # pass --apply to act.
 #
-# Usage: docket/scripts/cleanup-landed.sh [--apply] [--base main] [--empty] [--discard-ignored]
+# Usage: docket/scripts/cleanup-landed.sh [--apply] [--base main] [--empty] [--discard-ignored] [--local]
 #   A branch is "landed" only when gh finds a merged PR whose head was this
 #   branch AND the branch's current tip is the commit that PR merged. A branch
-#   with commits after the merged head is kept and reported.
+#   with commits after the merged head is kept and reported. A verified local
+#   squash receipt from land-local.sh also proves landing without a forge.
+#   --local skips forge queries and fetches; automatic without remotes.
 #   --empty also removes branches with no commits beyond the base, no PR and no
 #   worktree (harness placeholders such as worktree-agent-*).
 #   Worktrees with modified or untracked files are never removed. Ignored files
@@ -22,12 +24,12 @@ set -euo pipefail
 # Ignored paths whose last component matches this are reproducible build or
 # tool output and are discarded with the worktree without asking.
 cache_re='^(node_modules|target|dist|build|out|coverage|\.venv|venv|\.tox|\.nox|__pycache__|\.pytest_cache|\.hypothesis|\.mypy_cache|\.ruff_cache|\.cache|\.parcel-cache|\.turbo|\.next|\.nuxt|\.svelte-kit|\.wrangler|\.gradle|\.eslintcache|[^/]*\.tsbuildinfo|test-results|playwright-report|\.nyc_output|\.DS_Store|[^/]*\.pyc)$'
-# Prints the ignored entries of worktree $1 that are not known caches.
+# Reads a successful status snapshot and prints ignored non-cache entries.
 # --ignored=matching reports the path that matched an ignore rule (for example
 # src/pkg/__pycache__/) rather than collapsing it to the first directory that
 # holds nothing else, so the last component is the name the allowlist knows.
 non_cache_ignored() {
-  git -C "$1" status --porcelain --ignored=matching 2>/dev/null | grep '^!!' | sed 's/^!! //' | while IFS= read -r p; do
+  grep '^!!' | sed 's/^!! //' | while IFS= read -r p; do
     last="${p%/}"; last="${last##*/}"
     printf '%s\n' "$last" | grep -Eq "$cache_re" || printf '%s\n' "$p"
   done
@@ -35,9 +37,10 @@ non_cache_ignored() {
 
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "cleanup-landed: not in a git repository" >&2; exit 2; }
 cd "$root"
-apply=0; base="main"; empty=0; discard_ignored=0
+apply=0; base="main"; empty=0; discard_ignored=0; local_only=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --local) local_only=1; shift ;;
     --apply) apply=1; shift ;;
     --base) base="$2"; shift 2 ;;
     --empty) empty=1; shift ;;
@@ -47,13 +50,16 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+unset GH_REPO
+[ -n "$(git remote)" ] || local_only=1
+common="$(git rev-parse --git-common-dir)"
+common="$(cd "$common" && pwd -P)"
 have_gh=0
-if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh repo view >/dev/null 2>&1; then have_gh=1; fi
+if [ "$local_only" -eq 0 ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh repo view >/dev/null 2>&1; then have_gh=1; fi
 [ "$apply" -eq 1 ] && mode="APPLY" || mode="DRY RUN (changes nothing; pass --apply to act)"
 echo "cleanup-landed: $mode"
 if [ "$have_gh" -eq 0 ]; then
-  echo "cleanup-landed: no authenticated gh for this repository; merged-PR detection is OFF (only --empty placeholder cleanup can run)"
-  [ "$empty" -eq 1 ] || { echo "cleanup-landed: nothing to do without gh; pass --empty to remove placeholder branches"; exit 0; }
+  echo "cleanup-landed: merged-PR detection is OFF; checking verified local landing receipts"
 fi
 current="$(git branch --show-current || true)"
 # The main worktree is listed first; it can never be removed, so a branch checked out there is only reported.
@@ -71,7 +77,27 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   [ "$br" = "$current" ] && { echo "skip $br (checked out here)"; continue; }
   tip="$(git rev-parse "$br")"
   reason=""
-  if [ "$have_gh" -eq 1 ]; then
+  receipt="$common/docket/landed/$br"
+  if [ -f "$receipt" ]; then
+    recorded_base="$(sed -n '1p' "$receipt")"
+    old_base="$(sed -n '2p' "$receipt")"
+    approved="$(sed -n '3p' "$receipt")"
+    landed="$(sed -n '4p' "$receipt")"
+    if [ "$recorded_base" = "$base" ] && [ "$approved" = "$tip" ] &&
+       [ "$(git rev-parse --verify "refs/docket/landed/$br" 2>/dev/null || true)" = "$approved" ] &&
+       [ "$(wc -l < "$receipt" | tr -d ' ')" = 4 ] &&
+       git cat-file -e "$landed^{commit}" 2>/dev/null &&
+       [ "$(git show -s --format=%P "$landed")" = "$old_base" ] &&
+       git merge-base --is-ancestor "$old_base" "$approved" &&
+       git merge-base --is-ancestor "$landed" "refs/heads/$base" &&
+       [ "$(git rev-parse "$landed^{tree}")" = "$(git rev-parse "$approved^{tree}")" ]; then
+      reason="locally squash-landed at $landed from this exact tip"
+    else
+      echo "keep $br: local landing receipt does not verify this tip on $base; inspect before deleting"
+      kept=$((kept + 1)); continue
+    fi
+  fi
+  if [ -z "$reason" ] && [ "$have_gh" -eq 1 ]; then
     merged="$(gh pr list --head "$br" --state merged --json number,headRefOid --jq '.[0] | select(. != null) | "\(.number) \(.headRefOid)"' 2>/dev/null || true)"
     if [ -n "$merged" ]; then
       num="${merged%% *}"; oid="${merged##* }"
@@ -100,22 +126,48 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     kept=$((kept + 1)); continue
   fi
   if [ -n "$path" ]; then
-    if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then
+    if ! status="$(git -C "$path" status --porcelain --ignored=matching 2>/dev/null)"; then
+      echo "keep $br: cannot inspect worktree $path"
+      kept=$((kept + 1)); continue
+    fi
+    if printf '%s\n' "$status" | grep -qvE '^(!!|$)'; then
       echo "keep $br: $reason, but worktree $path has modified or untracked files"
       kept=$((kept + 1)); continue
     fi
-    ignored="$(non_cache_ignored "$path" || true)"
+    git_dir="$(git -C "$path" rev-parse --absolute-git-dir)" || { echo "keep $br: cannot locate worktree Git state"; kept=$((kept + 1)); continue; }
+    active=0
+    for state in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply sequencer BISECT_LOG; do
+      [ ! -e "$git_dir/$state" ] || active=1
+    done
+    if [ "$active" -eq 1 ]; then
+      echo "keep $br: worktree $path has an in-progress Git operation"
+      kept=$((kept + 1)); continue
+    fi
+    ignored="$(printf '%s\n' "$status" | non_cache_ignored || true)"
     if [ -n "$ignored" ] && [ "$discard_ignored" -eq 0 ]; then
       echo "keep $br: $reason, but worktree $path holds ignored files that are not known caches and would be lost (pass --discard-ignored to remove anyway):"
       echo "$ignored" | sed 's/^/    /' | head -10
       kept=$((kept + 1)); continue
     fi
     echo "remove worktree $path and branch $br ($reason)"
-    if [ "$apply" -eq 1 ]; then git worktree remove --force "$path"; fi
+    if [ "$apply" -eq 1 ]; then
+      if ! git worktree remove --force "$path"; then
+        echo "keep $br: worktree removal failed; branch and receipt retained"
+        kept=$((kept + 1)); continue
+      fi
+    fi
   else
     echo "delete branch $br ($reason)"
   fi
-  if [ "$apply" -eq 1 ]; then git branch -D "$br" >/dev/null; fi
+  if [ "$apply" -eq 1 ]; then
+    # Delete only the tip whose landing was proved, atomically. Keep branch
+    # config: deleting it afterwards could erase a concurrent recreation's
+    # settings. Git's branch -D has no expected-old-value guard.
+    if ! git update-ref --no-deref -d "refs/heads/$br" "$tip"; then
+      echo "keep $br: branch moved during cleanup or ref deletion failed"
+      kept=$((kept + 1)); continue
+    fi
+  fi
   removed=$((removed + 1))
 done
 echo "cleanup-landed: $removed branch(es) $( [ "$apply" -eq 1 ] && echo removed || echo 'would be removed'), $kept kept for inspection"
@@ -124,5 +176,5 @@ if [ "$stale" -gt 0 ]; then
   if [ "$apply" -eq 1 ]; then git worktree prune; echo "cleanup-landed: pruned $stale stale worktree registration(s) (directories were already gone)"
   else echo "note: $stale prunable worktree registration(s); --apply prunes them (a missing directory does not by itself prove its branch landed)"; fi
 fi
-if [ "$apply" -eq 1 ]; then git fetch --prune --quiet origin 2>/dev/null || true; fi
+if [ "$apply" -eq 1 ] && [ "$local_only" -eq 0 ] && git remote get-url origin >/dev/null 2>&1; then git fetch --prune --quiet origin 2>/dev/null || true; fi
 exit 0

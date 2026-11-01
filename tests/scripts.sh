@@ -441,6 +441,8 @@ reject 'waiting on a landed dependency' '`waits-local` depends on `prerequisite`
 cp local-todo.md TODO.md
 
 # claim-check.sh against a fake forge
+# A configured remote distinguishes hosted fixtures from remote-less mode.
+git remote add fixture "$external/nonexistent-remote"
 cat > bin/gh <<'GH'
 #!/usr/bin/env bash
 case "$1 $2" in
@@ -740,4 +742,252 @@ pass 'cleanup-landed --apply --discard-ignored' in_dir "$fixture/.worktrees/runn
 [ ! -d "$fixture/.worktrees/landed-log" ] || { echo 'scripts-test: --discard-ignored kept the log-holding worktree' >&2; exit 1; }
 git worktree remove --force "$fixture/.worktrees/runner"
 git branch --quiet -D landed-dirty landed-main runner
+
+# Remote-less lifecycle: even an installed gh and inherited GH_REPO must not
+# cause any forge calls. Keep these fixtures isolated from hosted test state.
+local_repo="$external/local-repo"
+mkdir -p "$local_repo/bin" "$local_repo/docket/scripts"
+cp "$scripts"/*.sh "$local_repo/docket/scripts/"
+cd "$local_repo"
+git init --quiet
+git symbolic-ref HEAD refs/heads/main
+git config user.name 'Local fixture'
+git config user.email 'local-fixture@example.invalid'
+git config core.hooksPath /dev/null
+printf 'bin/\n.worktrees/\n.docket/\nignored.txt\n' > .gitignore
+cat > TODO.md <<'QUEUE'
+# TODO
+
+## Ready for separate work
+
+### P2 Normal
+
+- [TOOLS] `local-task` **Complete local work.**
+  - Source: local lifecycle fixture
+QUEUE
+git add .gitignore docket
+git commit --quiet -m 'Initial local project'
+# The stale remote lacks the queued task, so choosing it as the marker base
+# incorrectly rejects its resolution.
+git update-ref refs/remotes/origin/main "$(git rev-parse HEAD)"
+git add TODO.md
+git commit --quiet -m 'Queue local task'
+local_base="$(git rev-parse HEAD)"
+cat > bin/gh <<'GH'
+#!/usr/bin/env bash
+printf 'unexpected gh call\n' >> "$GH_CALL_LOG"
+exit 90
+GH
+chmod +x bin/gh
+export GH_REPO=wrong/repository GH_CALL_LOG="$local_repo/gh-calls"
+local_env="$local_repo/bin:$PATH"
+pass 'remote-less free claim' env PATH="$local_env" bash docket/scripts/claim-check.sh fresh-local
+pass 'remote-less start' env PATH="$local_env" bash docket/scripts/start-work.sh todo local-task
+expect 'local start did not describe local review' '.docket/change-local-task.md'
+local_wt="$local_repo/.worktrees/todo-local-task"
+[ "$(git rev-parse todo/local-task)" = "$local_base" ] || { echo 'scripts-test: remote-less task used stale origin base' >&2; exit 1; }
+[ -z "$(git for-each-ref --format='%(upstream)' refs/heads/todo/local-task)" ] || { echo 'scripts-test: task unexpectedly tracks main' >&2; exit 1; }
+printf '# TODO\n' > "$local_wt/TODO.md"
+printf 'approved content\n' > "$local_wt/result.txt"
+git -C "$local_wt" add TODO.md result.txt
+git -C "$local_wt" commit --quiet -m 'Complete local task'
+local_head="$(git -C "$local_wt" rev-parse HEAD)"
+mkdir -p .docket "$local_wt/.docket"
+cat > .docket/change.md <<'BODY'
+## Why
+
+Local work must land without a forge.
+
+## What changed
+
+Complete the queued local task.
+
+Type: feature
+Resolves TODO: local-task
+
+## Validation
+
+Exercise the isolated local lifecycle fixture.
+BODY
+cp .docket/change.md "$local_wt/.docket/change-local-task.md"
+local_land="$local_repo/docket/scripts/land-local.sh"
+local_cleanup="$local_repo/docket/scripts/cleanup-landed.sh"
+# Simulate tracking metadata that must survive safe atomic branch deletion.
+git config branch.todo/local-task.remote .
+git config branch.todo/local-task.merge refs/heads/main
+git config branch.todo/local-task.description 'Preserve this branch note'
+reject 'approval is required' 'Usage:' bash "$local_land" todo/local-task --title 'Land local task' --body .docket/change.md
+reject 'ref is not approval' 'full current task' bash "$local_land" todo/local-task --title 'Land local task' --body .docket/change.md --approved-head todo/local-task
+reject 'abbreviated approval' 'full current task' bash "$local_land" todo/local-task --title 'Land local task' --body .docket/change.md --approved-head "${local_head:0:10}"
+reject 'multiline title' 'one nonempty line' bash "$local_land" todo/local-task --title $'Bad\nTitle' --body .docket/change.md --approved-head "$local_head"
+printf 'dirty\n' > result.txt
+reject 'dirty base refuses landing' 'modified or untracked' bash "$local_land" todo/local-task --title 'Land local task' --body .docket/change.md --approved-head "$local_head"
+rm result.txt
+printf 'dirty\n' >> "$local_wt/result.txt"
+reject 'dirty task refuses landing' 'modified or untracked' bash "$local_land" todo/local-task --title 'Land local task' --body .docket/change.md --approved-head "$local_head"
+git -C "$local_wt" restore result.txt
+printf '%s\n' "$local_head" > .git/MERGE_HEAD
+reject 'in-progress base refuses landing' 'in-progress Git operation' bash "$local_land" todo/local-task --title 'Land local task' --body .docket/change.md --approved-head "$local_head"
+rm .git/MERGE_HEAD
+printf '%s\n' "$local_base" > "$(git -C "$local_wt" rev-parse --git-path CHERRY_PICK_HEAD)"
+reject 'in-progress task refuses landing' 'in-progress Git operation' bash "$local_land" todo/local-task --title 'Land local task' --body .docket/change.md --approved-head "$local_head"
+rm "$(git -C "$local_wt" rev-parse --git-path CHERRY_PICK_HEAD)"
+git commit --quiet --allow-empty -m 'Base advanced'
+reject 'advanced base refuses stale task' 'rebase onto main' bash "$local_land" todo/local-task --title 'Land local task' --body .docket/change.md --approved-head "$local_head"
+git -C "$local_wt" rebase --quiet main
+local_head="$(git -C "$local_wt" rev-parse HEAD)"
+local_base="$(git rev-parse main)"
+# Default marker base must be current local main, even with a stale origin ref.
+pass 'remote-less markers' in_dir "$local_wt" env PATH="$local_env" bash docket/scripts/check-pr-markers.sh --body .docket/change-local-task.md --strict
+# Explicit local mode also works with a non-PR remote, without queries/fetches.
+git remote add archive "$external/unavailable-archive"
+pass 'explicit local claim' env PATH="$local_env" bash docket/scripts/claim-check.sh --local fresh-local
+pass 'explicit local start' env PATH="$local_env" bash docket/scripts/start-work.sh task local-second --local
+[ "$(git rev-parse task/local-second)" = "$local_base" ] || { echo 'scripts-test: explicit local mode used stale remote base' >&2; exit 1; }
+git worktree remove "$local_repo/.worktrees/task-local-second"
+git branch --quiet -D task/local-second
+git remote remove archive
+git init --bare --quiet "$external/local-origin.git"
+git remote add origin "$external/local-origin.git"
+git push --quiet origin main
+pass 'hosted base does not become task upstream' bash docket/scripts/start-work.sh task hosted-upstream --no-check
+[ -z "$(git for-each-ref --format='%(upstream)' refs/heads/task/hosted-upstream)" ] || { echo 'scripts-test: task tracks origin/main' >&2; exit 1; }
+git worktree remove "$local_repo/.worktrees/task-hosted-upstream"
+git branch --quiet -D task/hosted-upstream
+git remote remove origin
+# Keep a stale remote ref after removal, as an incomplete migration may do.
+git update-ref refs/remotes/origin/main "$local_base"
+# Run from a subdirectory, with an absolute helper path.
+pass 'approved local squash' in_dir "$local_repo/docket" env PATH="$local_env" bash "$local_land" todo/local-task --title 'Land local task' --body ../.docket/change.md --approved-head "$local_head"
+local_landed="$(git rev-parse main)"
+[ "$(git show -s --format=%P "$local_landed")" = "$local_base" ] || { echo 'scripts-test: local landing created a merge commit or wrong parent' >&2; exit 1; }
+[ "$(git rev-parse 'main^{tree}')" = "$(git rev-parse 'todo/local-task^{tree}')" ] || { echo 'scripts-test: local landing lost task content' >&2; exit 1; }
+printf 'Land local task\n\n' > .docket/expected-message
+cat .docket/change.md >> .docket/expected-message
+git cat-file commit main | sed '1,/^$/d' > .docket/actual-message
+cmp .docket/expected-message .docket/actual-message
+[ -d "$local_wt" ] || { echo 'scripts-test: landing removed review worktree early' >&2; exit 1; }
+pass 'local cleanup retains ignored evidence' env PATH="$local_env" bash "$local_cleanup" --apply
+expect 'local evidence was not retained' 'not known caches and would be lost'
+[ -f "$local_wt/.docket/change-local-task.md" ] || exit 1
+mv "$local_wt/.docket/change-local-task.md" .docket/reviewed-change.md
+rmdir "$local_wt/.docket"
+pass 'local cleanup dry run' env PATH="$local_env" bash "$local_cleanup"
+expect 'local receipt was not recognized' 'locally squash-landed'
+[ -d "$local_wt" ] || { echo 'scripts-test: cleanup dry run removed local worktree' >&2; exit 1; }
+printf '%s\n' "$local_base" > "$(git -C "$local_wt" rev-parse --git-path MERGE_HEAD)"
+pass 'local cleanup retains in-progress operation' env PATH="$local_env" bash "$local_cleanup" --apply
+expect 'active operation was not retained' 'in-progress Git operation'
+[ -d "$local_wt" ] || exit 1
+rm "$(git -C "$local_wt" rev-parse --git-path MERGE_HEAD)"
+git worktree lock "$local_wt"
+pass 'local cleanup retains locked worktree' env PATH="$local_env" bash "$local_cleanup" --apply
+expect 'locked worktree was not retained' 'worktree removal failed'
+[ -d "$local_wt" ] || exit 1
+git worktree unlock "$local_wt"
+# A later commit invalidates exact-tip proof even if empty.
+git -C "$local_wt" commit --quiet --allow-empty -m 'Unlanded later work'
+pass 'local cleanup retains later commits' env PATH="$local_env" bash "$local_cleanup" --apply
+expect 'later local work was not retained' 'does not verify this tip'
+[ -d "$local_wt" ] || exit 1
+git -C "$local_wt" reset --quiet --hard "$local_head"
+# A status failure must preserve the worktree, not be interpreted as clean.
+real_git="$(command -v git)"
+cat > bin/git <<'GIT'
+#!/usr/bin/env bash
+case "$*" in *'status --porcelain --ignored=matching'*) exit 91 ;; esac
+exec "$REAL_GIT" "$@"
+GIT
+chmod +x bin/git
+pass 'local cleanup retains uninspectable worktree' env PATH="$local_env" REAL_GIT="$real_git" bash "$local_cleanup" --apply
+expect 'status failure was not retained' 'cannot inspect worktree'
+[ -d "$local_wt" ] || exit 1
+rm bin/git
+# Advance the ref exactly at deletion, after cleanup's earlier tip check.
+# Atomic expected-old-value deletion must retain the newly committed work.
+race_head="$(git commit-tree -p "$local_head" -m 'Concurrent local work' "$(git rev-parse "$local_head^{tree}")")"
+cat > bin/git <<'GIT'
+#!/usr/bin/env bash
+case "$*" in
+  'update-ref --no-deref -d refs/heads/todo/local-task '*|'update-ref -d refs/heads/todo/local-task '*|'branch -D todo/local-task')
+    "$REAL_GIT" update-ref refs/heads/todo/local-task "$RACE_HEAD" "$RACE_OLD" || exit 92 ;;
+esac
+exec "$REAL_GIT" "$@"
+GIT
+chmod +x bin/git
+pass 'cleanup retains concurrent tip at deletion' env PATH="$local_env" REAL_GIT="$real_git" RACE_HEAD="$race_head" RACE_OLD="$local_head" bash "$local_cleanup" --apply
+[ "$(git rev-parse refs/heads/todo/local-task)" = "$race_head" ] || { echo 'scripts-test: cleanup deleted concurrent work' >&2; exit 1; }
+expect 'concurrent branch advance was not reported' 'branch moved during cleanup'
+rm bin/git
+git update-ref refs/heads/todo/local-task "$local_head" "$race_head"
+pass 'local cleanup apply' env PATH="$local_env" bash "$local_cleanup" --apply
+[ ! -d "$local_wt" ] || { echo 'scripts-test: local cleanup kept landed clean worktree' >&2; exit 1; }
+! git show-ref --verify --quiet refs/heads/todo/local-task || { echo 'scripts-test: local cleanup kept landed branch' >&2; exit 1; }
+# Atomic ref deletion must not follow a symbolic branch alias into main.
+git symbolic-ref refs/heads/local-main-alias refs/heads/main
+pass 'cleanup does not dereference a main alias' env PATH="$local_env" bash "$local_cleanup" --apply --empty
+[ "$(git rev-parse refs/heads/main)" = "$local_landed" ] || { echo 'scripts-test: cleanup deleted main through an alias' >&2; exit 1; }
+! git symbolic-ref --quiet refs/heads/local-main-alias >/dev/null || { echo 'scripts-test: empty alias was not removed' >&2; exit 1; }
+reject 'local completion remains claimed after cleanup' 'locally landed todo/local-task' env PATH="$local_env" bash docket/scripts/claim-check.sh local-task
+expect 'main resolution marker was not recognized' 'local main records resolution of local-task'
+# Garbage collection must preserve approved-head proof, not just its text SHA.
+git gc --prune=now --quiet
+reject 'local completion survives garbage collection' 'locally landed todo/local-task' env PATH="$local_env" bash docket/scripts/claim-check.sh local-task
+[ "$(git config branch.todo/local-task.description)" = 'Preserve this branch note' ] || { echo 'scripts-test: cleanup erased branch metadata' >&2; exit 1; }
+pass 'recreated task drops retained tracking' env PATH="$local_env" bash docket/scripts/start-work.sh todo local-task --no-check
+[ -z "$(git for-each-ref --format='%(upstream)' refs/heads/todo/local-task)" ] || { echo 'scripts-test: recreated task inherited old upstream' >&2; exit 1; }
+! git config --get branch.todo/local-task.remote >/dev/null || { echo 'scripts-test: recreated task retained old remote' >&2; exit 1; }
+[ "$(git config branch.todo/local-task.description)" = 'Preserve this branch note' ] || { echo 'scripts-test: start-work erased unrelated branch metadata' >&2; exit 1; }
+git worktree remove "$local_repo/.worktrees/todo-local-task"
+git branch --quiet -D todo/local-task
+# Partially retained tracking configuration is cleared too; Git's
+# --unset-upstream refuses a merge key without a remote key.
+git config branch.task/partial-tracking.merge refs/heads/main
+pass 'new task clears partial tracking metadata' env PATH="$local_env" bash docket/scripts/start-work.sh task partial-tracking --no-check
+! git config --get branch.task/partial-tracking.merge >/dev/null || { echo 'scripts-test: partial tracking metadata survived creation' >&2; exit 1; }
+git worktree remove "$local_repo/.worktrees/task-partial-tracking"
+git branch --quiet -D task/partial-tracking
+git commit --quiet --allow-empty -m 'Record fixture finding completion' -m 'Resolves review finding: mapped-local-finding'
+local_landed="$(git rev-parse main)"
+reject 'mapped finding completion on local main' 'local main records resolution of mapped-local-finding' env PATH="$local_env" bash docket/scripts/claim-check.sh mapped-local-finding
+pass 'marker slug prefix is not a completion' env PATH="$local_env" bash docket/scripts/claim-check.sh mapped-local
+# Ignored files in the base must not be overwritten by a task's tracked file.
+pass 'start ignored collision task' env PATH="$local_env" bash docket/scripts/start-work.sh task ignored-collision
+collision_wt="$local_repo/.worktrees/task-ignored-collision"
+[ "$(git rev-parse task/ignored-collision)" = "$local_landed" ] || { echo 'scripts-test: remote-less start used stale origin base' >&2; exit 1; }
+printf 'task version\n' > "$collision_wt/ignored.txt"
+git -C "$collision_wt" add -f ignored.txt
+git -C "$collision_wt" commit --quiet -m 'Track collision file'
+printf 'local record\n' > ignored.txt
+sed '/^Resolves TODO:/d' .docket/change.md > .docket/collision.md
+collision_head="$(git -C "$collision_wt" rev-parse HEAD)"
+reject 'ignored collision preserves base evidence' 'squash failed' bash "$local_land" task/ignored-collision --title 'Track file' --body .docket/collision.md --approved-head "$collision_head"
+grep -qx 'local record' ignored.txt || { echo 'scripts-test: squash overwrote ignored evidence' >&2; exit 1; }
+[ "$(git rev-parse main)" = "$local_landed" ] || { echo 'scripts-test: failed squash moved main' >&2; exit 1; }
+[ ! -e "$GH_CALL_LOG" ] || { echo 'scripts-test: remote-less mode called gh' >&2; cat "$GH_CALL_LOG" >&2; exit 1; }
+# First installation: main has no Docket helper yet. Invoke the installed
+# helper in the task worktree while the clean main checkout is the caller.
+bootstrap="$external/bootstrap"
+mkdir -p "$bootstrap"
+cd "$bootstrap"
+git init --quiet
+git symbolic-ref HEAD refs/heads/main
+git config user.name 'Bootstrap fixture'
+git config user.email 'bootstrap-fixture@example.invalid'
+git config core.hooksPath /dev/null
+printf '.worktrees/\n.docket/\n' > .gitignore
+git add .gitignore
+git commit --quiet -m 'Initial repository without Docket'
+bootstrap_base="$(git rev-parse HEAD)"
+git worktree add --quiet -b task/bootstrap .worktrees/task-bootstrap main
+mkdir -p .worktrees/task-bootstrap/docket/scripts .docket
+cp "$scripts"/*.sh .worktrees/task-bootstrap/docket/scripts/
+git -C .worktrees/task-bootstrap add docket
+git -C .worktrees/task-bootstrap commit --quiet -m 'Install Docket helpers'
+cp "$local_repo/.docket/collision.md" .docket/change.md
+pass 'bootstrap landing with helper only on task branch' bash "$bootstrap/.worktrees/task-bootstrap/docket/scripts/land-local.sh" task/bootstrap --title 'Install Docket' --body .docket/change.md --approved-head "$(git rev-parse task/bootstrap)"
+[ "$(git show -s --format=%P main)" = "$bootstrap_base" ] && [ -f docket/scripts/land-local.sh ] || { echo 'scripts-test: first installation did not squash-land' >&2; exit 1; }
+unset GH_REPO GH_CALL_LOG
+cd "$fixture"
+
 echo 'scripts-test: all checks passed'

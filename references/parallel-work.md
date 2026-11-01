@@ -12,7 +12,9 @@
 
 Split along files or components, never along a shared mutable surface. Before dispatching:
 
-1. Name the shared interfaces (types, schemas, protocol, scripts, config) that more than one task touches. Land them first, in their own PR, or stack dependents on that branch explicitly.
+1. Name the shared interfaces (types, schemas, protocol, scripts,
+   config) that more than one task touches. Land them first, as their
+   own reviewed change, or stack dependents on that branch explicitly.
 2. Pick tasks whose file sets are disjoint. If two tasks must touch the same file, one owner does both or one feeds the other a patch through the coordinator.
 3. Hold back items that would confound another task's measurements (a behaviour change while someone is baselining behaviour).
 4. Cap concurrency for heavy builds or simulations. Four concurrent agents is a reasonable default where each fresh worktree compiles the project; write the repository's own cap into the Docket section of `AGENTS.md`. One session recorded a load average near 150 before a cap existed.
@@ -44,25 +46,38 @@ Checks: run <entrypoint> and <specific checks>; report exact commands and result
 Git: commit incrementally with single-purpose messages in the repo's style; no attribution trailers; do not change `git config` (the coordinator sets the repository's identity once, before the first commit); never push, never merge, never tag.
 If you discover something separately shippable, do not fix it; report it as a discovery with the evidence and where it belongs.
 If blocked on a decision the brief does not settle, stop and report the options.
-Return: a short report with what changed, what was verified (commands and results), what was left out and why, discoveries, and the PR body draft (## Why first, hard-wrapped at 72 columns except code blocks, tables and URLs, list continuation lines indented; it describes the final change for a `git log` reader, with no stacking or merge-order notes, review history, status, to-dos or instructions to reviewers, which go in your report).
+Return: a short report with what changed, what was verified (commands and results), what was left out and why, discoveries, and the change description draft (## Why first, hard-wrapped at 72 columns except code blocks, tables and URLs, list continuation lines indented; it describes the final change for a `git log` reader, with no stacking or merge-order notes, review history, status, to-dos or instructions to reviewers, which go in your report).
 ```
 
 Why these lines: an agent briefed with absolute paths into the main checkout wrote its half-finished files there and broke the main thread's typecheck; an agent that set `git config user.email` changed the shared repository config; an agent allowed to open the GUI popped windows on the user's desktop; agents that stalled on long tasks were recovered by "commit incrementally" and by resuming the same agent rather than starting over.
 
 ## Writer and reviewer pairs
 
-Every PR that changes code gets a reviewer who did not write it, including the coordinator's own code and the integration commits. Measurement-only and documentation-only PRs get a lighter review of their claims. The pipeline is writer, reviewer, fix if needed, ready.
+Every change that writes code gets a reviewer who did not write it,
+including the coordinator's own code and integration commits. Local
+review uses the same rules, with its review report in
+`.docket/review-<slug>.md` and readiness/approval in
+`.docket/state-<slug>.md`. Measurement-only and documentation-only
+changes get a lighter review of their claims. The pipeline is writer,
+reviewer, fix if needed, ready.
 
 Reviewer brief:
 
 ```markdown
-Review branch <branch> (commits <base>..<head>) against this PR description: <body>.
+Review branch <branch> (commits <base>..<head>) against this change description: <body>.
 You are not the author. Read the full diff and enough surrounding code to judge it. Verify the description's claims independently: rerun the decisive checks (name them), reproduce any "before" behaviour the description claims to fix, and where the change claims to be behaviour-neutral, prove it on an input the author did not use.
 Hunt for correctness bugs, missing error handling, scope creep beyond the slug, undocumented behaviour changes, and tests that would pass with the bug present (mutation-test new tests by breaking the code they cover).
 Do not edit files or comment on the forge. Report: verdict (approve, approve with nits, changes needed), each finding with location, failure scenario and evidence, which claims you verified and how, and anything you could not check.
 ```
 
-After the review: confirmed findings are fixed on the same branch by the writer or a fix agent; the reviewer (or a fresh one) confirms the fixes against the original failure. A reviewer who starts fixing has become an author for that scope and needs a different reviewer for it; one reviewer may cover several independent authors. Then the review is posted as a PR comment (`gh pr comment <pr> --body-file <file>`), never added to the body, which becomes the commit message:
+After the review: confirmed findings are fixed on the same branch by the
+writer or a fix agent; the reviewer (or a fresh one) confirms the fixes
+against the original failure. A reviewer who starts fixing has become an
+author for that scope and needs a different reviewer for it; one
+reviewer may cover several independent authors. Then the review is saved
+locally or, in hosted mode, posted as a PR comment (`gh pr comment <pr>
+--body-file <file>`), never added to the body, which becomes the commit
+message:
 
 ```markdown
 ## Review
@@ -87,11 +102,24 @@ Which mode is in force is said at the top of the session and written to the audi
 
 | Mode | Push | Draft PRs | Merge | What the user finds |
 | --- | --- | --- | --- | --- |
-| Interactive | yes | yes, after first commit | user, or agent when told in that turn | ready PRs with review comments |
+| Interactive, hosted | yes | yes, after first commit | user, or agent when delegated | ready PRs with review comments |
+| Interactive, local review | no push needed | no | agent after explicit user approval of reviewed head | ready branches/worktrees, title, description, review and state files |
 | Fan-out with PRs ("put PRs up while I'm away") | yes | yes | user | ready PRs, one per item, plus a summary |
-| Unattended without push authority ("I'm going to bed") | no | no | no | local branches, `.docket/pr-<slug>.md` bodies and `.docket/review-<slug>.md` review comments, `.docket/AUDIT.md`, a report |
+| Unattended without push authority ("I'm going to bed") | no | no | no | local branches, `.docket/title-<slug>.txt`, `.docket/change-<slug>.md`, review/state files, `.docket/AUDIT.md`, a report |
 
-In the unattended mode, claims are not globally visible. Say so in the audit log. Stack dependent plan steps branch on branch rather than waiting for merges, and record the merge order in the report. Publishing in the morning is one command per branch: `git push -u origin <branch> && gh pr create --head <branch> --title "<title>" --body-file .docket/pr-<slug>.md && gh pr comment <branch> --body-file .docket/review-<slug>.md && bash docket/scripts/pr-labels.sh --pr <branch> --apply`.
+Without a remote, or in unattended mode without push authority, claims
+are visible only within the local clone. Local readiness does not
+authorise landing; follow [approved local
+landing](pr-and-landing.md#local-review-and-approved-landing) after the
+user approves. Missing hosted access is not local-review mode. In the
+unattended mode, claims are not globally visible. Say so in the audit
+log. Stack dependent plan steps branch on branch rather than waiting for
+merges, and record the merge order in the report. Publishing in the
+morning is one command per branch: `git push -u origin <branch> && gh pr
+create --head <branch> --title "<title>" --body-file
+.docket/change-<slug>.md && gh pr comment <branch> --body-file
+.docket/review-<slug>.md && bash docket/scripts/pr-labels.sh --pr
+<branch> --apply`.
 
 ### Audit log
 
@@ -107,11 +135,22 @@ In the unattended mode, claims are not globally visible. Say so in the audit log
 
 ### Report
 
-End every fan-out or unattended run with: branches and their state in merge order; decisions logged (count, pointer to the audit); discoveries reported by writers and the slug each was filed under (any still pending are listed as pending, not dropped); items held back and why; what needs the user (design calls, GUI checks, encoding choices); expected rebase conflicts. The detail lives in the audit, the PR bodies and the review comments; the report is the index.
+End every fan-out or unattended run with: branches and their state in
+merge order; decisions logged (count, pointer to the audit); discoveries
+reported by writers and the slug each was filed under (any still pending
+are listed as pending, not dropped); items held back and why; what needs
+the user (design calls, GUI checks, encoding choices); expected rebase
+conflicts. The detail lives in the audit, the change descriptions and
+the review comments; the report is the index.
 
 ## Harness pitfalls seen in practice
 
 - Placeholder branches (`worktree-agent-*`) accumulate with no commits; `bash docket/scripts/cleanup-landed.sh --apply --empty` removes them (without `--apply` the script only lists them).
-- Agents in worktrees cannot write into the main checkout; have them leave PR bodies and reports in their own worktree and let the coordinator copy them. Prepared PR bodies and per-agent scratch files go under `.docket/` in the agent's own worktree, never a shared temp path: two PRs were once opened with each other's bodies because both agents wrote to the same `/tmp` file.
+- Agents in worktrees cannot write into the main checkout; have them
+  leave change descriptions and reports in their own worktree and let
+  the coordinator copy them. Prepared change descriptions and per-agent
+  scratch files go under `.docket/` in the agent's own worktree, never a
+  shared temp path: two PRs were once opened with each other's bodies
+  because both agents wrote to the same `/tmp` file.
 - Watchdog timeouts kill long single commands; prefer several shorter commands and incremental commits.
 - Concurrency groups that cancel in-progress runs on pushes to main hide red main builds when several PRs merge quickly; see quality-gates.

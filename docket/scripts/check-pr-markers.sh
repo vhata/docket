@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate a pull request description against the work queues.
+# Validate a change description against the work queues.
 #
 # Checks: the description opens with "## Why"; every marker line uses the
 # exact vocabulary; claimed slugs still exist at head; resolved slugs existed
@@ -9,16 +9,16 @@
 # are at most 72 characters (warning).
 #
 # Usage:
-#   docket/scripts/check-pr-markers.sh --body FILE [--base REF] [--head REF] [--todo PATH] [--backlog PATH] [--strict]
+#   docket/scripts/check-pr-markers.sh --body FILE [--base REF] [--head REF] [--todo PATH] [--backlog PATH] [--strict] [--local]
 #   docket/scripts/check-pr-markers.sh --pr NUMBER [--base REF] [--head REF] [--strict]
 #
-# Defaults: --base origin/main (local main when there is no origin), --head HEAD,
+# Defaults: --base origin/main (main without remotes or with --local), --head HEAD,
 # TODO.md, review/BACKLOG.md. --branch NAME (default: the head's branch) enables
 # the claim rule: a branch named <queue>/<slug> must carry a marker for <slug>.
 # With --pr the body is fetched with `gh pr view`; run it from the PR branch
 # or pass refs explicitly. In CI on a pull_request event use --base
 # "origin/$GITHUB_BASE_REF" and --head HEAD (the merge commit). --strict
-# turns warnings into errors.
+# turns warnings into errors. --local never queries a forge; use --body.
 #
 # Marker vocabulary (one per line, at the start of the line rather than in a
 # list or quote; no backticks, no trailing punctuation):
@@ -50,17 +50,18 @@ cd "$root"
 # Make a path given on the command line absolute relative to the caller's directory.
 abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$orig" "$1" ;; esac; }
 
-body=""; pr=""; base="origin/main"; head="HEAD"; todo="TODO.md"; backlog="review/BACKLOG.md"; branch=""; strict=0
+body=""; pr=""; base="origin/main"; head="HEAD"; todo="TODO.md"; backlog="review/BACKLOG.md"; branch=""; strict=0; local_only=0; explicit_base=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --body) body="$(abs "$2")"; shift 2 ;;
     --pr) pr="$2"; shift 2 ;;
-    --base) base="$2"; shift 2 ;;
+    --base) base="$2"; explicit_base=1; shift 2 ;;
     --head) head="$2"; shift 2 ;;
     --todo) todo="$2"; shift 2 ;;
     --backlog) backlog="$2"; shift 2 ;;
     --branch) branch="$2"; shift 2 ;;
     --strict) strict=1; shift ;;
+    --local) local_only=1; shift ;;
     -h|--help) sed -n '2,44p' "$0"; exit 0 ;;
     *) echo "check-pr-markers: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -69,7 +70,9 @@ done
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-if [ "$base" = "origin/main" ] && ! git rev-parse --verify --quiet origin/main >/dev/null; then
+[ -n "$(git remote)" ] || local_only=1
+if [ "$explicit_base" -eq 0 ] && [ "$local_only" -eq 1 ]; then base="main"; fi
+if [ "$explicit_base" -eq 0 ] && [ "$base" = "origin/main" ] && ! git rev-parse --verify --quiet origin/main >/dev/null; then
   if git rev-parse --verify --quiet main >/dev/null; then base="main"; echo "note: no origin/main; comparing against local main"; fi
 fi
 # An unknown ref would make every snapshot empty and every Resolves marker
@@ -80,6 +83,8 @@ for ref in "$base" "$head"; do
 done
 
 if [ -n "$pr" ]; then
+  [ "$local_only" -eq 0 ] || { echo "check-pr-markers: --pr is unavailable in local review mode; use --body" >&2; exit 2; }
+  unset GH_REPO
   gh pr view "$pr" --json body -q .body > "$tmp/body.md"
   body="$tmp/body.md"
 fi

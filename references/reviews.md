@@ -1,14 +1,48 @@
 # Codebase reviews: ledger, findings, closure, cadence
 
-PR review checks one change. A codebase review checks the properties no single change shows: duplicated rules drifting apart, helpers gone dead, documented controls with no code behind them, invariants that hold only by accident. A **full review** reads everything and resets the baseline. An **incremental review** starts from the previous reviewed commit, re-checks every standing finding, reads the delta, and runs cheap whole-repository checks. Incremental is the default; full is a periodic reset. A routine PR review creates no snapshot; the ledger records codebase reviews the user requested. The rule text lives in the repository's `docket/CODE_REVIEW_GUIDE.md` (vendored verbatim from the skill's `templates/docket/CODE_REVIEW_GUIDE.md`); the project's own review inputs (focus areas, extra baseline commands, drift checks) live in `docs/QUALITY.md` under "Review inputs", which the guide points to.
+Change review checks one change. A codebase review checks the properties
+no single change shows: duplicated rules drifting apart, helpers gone
+dead, documented controls with no code behind them, invariants that hold
+only by accident. A **full review** reads everything and resets the
+baseline. An **incremental review** starts from the previous reviewed
+commit, re-checks every standing finding, reads the delta, and runs
+cheap whole-repository checks. Incremental is the default; full is a
+periodic reset. A routine change review creates no snapshot; the ledger
+records codebase reviews the user requested. The rule text lives in the
+repository's `docket/CODE_REVIEW_GUIDE.md` (vendored verbatim from the
+skill's `templates/docket/CODE_REVIEW_GUIDE.md`); the project's own
+review inputs (focus areas, extra baseline commands, drift checks) live
+in `docs/QUALITY.md` under "Review inputs", which the guide points to.
 
 ## Artifacts
 
-- `review/README.md`: index, newest first, with type, reviewed commit and open count at close. The top row is the baseline for the next incremental review; the newest Full row is the baseline for cumulative churn, so a run of small incrementals cannot hide a large total change. Below the table, a short **Pending reconciliation** table: findings whose fix PR has landed with independent verification but whose closure the next review has not yet recorded (finding, fix PR and commit, reviewer, evidence). An empty index means no review has happened, not that nothing is wrong.
-- `review/YYYY-MM-DD-HHMM-{full,incremental}.md`: one immutable snapshot per review, UTC timestamp. Edited after merge only to correct a factual error in the review itself. Status changes belong to the next snapshot, never to the PR that fixes a finding.
+- `review/README.md`: index, newest first, with type, reviewed commit
+  and open count at close. The top row is the baseline for the next
+  incremental review; the newest Full row is the baseline for cumulative
+  churn, so a run of small incrementals cannot hide a large total
+  change. Below the table, a short **Pending reconciliation** table:
+  findings whose fix has landed with independent verification but whose
+  closure the next review has not yet recorded (finding, fix commit and
+  PR when present, reviewer, evidence). An empty index means no review
+  has happened, not that nothing is wrong.
+- `review/YYYY-MM-DD-HHMM-{full,incremental}.md`: one immutable snapshot
+  per review, UTC timestamp. Edited after merge only to correct a
+  factual error in the review itself. Status changes belong to the next
+  snapshot, never to the change that fixes a finding.
 - `review/BACKLOG.md`: the mutable queue of findings promoted into work (see queues.md).
 
-**Record the reviewed commit as a commit on the default branch.** Reviews of unmerged branches get squashed away on merge, after which the exact delta since the review cannot be read from history; `bash docket/scripts/review-due.sh` then reports the baseline as lost and gives merge-base figures as approximations only. Never treat a merge-base diff as complete coverage. If the review must happen on a branch before landing (a release review of a stack), keep the reviewed tree retrievable (`git bundle create review/<stamp>.bundle <commit>`, or the PR's head), record the branch commit in the snapshot, and in the next PR touching the index record the squash commit on main it corresponds to, after comparing the two trees exactly (`git diff <reviewed-commit> <squash-commit>`).
+**Record the reviewed commit as a commit on the default branch.**
+Reviews of unmerged branches get squashed away on merge, after which the
+exact delta since the review cannot be read from history; `bash
+docket/scripts/review-due.sh` then reports the baseline as lost and
+gives merge-base figures as approximations only. Never treat a
+merge-base diff as complete coverage. If the review must happen on a
+branch before landing (a release review of a stack), keep the reviewed
+tree retrievable (`git bundle create review/<stamp>.bundle <commit>`, or
+the PR's head), record the branch commit in the snapshot, and in the
+next change touching the index record the squash commit on main it
+corresponds to, after comparing the two trees exactly (`git diff
+<reviewed-commit> <squash-commit>`).
 
 ## Snapshot structure
 
@@ -46,18 +80,34 @@ A PR link alone is not a closure. Historical locations are read with `git show <
 3. Reproduce the serious bugs and mark them Verified; the rest stay Read.
 4. Review-close triage (below) for every Open or Moved finding.
 5. Write the snapshot, amend the invariants, add the index row.
-6. Land the review as its own PR from a `task/<slug>` branch (for example `task/review-2026-03-01`) with `Type: review` in the body; the `review/` branch prefix is reserved for claims on `review/BACKLOG.md` entries and CI rejects a `review/*` branch without a matching marker. A review PR never carries a code fix. Small factual documentation fixes found during the review may be separate commits on the review branch, each recorded as Fixed with its commit.
+6. Land the review as its own reviewed change, using hosted or local
+   review as the contract specifies, from a `task/<slug>` branch (for
+   example `task/review-2026-03-01`) with `Type: review` in the body;
+   the `review/` branch prefix is reserved for claims on
+   `review/BACKLOG.md` entries and CI rejects a `review/*` branch
+   without a matching marker. A review change never carries a code fix.
+   Small factual documentation fixes found during the review may be
+   separate commits on the review branch, each recorded as Fixed with
+   its commit.
 
 ## Performing an incremental review
 
 Inputs: the guide, the newest snapshot, the repository. Base is the previous reviewed commit; the new reviewed commit is current main.
 
 1. Baseline checks, as above, recorded in the header.
-2. Re-check every standing finding by reading the current code. Do not infer status from PR titles. Scan merged PRs since base for `Resolves review finding:` markers and verify each: inspect the code at the new commit, record the new `Where`, rerun the original reproduction for Verified findings, repeat the inspection for Read ones. Confirmed closures go to the closed list; unconfirmed ones stay Open or Moved and get their backlog mapping restored.
+2. Re-check every standing finding by reading the current code. Do not
+   infer status from change titles. Scan landed commit messages and,
+   when available, merged PRs since base for `Resolves review finding:`
+   markers and verify each: inspect the code at the new commit, record
+   the new `Where`, rerun the original reproduction for Verified
+   findings, repeat the inspection for Read ones. Confirmed closures go
+   to the closed list; unconfirmed ones stay Open or Moved and get their
+   backlog mapping restored.
 3. Read the whole delta (`git log --oneline <base>..HEAD`, `git diff --stat <base>..HEAD`, then every hunk) against the invariants and the standing findings. A hunk that adds another copy of an already-listed duplication is a finding even though it is locally fine.
 4. Run the whole-repository mechanical checks (below), compare the numbers with the previous snapshot, and record them even when unchanged.
-5. Re-read hot files: any file touched by most PRs in the delta gets a full read, because interaction bugs form where changes concentrate.
-6. Review-close triage, snapshot, index row, review PR.
+5. Re-read hot files: any file touched by most changes in the delta gets
+   a full read, because interaction bugs form where changes concentrate.
+6. Review-close triage, snapshot, index row, reviewed change.
 
 Starting prompt that works: "Read docket/CODE_REVIEW_GUIDE.md, the Review inputs section of docs/QUALITY.md and the most recent file in review/, then do an incremental review."
 
@@ -89,14 +139,31 @@ Once, at close, for every Open or Moved finding, make exactly one decision and r
 
 Promotion is not authorisation. Review completion never licenses fixing all the findings; work comes from the backlog by priority or from an explicit assignment, and a separately shippable raw finding discovered during ordinary work is filed, not fixed.
 
-## Fix PRs and closure
+## Fixes and closure
 
-A PR resolving a finding claims its backlog slug and each finding slug in scope, opens with `## Why`, and includes a human-runnable validation scenario in `## Validation`: setup, actions, the old failure, the expected corrected result. For tooling or documentation findings, give the command or inspection and define success. "Tests pass" or a CI link is not a scenario; the marker validator fails a `Resolves review finding` without a Validation section. The independent reviewer verifies the fix against the original failure before the PR is ready.
+A change resolving a finding claims its backlog slug and each finding
+slug in scope, opens with `## Why`, and includes a human-runnable
+validation scenario in `## Validation`: setup, actions, the old failure,
+the expected corrected result. For tooling or documentation findings,
+give the command or inspection and define success. "Tests pass" or a CI
+link is not a scenario; the marker validator fails a `Resolves review
+finding` without a Validation section. The independent reviewer verifies
+the fix against the original failure before the change is ready.
 
-When the fix PR lands, add the finding to the index's Pending reconciliation table with the fix commit, the reviewer and the evidence, so verified work is visible between reviews. Closure itself is recorded by the next incremental review, as above, which also clears the pending table. When tools prevent re-running the original reproduction, say so in the snapshot rather than treating the merged fix as verified.
+When the fix lands, add the finding to the index's Pending
+reconciliation table with the fix commit, the reviewer and the evidence,
+so verified work is visible between reviews. Closure itself is recorded
+by the next incremental review, as above, which also clears the pending
+table. When tools prevent re-running the original reproduction, say so
+in the snapshot rather than treating the merged fix as verified.
 
 ## When a review is due
 
 `bash docket/scripts/review-due.sh --paths "<source dirs>"` reports commits and days since the latest review, source churn since the latest full review, and a verdict. Defaults: incremental after 25 commits or 21 days or when merged PRs claim finding closures; full when inserted source lines since the last full review exceed a third of the current source; "baseline lost" when a reviewed commit is missing or no longer on main. Also reset with a full review after a large refactor, when a hot file was substantially rewritten, when most standing findings are closed and a clean baseline is wanted, or when two consecutive incremental reviews each added many findings.
 
-Two of the studied repositories had let reviews lapse past every one of these triggers, with 95 commits and more than half the source added since the only review in one case. Put the review-due script in the scheduled main-validation workflow so the lapse is reported, and treat its verdict as a prompt for a review PR, never as licence to start fixing.
+Two of the studied repositories had let reviews lapse past every one of
+these triggers, with 95 commits and more than half the source added
+since the only review in one case. Put the review-due script in the
+scheduled main-validation workflow so the lapse is reported, and treat
+its verdict as a prompt for a reviewed snapshot change, never as licence
+to start fixing.
