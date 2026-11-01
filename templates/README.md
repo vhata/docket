@@ -17,3 +17,4 @@ Copy, then replace every `<placeholder>`. Keep headings and marker vocabulary in
 | `.github/workflows/ci.yml` | same path, hosted mode | Replace the setup steps for the language. Also expects `scripts/build.sh` and `scripts/e2e.sh`: add them or remove those steps. |
 | `.github/workflows/main-validation.yml` | same path, hosted mode | Replace the extended checks. |
 | `scripts/check.sh`, `scripts/setup.sh` | `scripts/` | Skeletons; add the per-check scripts they call. Gate scripts need the exec bit (`chmod +x scripts/*.sh`). |
+| `scripts/check-mine.sh` | `scripts/`, in a sidecar | Skeleton for the contributor's own checks on the files their change touches in a managed repository; fill in the rules in its `configure()`. Not needed outside a sidecar, though it works anywhere with `--base`. |

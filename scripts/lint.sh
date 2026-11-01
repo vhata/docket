@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Parse every shell script with /bin/bash (3.2 on macOS) and run shellcheck at
 # warning level where it is installed; on a Linux CI runner it is required.
-# Covers the shipped scripts, the installer, the tests and this repository's
-# own scripts and hooks.
+# Covers the shipped scripts, the script skeletons, the installer, the tests
+# and this repository's own scripts and hooks.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-files=(templates/docket/scripts/*.sh install.sh tests/*.sh scripts/*.sh .githooks/*)
+files=(templates/docket/scripts/*.sh templates/scripts/*.sh install.sh tests/*.sh scripts/*.sh .githooks/*)
 for f in "${files[@]}"; do
   /bin/bash -n "$f" || { echo "lint: $f does not parse under /bin/bash" >&2; exit 1; }
 done
