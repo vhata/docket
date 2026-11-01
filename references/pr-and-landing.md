@@ -181,7 +181,11 @@ its base. It also lists the queue markers in each body and warns when a
 `Claims`, `Resolves` or `Partially resolves` marker names a `TODO.md` or
 `review/BACKLOG.md` entry that this checkout no longer has, which means
 the queue and the PR disagree. It is read-only and exits 0; `--strict`
-exits 1 when any PR has failing checks, changes requested or conflicts.
+exits 1 when any PR has failing checks, changes requested or conflicts,
+and usage errors or a failed gh query exit 2. A stale check counts as
+pending. `--strict` judges every check in the rollup, required or not,
+because the rollup does not say which checks branch protection
+requires.
 
 ```bash
 bash docket/scripts/pr-health.sh                        # your open PRs here
@@ -199,8 +203,9 @@ already removed the entries its PR resolves. Use it:
 - before reporting the status of PRs to the user, instead of describing
   them from memory or from an earlier session's handoff;
 - after a landing comment, where the repository lands through a merge
-  bot. `--land-comment` takes the command's exact text; an open PR that
-  carries it is reported as landing requested with the comment's time,
+  bot. `--land-comment` takes the command's exact text (surrounding
+  whitespace is ignored on both sides); an open PR that carries it is
+  reported as landing requested with the latest such comment's time,
   and flagged when its checks are failing, because the merge attempt
   then failed or expired and needs a new comment or a fix.
 
