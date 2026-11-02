@@ -14,6 +14,9 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 
 ### Unprioritized
 
+- [SCRIPTS] `review-due-gnu-dst-midnight` — **`review-due.sh` reports the day count on GNU date for a review dated on a day that starts with a DST jump.** In zones where DST begins at midnight, local midnight does not exist on that day, so `date -d "$date"` fails and the days figure is silently left out of the report; the BSD path gives 01:00 and counts correctly.
+  - Source: independent review of `todo/review-due-local-midnight`, 2026-11-02
+  - Starting point: the GNU branch of the day count in `templates/docket/scripts/review-due.sh`; parse `"$date 12:00"` and round, or fall back to `"$date 01:00"` on failure. Reproduce with GNU date and `TZ=America/Santiago` for 2026-09-06.
 
 
 ## Needs proof of concept
@@ -61,8 +64,5 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 - [SCRIPTS] `managed-repo-forks` — **Managed-repository mode works for contributors who push branches to a fork rather than to the managed repository.** Target mode expects branches on the managed repository itself; `claim-check.sh --self` reports the user's own fork PR as a competing claim, and `start-work.sh` names the managed remote for the push.
   - Source: independent review of PR #30, 2026-11-01
   - Starting point: an optional `push_remote` (or fork owner) key in `.docket-target`; accept a cross-repository head whose owner matches it in `claim-check.sh`, and name that remote in `start-work.sh`'s next steps.
-- [SCRIPTS] `review-due-local-midnight` — **`review-due.sh` counts days from midnight of the review date on macOS as it does on GNU.** BSD `date -j -f %Y-%m-%d` takes the time of day from the clock, so west of UTC a review dated today can report `-1 days`; the verdict is unaffected.
-  - Source: review/fix-review-due-fixture-dates (PR #22), 2026-10-12
-  - Starting point: `templates/docket/scripts/review-due.sh:124`; parse `"$date 00:00:00"` with `-f '%Y-%m-%d %H:%M:%S'`, or clamp `days` at 0.
 
 ### Unprioritized
