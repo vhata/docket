@@ -18,7 +18,9 @@ for t in tests/*.sh; do
   # `bash <script>` and `#!/usr/bin/env bash` resolve through PATH; without
   # this link first on PATH the scripts would not run under the suite's bash.
   grep -q '^ln -s "\$BASH" "\$suitebash/bash"$' "$t" \
-    || { echo "lint: $t does not put its own bash first on PATH for the scripts it runs" >&2; exit 1; }
+    && grep -q '^PATH="\$suitebash:\$PATH"; export PATH$' "$t" \
+    && grep -qF "[ \"\$(bash -c 'echo \"\$BASH_VERSION\"')\" = \"\$BASH_VERSION\" ]" "$t" \
+    || { echo "lint: $t does not put its own bash first on PATH for the scripts it runs, and check it" >&2; exit 1; }
 done
 echo "lint: ${#files[@]} scripts parse under /bin/bash $(/bin/bash -c 'echo $BASH_VERSION')"
 if command -v shellcheck >/dev/null 2>&1; then

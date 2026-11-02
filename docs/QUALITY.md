@@ -16,7 +16,7 @@ Each check is a standalone script, runnable from any directory, exiting non-zero
 
 | Script | Runs | Pre-commit | Pre-push | CI on PR | CI on main | Scheduled |
 | --- | --- | --- | --- | --- | --- | --- |
-| `scripts/lint.sh` | `/bin/bash -n` on every shell script and hook; each suite clears git's local environment and puts its own bash first on PATH; `shellcheck -S warning` where installed | yes | | yes | yes | yes |
+| `scripts/lint.sh` | `/bin/bash -n` on every shell script and hook; each suite clears git's local environment and puts its own bash first on PATH and checks the version there; `shellcheck -S warning` where installed | yes | | yes | yes | yes |
 | `scripts/vendor-check.sh` | `install.sh --self --check`: `docket/` matches `templates/docket/`, `VERSION` is `self`, the Docket section of `AGENTS.md` matches and its settings are filled | yes | | yes | yes | yes |
 | `scripts/test.sh` | `tests/scripts.sh` and `tests/install.sh` under `/bin/bash`, with the scripts and installer they call also under `/bin/bash` | | yes | yes | yes | yes |
 | `docket/scripts/ci.sh` | queue hygiene, Markdown links, PR markers against the queues | yes | | yes | yes | yes |
