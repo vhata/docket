@@ -14,8 +14,10 @@
 # branch is marked with "git config branch.<name>.docket true" in the clone;
 # cleanup-landed.sh touches only marked branches there. The sidecar's queue
 # entry is the claim record: once the PR is open, a "PR: owner/repo#N" line
-# on the entry, committed directly to the sidecar's main. --no-target ignores
-# the target.
+# on the entry, committed directly to the sidecar's main. The next steps name
+# the push remote: push_remote when the target sets one (a fork, whose PR
+# head is <push_owner>:<branch>), otherwise remote. --no-target ignores the
+# target.
 # A relative --dir is taken from the repository root, or in target mode from
 # the current directory.
 # Prints the worktree path and the next steps. Does not push anything.
@@ -24,7 +26,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 orig="$(pwd)"
 git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "start-work: not in a git repository" >&2; exit 2; }
-[ $# -ge 2 ] || { sed -n '2,21p' "$0"; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,23p' "$0"; exit 2; }
 queue="$1"; slug="$2"; shift 2
 base=""; dir=""; check=1; local_only=0; no_target=""
 while [ $# -gt 0 ]; do
@@ -134,7 +136,12 @@ if [ -n "$DOCKET_TARGET" ]; then
     *) entry_file="" ;;
   esac
   echo "managed repository $TARGET_REPO: the sidecar's queue entry is the claim record; the PR body follows $TARGET_REPO's own template and carries no docket markers or Type: line."
-  echo "next: cd $path; commit early; push to $remote and open a draft PR with 'gh pr create --repo $TARGET_REPO --base $base --draft' after the first meaningful commit; keep the change description, the ${marker:+'$marker' marker, the }Type: line and state in the sidecar's .docket/state-$slug.md."
+  if [ -n "$TARGET_PUSH_OWNER" ]; then
+    push_step="push to $TARGET_PUSH_REMOTE (the fork owned by $TARGET_PUSH_OWNER, never $remote) and open a draft PR with 'gh pr create --repo $TARGET_REPO --base $base --head $TARGET_PUSH_OWNER:$branch --draft'"
+  else
+    push_step="push to $remote and open a draft PR with 'gh pr create --repo $TARGET_REPO --base $base --draft'"
+  fi
+  echo "next: cd $path; commit early; $push_step after the first meaningful commit; keep the change description, the ${marker:+'$marker' marker, the }Type: line and state in the sidecar's .docket/state-$slug.md."
   if [ -n "$entry_file" ]; then
     echo "then record the claim: add '  - PR: $TARGET_REPO#<number>' to the '$slug' entry in the sidecar's $entry_file as a direct commit to the sidecar's main, and push it under the session's push authority."
   fi

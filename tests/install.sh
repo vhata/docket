@@ -641,6 +641,21 @@ expect 'plain install did not warn about the missing bullet' 'rerun with --sidec
 run 0 'sidecar install re-adding the bullet' bash "$inst" --sidecar "$s"
 cmp -s "$s/AGENTS.md" "$work/side-agents.before" || fail 'the re-added bullet differs from the original'
 [ "$(cd "$m" && ls -A | sort)" = "$m_files" ] || fail 'a sidecar rerun wrote into the managed clone'
+# Contributing through a fork: --push-remote and --push-owner are written as
+# keys, a push remote the clone lacks is refused, and the resolved settings
+# name the fork owner taken from the remote's URL.
+git clone --quiet "$work/managed.git" "$work/managed-forked" 2>/dev/null
+git -C "$work/managed-forked" remote add fork git@github.com:me/managed.git
+newproj sidefork; sf="$work/sidefork"
+run 2 'sidecar install with a missing push remote' bash "$inst" --sidecar --repo owner/managed --dir ../managed-forked --push-remote nowhere "$sf"
+expect 'a missing push remote was not reported' "has no remote 'nowhere'"
+[ ! -e "$sf/.docket-target" ] || fail 'a refused fork sidecar install wrote .docket-target'
+run 0 'sidecar install through a fork' bash "$inst" --sidecar --repo owner/managed --dir ../managed-forked --push-remote fork "$sf"
+[ "$(cat "$sf/.docket-target")" = "$(printf '# Managed repository for this sidecar; the format is in docket/scripts/target.sh.\nrepo=owner/managed\ndir=../managed-forked\npush_remote=fork')" ] || fail "unexpected fork .docket-target: $(cat "$sf/.docket-target")"
+run 0 'fork sidecar rerun with the derived owner' bash "$inst" --sidecar --repo owner/managed --dir ../managed-forked --push-remote=fork --push-owner=me "$sf"
+expect 'the derived fork owner did not match the explicit one' 'is valid'
+run 2 'fork sidecar rerun with another owner' bash "$inst" --sidecar --repo owner/managed --dir ../managed-forked --push-remote fork --push-owner alice "$sf"
+expect 'another fork owner was not shown as a difference' '+push: fork alice'
 
 # check-mine.sh, the diff-scoped own-checks skeleton, copied into the sidecar
 # with rules: a checker that logs its arguments and fails on BAD, a fixer

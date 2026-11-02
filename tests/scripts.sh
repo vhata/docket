@@ -1298,8 +1298,9 @@ cat > "$tgt/bin/gh" <<'GH'
 #!/usr/bin/env bash
 # Fake forge for target mode. Records are lines of FIXTURE_TARGET_PRS:
 # state, number, draft, cross-repository, head sha, head branch, merge date
-# (- when unmerged), author, title. The caller's login is "me";
-# FIXTURE_GH_FAIL=1 fails every PR query.
+# (- when unmerged), author, title. Cross-repository is false (the head is
+# in owner/managed), true (a fork owned by "stranger") or true:<owner>. The
+# caller's login is "me"; FIXTURE_GH_FAIL=1 fails every PR query.
 printf '%s | GH_REPO=%s\n' "$*" "${GH_REPO:-}" >> "$FIXTURE_GH_LOG"
 violation() { printf 'VIOLATION %s\n' "$1" >> "$FIXTURE_GH_LOG"; echo "fake gh: $1" >&2; exit 3; }
 [ "${GH_REPO:-}" = owner/managed ] || violation "GH_REPO is '${GH_REPO:-}', not the target"
@@ -1328,10 +1329,11 @@ while IFS="$tab" read -r st num draft cross oid ref merged author title; do
   [ -n "$st" ] && [ "$ref" = "$head" ] || continue
   case "$state" in all) ;; merged) [ "$st" = MERGED ] || continue ;; open) [ "$st" = OPEN ] || continue ;; esac
   if [ "$merged" != - ]; then at="\"${merged}T00:00:00Z\""; else at=null; fi
-  json="$json$sep{\"state\":\"$st\",\"number\":$num,\"isDraft\":$draft,\"isCrossRepository\":$cross,\"headRefOid\":\"$oid\",\"headRefName\":\"$ref\",\"mergedAt\":$at,\"author\":{\"login\":\"$author\"},\"title\":\"$title\"}"
+  case "$cross" in true:*) howner="${cross#true:}"; cross=true ;; true) howner=stranger ;; *) howner=owner ;; esac
+  json="$json$sep{\"state\":\"$st\",\"number\":$num,\"isDraft\":$draft,\"isCrossRepository\":$cross,\"headRepositoryOwner\":{\"login\":\"$howner\"},\"headRefOid\":\"$oid\",\"headRefName\":\"$ref\",\"mergedAt\":$at,\"author\":{\"login\":\"$author\"},\"title\":\"$title\"}"
   sep=","
   case "$state" in
-    all) plain="$plain$st$tab$num$tab$draft$tab$cross$tab$oid$tab$ref$tab$merged$tab$author$tab$title
+    all) plain="$plain$st$tab$num$tab$draft$tab$cross$tab$howner$tab$oid$tab$ref$tab$merged$tab$author$tab$title
 " ;;
     merged) [ -n "$plain" ] || plain="$num $oid
 " ;;
@@ -1359,6 +1361,7 @@ expect 'relative dir was not resolved' "dir: $managed"
 expect 'default branches are not <queue>/<slug>' 'branches: <queue>/<slug>'
 expect 'default worktree dir is not a sibling of the clone' "worktrees: $managed-worktrees/<queue>-<slug>"
 expect 'default base is not origin/main' 'base: origin/main'
+expect 'default push is not the managed repository' 'push: origin, the managed repository itself'
 printf 'repo=owner/managed\n  dir = ~/managed   # under HOME\n\nbranch_prefix=me/\nland_comment=/merge now\n' > "$tgt/home.target"
 pass 'target file with ~/' env HOME="$tgt" DOCKET_TARGET_FILE="$tgt/home.target" bash "$tshow"
 expect 'a home-relative dir was not expanded' "dir: $managed"
@@ -1391,6 +1394,28 @@ bad 'missing dir' "bad.target: required key 'dir' is missing" "repo=owner/manage
 bad 'repo not owner/repo' "bad.target:1: repo must be owner/repo" "repo=managed\ndir=$managed\n"
 bad 'repeated key' "bad.target:3: 'repo' is set twice" "repo=owner/managed\ndir=$managed\nrepo=owner/other\n"
 bad 'prefix without a slash' "bad.target:3: branch_prefix must end in '/'" "repo=owner/managed\ndir=$managed\nbranch_prefix=me\n"
+# Contributing through a fork: push_remote names the fork's remote in the
+# clone, whose URL gives the fork owner unless push_owner names it.
+git -C "$managed" remote add fork "$tgt/me/managed.git"
+printf 'repo=owner/managed\ndir=%s\npush_remote=fork\n' "$managed" > "$tgt/fork.target"
+pass 'target with a fork' env DOCKET_TARGET_FILE="$tgt/fork.target" bash "$tshow"
+expect 'the fork owner was not taken from its URL' 'push: fork, the fork owned by me'
+git -C "$managed" remote add bare managed-only
+git -C "$managed" remote add same git@github.com:Owner/managed.git
+printf 'repo=owner/managed\ndir=%s\npush_remote=bare\npush_owner=alice\n' "$managed" > "$tgt/owner.target"
+pass 'target with an explicit fork owner' env DOCKET_TARGET_FILE="$tgt/owner.target" bash "$tshow"
+expect 'push_owner was not used' 'push: bare, the fork owned by alice'
+printf 'repo=owner/managed\ndir=%s\npush_remote=origin\n' "$managed" > "$tgt/same.target"
+pass 'push_remote naming the managed remote' env DOCKET_TARGET_FILE="$tgt/same.target" bash "$tshow"
+expect 'push_remote=origin was taken for a fork' 'push: origin, the managed repository itself'
+bad 'missing push remote' "has no remote 'nowhere' (push_remote names the fork's remote there)" "repo=owner/managed\ndir=$managed\npush_remote=nowhere\n"
+bad 'push_owner without push_remote' "push_owner needs a push_remote other than the remote 'origin'" "repo=owner/managed\ndir=$managed\npush_owner=me\n"
+bad 'push_owner with the managed remote' "push_owner needs a push_remote other than the remote 'origin'" "repo=owner/managed\ndir=$managed\npush_remote=origin\npush_owner=me\n"
+bad 'push_owner not an account name' "bad.target:3: push_owner must be a forge account name" "repo=owner/managed\ndir=$managed\npush_owner=a b\n"
+bad 'fork owner not in the URL' "cannot tell the fork owner from push_remote 'bare' (managed-only); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=bare\n"
+bad 'push remote that is the managed repository' "push_remote 'same' (git@github.com:Owner/managed.git) is owner/managed itself, not a fork" "repo=owner/managed\ndir=$managed\npush_remote=same\n"
+git -C "$managed" remote remove bare
+git -C "$managed" remote remove same
 bad 'missing dir path' 'does not exist' "repo=owner/managed\ndir=$tgt/nowhere\n"
 bad 'dir not a repository' 'is not a git working tree' "repo=owner/managed\ndir=$tgt/bin\n"
 bad 'dir is the sidecar' 'is the sidecar repository itself' "repo=owner/managed\ndir=$sidecar\n"
@@ -1408,6 +1433,7 @@ mkdir -p "$managed/.git/info"; touch "$managed/.git/info/exclude"
 cp "$managed/.git/info/exclude" "$tgt/exclude.before"
 pass 'target start-work' tgh bash "$sw" todo tgt-one
 expect 'start-work did not name the claim record' "the sidecar's queue entry is the claim record"
+expect 'start-work did not name the managed remote for the push' "push to origin and open a draft PR with 'gh pr create --repo owner/managed --base main --draft'"
 tgt_wt="$managed-worktrees/todo-tgt-one"
 [ -d "$tgt_wt" ] || { echo 'scripts-test: target start-work created no worktree beside the clone' >&2; cat "$fixture/result.log" >&2; exit 1; }
 [ "$(git -C "$tgt_wt" rev-parse HEAD)" = "$remote_tip" ] || { echo 'scripts-test: target start-work did not start from the fetched remote base' >&2; exit 1; }
@@ -1428,7 +1454,19 @@ reject 'target open PR without --self' 'open PR owner/managed#7 [draft] todo/tgt
 pass 'target own PR with --self' in_dir "$tgt_wt" tgh bash "$tclaim" --self tgt-one
 pass 'target --self with DOCKET_TARGET_FILE' in_dir "$tgt_wt" tgh env DOCKET_TARGET_FILE="$sidecar/.docket-target" bash "$tclaim" --self tgt-one
 printf 'OPEN\t8\tfalse\ttrue\t%s\ttodo/tgt-one\t-\tme\tFork title\n' "$own_tip" > "$prs"
-reject 'target fork PR with --self' 'open PR owner/managed#8 [ready]' in_dir "$tgt_wt" tgh bash "$tclaim" --self tgt-one
+reject 'target fork PR with --self' 'open PR owner/managed#8 [ready] stranger:todo/tgt-one' in_dir "$tgt_wt" tgh bash "$tclaim" --self tgt-one
+# With push_remote, an open PR from that fork at an owned tip is the worker's
+# own; another fork's stays a claim, as does the fork's PR without a fork
+# target, without --self or at a tip the worker does not have.
+tfork() { tgh env DOCKET_TARGET_FILE="$tgt/fork.target" "$@"; }
+reject "another fork's PR with a fork target" 'open PR owner/managed#8 [ready] stranger:todo/tgt-one' in_dir "$tgt_wt" tfork bash "$tclaim" --self tgt-one
+printf 'OPEN\t8\tfalse\ttrue:Me\t%s\ttodo/tgt-one\t-\tme\tFork title\n' "$own_tip" > "$prs"
+pass 'own fork PR with --self' in_dir "$tgt_wt" tfork bash "$tclaim" --self tgt-one
+grep -q 'headRepositoryOwner' "$tgt_log" || { echo 'scripts-test: target claim check did not ask for the head owner' >&2; exit 1; }
+reject 'own fork PR without a fork target' 'open PR owner/managed#8 [ready] Me:todo/tgt-one' in_dir "$tgt_wt" tgh bash "$tclaim" --self tgt-one
+reject 'own fork PR without --self' 'open PR owner/managed#8' tfork bash "$tclaim" tgt-one
+printf 'OPEN\t8\tfalse\ttrue:me\t%s\ttodo/tgt-one\t-\tme\tFork title\n' "$remote_tip" > "$prs"
+reject 'fork PR at an unowned tip' 'open PR owner/managed#8' in_dir "$tgt_wt" tfork bash "$tclaim" --self tgt-one
 reject 'target --self outside the managed clone' 'must run from a worktree of the managed clone' tgh bash "$tclaim" --self tgt-one
 printf 'MERGED\t9\tfalse\tfalse\t%s\ttask/tgt-done\t2026-10-30\tme\tDone title\n' "$remote_tip" > "$prs"
 reject 'target merged PR by head branch' 'merged PR owner/managed#9 (2026-10-30) carried this slug: Done title' tgh bash "$tclaim" tgt-done
@@ -1486,6 +1524,29 @@ pass 'target start-work with a relative --dir' in_dir "$sidecar/review" tgh bash
 git -C "$managed" worktree remove --force "$sidecar/review/reldir/todo-tgt-reldir"
 git -C "$managed" branch --quiet -D todo/tgt-reldir
 rm -rf "$sidecar/review/reldir"
+# Through a fork: the next steps push to the fork and name its head, and
+# cleanup proves landing by that fork's merged PR, never another fork's
+# under the same name (without a fork target, the first one gh lists).
+: > "$prs"
+pass 'target start-work through a fork' tfork bash "$sw" todo tgt-fork
+expect 'start-work did not push to the fork' 'push to fork (the fork owned by me, never origin)'
+expect 'start-work did not name the fork head' "'gh pr create --repo owner/managed --base main --head me:todo/tgt-fork --draft'"
+fork_wt="$managed-worktrees/todo-tgt-fork"
+git -C "$fork_wt" commit --quiet --allow-empty -m 'Own fork work'
+fork_tip="$(git -C "$fork_wt" rev-parse HEAD)"
+if command -v jq >/dev/null 2>&1; then
+  # The selection is the script's jq program, run by the fake over its JSON.
+  printf 'MERGED\t23\tfalse\ttrue\t%s\ttodo/tgt-fork\t2026-10-31\tstranger\tTheirs\nMERGED\t24\tfalse\ttrue:me\t%s\ttodo/tgt-fork\t2026-10-31\tme\tOurs\n' "$own_tip" "$fork_tip" > "$prs"
+  pass 'cleanup of a merged fork PR' tfork bash "$tclean"
+  expect 'cleanup did not take the fork PR as landing' "remove worktree $fork_wt and branch todo/tgt-fork (merged in PR #24 at this exact tip)"
+  pass 'cleanup of a fork PR without a fork target' tgh bash "$tclean"
+  expect 'cleanup without a fork target changed' 'keep todo/tgt-fork: PR #23 merged a different history'
+else
+  echo 'scripts-test: note: jq not installed; fork PR selection in cleanup-landed.sh not checked'
+fi
+git -C "$managed" worktree remove --force "$fork_wt"
+git -C "$managed" branch --quiet -D todo/tgt-fork
+: > "$prs"
 
 # cleanup-landed: landing proved by a merged PR in the target, only docket
 # branches considered, the base never deleted, the remote pruned.
@@ -1637,7 +1698,8 @@ sc_q '  - PR: owner#5'
 reject 'malformed PR line in an ordinary repository' 'expected owner/repo#N' in_dir "$fixture" bash "$fixture/docket/scripts/check-queues.sh" --todo "$tgt/sc-todo.md"
 
 # A second fake answers "pr view" from FIXTURE_VIEW_PRS: number, state, head
-# branch, head sha, cross-repository. --jq .state prints the state alone.
+# branch, head sha, cross-repository, head owner (- when absent). --jq .state
+# prints the state alone.
 mkdir -p "$tgt/viewbin"
 cat > "$tgt/viewbin/gh" <<'GH'
 #!/usr/bin/env bash
@@ -1646,7 +1708,7 @@ if [ "$1 $2" = 'pr view' ]; then
   num="$3"; shift 3; repo=""; jqx=""
   while [ $# -gt 0 ]; do case "$1" in --repo) repo="$2"; shift 2 ;; --jq|-q) jqx="$2"; shift 2 ;; *) shift ;; esac; done
   [ "$repo" = owner/managed ] && [ "${GH_REPO:-}" = owner/managed ] || { echo 'VIOLATION pr view without the target' >> "$FIXTURE_GH_LOG"; exit 3; }
-  awk -F '\t' -v n="$num" -v only="$jqx" '$1 == n { if (only == ".state") print $2; else print $2 "\t" $3 "\t" $4 "\t" $5; found = 1 } END { exit !found }' "$FIXTURE_VIEW_PRS"
+  awk -F '\t' -v n="$num" -v only="$jqx" '$1 == n { if (only == ".state") print $2; else print $2 "\t" $3 "\t" $4 "\t" $5 "\t" ($6 == "" ? "-" : $6); found = 1 } END { exit !found }' "$FIXTURE_VIEW_PRS"
   exit
 fi
 exec "$(dirname "$0")/../bin/gh" "$@"
@@ -1683,7 +1745,13 @@ sed -i.bak 's/  - PR: owner\/managed#40$/  - PR: owner\/managed#40, owner\/manag
 reject "another worker's PR on --self" 'claimed by PR: owner/managed#40, owner/managed#41' in_dir "$sc_wt" tgv bash "$tclaim" --self sc-self
 sed -i.bak 's/  - PR: owner\/managed#40, owner\/managed#41$/  - PR: owner\/managed#42/' TODO.md
 reject 'fork PR on --self' 'claimed by PR: owner/managed#42' in_dir "$sc_wt" tgv bash "$tclaim" --self sc-self
-sed -i.bak 's/  - PR: owner\/managed#42$/  - PR: other\/repo#40/' TODO.md
+reject "another fork's PR on --self with a fork target" 'claimed by PR: owner/managed#42' in_dir "$sc_wt" tgv env DOCKET_TARGET_FILE="$tgt/fork.target" bash "$tclaim" --self sc-self
+printf '46\tOPEN\ttodo/sc-self\t%s\ttrue\tme\n' "$sc_tip" >> "$tgt/view.tsv"
+sed -i.bak 's/  - PR: owner\/managed#42$/  - PR: owner\/managed#46/' TODO.md
+pass 'own fork PR line with a fork target' in_dir "$sc_wt" tgv env DOCKET_TARGET_FILE="$tgt/fork.target" bash "$tclaim" --self sc-self
+expect 'own fork PR line was not noted' 'note: the entry in TODO.md records PR: owner/managed#46, your own open PR'
+reject 'own fork PR line without a fork target' 'claimed by PR: owner/managed#46' in_dir "$sc_wt" tgv bash "$tclaim" --self sc-self
+sed -i.bak 's/  - PR: owner\/managed#46$/  - PR: other\/repo#40/' TODO.md
 reject 'foreign PR on --self' 'claimed by PR: other/repo#40' in_dir "$sc_wt" tgv bash "$tclaim" --self sc-self
 git -C "$sc_wt" commit --quiet --allow-empty -m 'Later own work'
 printf '43\tOPEN\ttodo/sc-self\t%s\tfalse\n' "$(git -C "$managed" rev-parse origin/main)" >> "$tgt/view.tsv"

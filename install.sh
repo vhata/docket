@@ -4,8 +4,9 @@
 #
 # Usage: bash install.sh [--check] [--self] [target]
 #        bash install.sh [--check] --sidecar [--repo owner/repo --dir CLONE]
-#             [--base B] [--remote R] [--branch-prefix P] [--worktree-dir D]
-#             [--land-comment C] [target]
+#             [--base B] [--remote R] [--push-remote F] [--push-owner O]
+#             [--branch-prefix P] [--worktree-dir D] [--land-comment C]
+#             [target]
 #   target: a directory inside the project's git repository (default: the
 #           repository containing the current directory). The files land in
 #           <toplevel>/docket/.
@@ -32,7 +33,8 @@
 #           cannot be installed in (references/setup.md, section 7). Besides
 #           the normal install, writes <toplevel>/.docket-target from the
 #           value options (one key per option given: repo, dir, base, remote,
-#           branch_prefix, worktree_dir, land_comment; the format is in
+#           push_remote, push_owner, branch_prefix, worktree_dir,
+#           land_comment; the format is in
 #           docket/scripts/target.sh) when the file is absent, and leaves an
 #           existing one that resolves to the same settings alone. Without
 #           --repo and --dir an existing .docket-target is required and used
@@ -114,7 +116,7 @@ while [ "$#" -gt 0 ]; do
   --check) check=1 ;;
   --self) self=1 ;;
   --sidecar) sidecar=1 ;;
-  --repo | --dir | --base | --remote | --branch-prefix | --worktree-dir | --land-comment)
+  --repo | --dir | --base | --remote | --push-remote | --push-owner | --branch-prefix | --worktree-dir | --land-comment)
     [ "$#" -gt 0 ] || {
       echo "install: $arg needs a value" >&2
       exit 2
@@ -123,7 +125,7 @@ while [ "$#" -gt 0 ]; do
     set_tkey "$(echo "$key" | tr - _)" "$1"
     shift
     ;;
-  --repo=* | --dir=* | --base=* | --remote=* | --branch-prefix=* | --worktree-dir=* | --land-comment=*)
+  --repo=* | --dir=* | --base=* | --remote=* | --push-remote=* | --push-owner=* | --branch-prefix=* | --worktree-dir=* | --land-comment=*)
     key="${arg%%=*}"
     key="${key#--}"
     set_tkey "$(echo "$key" | tr - _)" "${arg#*=}"
@@ -407,9 +409,9 @@ resolve_target() {
         ;;
       esac
     done || exit 1
-    printf 'repo: %s\ndir: %s\nbase: %s/%s\nbranches: %s\nworktrees: %s\nland_comment: %s\n' \
-      "$TARGET_REPO" "$TARGET_DIR" "$TARGET_REMOTE" "$TARGET_BASE" "$(docket_target_branch '<queue>' '<slug>')" \
-      "$TARGET_WORKTREE_DIR" "$TARGET_LAND_COMMENT"
+    printf 'repo: %s\ndir: %s\nbase: %s/%s\npush: %s %s\nbranches: %s\nworktrees: %s\nland_comment: %s\n' \
+      "$TARGET_REPO" "$TARGET_DIR" "$TARGET_REMOTE" "$TARGET_BASE" "$TARGET_PUSH_REMOTE" "${TARGET_PUSH_OWNER:-(managed repository)}" \
+      "$(docket_target_branch '<queue>' '<slug>')" "$TARGET_WORKTREE_DIR" "$TARGET_LAND_COMMENT"
   ) >"$tmp/resolved" 2>"$tmp/resolve-err" || {
     awk -v f="$1" -v l="$label" '{ out = ""; while ((i = index($0, f)) > 0) { out = out substr($0, 1, i - 1) l; $0 = substr($0, i + length(f)) } print "install: " out $0 }' "$tmp/resolve-err" >&2
     return 1
@@ -426,7 +428,7 @@ write_target=0
 if [ "$sidecar" -eq 1 ] && [ "$check" -eq 0 ] && [ -n "$tkeys" ]; then
   {
     echo '# Managed repository for this sidecar; the format is in docket/scripts/target.sh.'
-    for k in repo dir base remote branch_prefix worktree_dir land_comment; do
+    for k in repo dir base remote push_remote push_owner branch_prefix worktree_dir land_comment; do
       has_tkey "$k" || continue
       v="$(tval "$k")"
       case "$v" in *[[:space:]]\#*)

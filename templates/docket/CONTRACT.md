@@ -43,7 +43,8 @@ sidecar's main. When the PR merges, remove the entry the same way, with
 PR in the commit message; a remainder kept in the same entry drops that
 `PR:` line. `cleanup-landed.sh` lists entries ready for this. Roadmap
 claims are out of scope in a sidecar. Push branches to the
-managed repository itself (forks are not supported), never to its base.
+managed repository itself, or to a fork when `.docket-target` names its
+remote as `push_remote`, and never to the managed repository's base.
 Its configured `land_comment`, when posted, merges, so it stays the
 user's unless delegated; after posting it, leave the branch untouched
 until the PR merges or the merge fails.

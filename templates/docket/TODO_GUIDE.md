@@ -99,7 +99,7 @@ Triage runs when the user asks, when Needs triage holds more than about a dozen 
    in main's commit messages. In hosted mode an open PR marker is a
    claim and a merged resolution indicates a stale entry. Stop and
    coordinate on any hit.
-3. Create the branch and worktree immediately: `bash docket/scripts/start-work.sh <queue> <slug>` (branch `<queue>/<slug>`). Recheck claims once after creating it, from inside the new worktree: `bash docket/scripts/claim-check.sh --self <slug>` ignores your own branch and its worktree, and a remote copy or same-repository open PR of that branch only when its tip is your own work (in your branch, not in main). Any remaining hit, including another worker's push or a fork PR under the same branch name, is a competing claim. From elsewhere, name the branch with `--exclude-branch <queue>/<slug>`.
+3. Create the branch and worktree immediately: `bash docket/scripts/start-work.sh <queue> <slug>` (branch `<queue>/<slug>`). Recheck claims once after creating it, from inside the new worktree: `bash docket/scripts/claim-check.sh --self <slug>` ignores your own branch and its worktree, and a remote copy or same-repository open PR of that branch only when its tip is your own work (in your branch, not in main); in a sidecar whose `.docket-target` sets `push_remote`, an open PR from that fork at such a tip counts as yours too. Any remaining hit, including another worker's push or a PR from any other fork under the same branch name, is a competing claim. From elsewhere, name the branch with `--exclude-branch <queue>/<slug>`.
 4. After the first meaningful commit, prepare the change description
    with the claim marker. Leave the entry in place during work. In
    hosted mode open a draft PR; in local mode save the title,
