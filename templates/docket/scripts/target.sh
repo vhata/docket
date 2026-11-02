@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Managed-repository target: lets a sidecar repository's docket scripts work
 # in a separate repository (the managed repository) that docket is not
-# installed in. Sourced by start-work.sh, claim-check.sh, cleanup-landed.sh
-# and review-due.sh, which act on the managed repository; by
+# installed in. Sourced by start-work.sh, claim-check.sh, cleanup-landed.sh,
+# review-due.sh and pr-health.sh, which act on the managed repository; by
 # check-pr-markers.sh and pr-labels.sh, which stand down there; and by
 # check-queues.sh, which reads only the repo key. Run directly, it validates
 # the target file and prints the resolved settings.

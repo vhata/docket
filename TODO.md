@@ -54,9 +54,6 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 
 ### P2 Normal
 
-- [SCRIPTS] `pr-health-target-defaults` — **In a sidecar, `pr-health.sh` reports on the managed repository's PRs without being told where they are.** With a `.docket-target` loaded, `--repo` defaults to the target's `repo` and `--land-comment` to its `land_comment`; `--no-target` and explicit options override.
-  - Source: `todo/pr-health` implementation, 2026-11-01
-  - Starting point: the placeholder defaults at the top of `templates/docket/scripts/pr-health.sh` and `templates/docket/scripts/target.sh`; queue-marker checks need thought in target mode, where claims are `PR:` lines rather than body markers.
 
 ### P3 Low
 
