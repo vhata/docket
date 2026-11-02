@@ -37,6 +37,10 @@ while [ $# -gt 0 ]; do
     *) echo "start-work: unknown argument $1" >&2; exit 2 ;;
   esac
 done
+case "$queue" in
+  todo|review|roadmap|fix|task) ;;
+  *) echo "start-work: queue must be one of todo, review, roadmap, fix, task (got '$queue')" >&2; exit 2 ;;
+esac
 echo "$slug" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || { echo "start-work: slug must be lowercase kebab-case" >&2; exit 2; }
 # shellcheck source=target.sh
 . "$here/target.sh"
