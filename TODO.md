@@ -57,9 +57,6 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 
 ### P2 Normal
 
-- [INSTALLER] `sidecar-install` — **`install.sh` can set up a sidecar: target file and settings bullet written, code CI, PR template, protection and local landing skipped, plus a diff-scoped check for the user's own changes in the managed repository.**
-  - Source: [docs/specs/2026-11-01-managed-repository-mode.md](docs/specs/2026-11-01-managed-repository-mode.md), 2026-11-01
-  - Starting point: the spec's design items 8 and 9, and `references/setup.md`.
 
 ### P3 Low
 

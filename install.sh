@@ -3,6 +3,9 @@
 # audit an installed copy for drift.
 #
 # Usage: bash install.sh [--check] [--self] [target]
+#        bash install.sh [--check] --sidecar [--repo owner/repo --dir CLONE]
+#             [--base B] [--remote R] [--branch-prefix P] [--worktree-dir D]
+#             [--land-comment C] [target]
 #   target: a directory inside the project's git repository (default: the
 #           repository containing the current directory). The files land in
 #           <toplevel>/docket/.
@@ -25,6 +28,25 @@
 #           with or without --self: it installs only from its own install.sh.
 #           So is a repository whose docket/ is such a checkout (a skills
 #           repository holding the skill under the prefix docket).
+#   --sidecar: the project is a sidecar for a managed repository that docket
+#           cannot be installed in (references/setup.md, section 7). Besides
+#           the normal install, writes <toplevel>/.docket-target from the
+#           value options (one key per option given: repo, dir, base, remote,
+#           branch_prefix, worktree_dir, land_comment; the format is in
+#           docket/scripts/target.sh) when the file is absent, and leaves an
+#           existing one that resolves to the same settings alone. Without
+#           --repo and --dir an existing .docket-target is required and used
+#           as is. Options target.sh rejects, an invalid existing file, one
+#           naming other settings, or a sidecar inside the managed clone or
+#           one of its worktrees stop the run (exit 2) before anything is
+#           written. Adds a '- Managed repository:' settings bullet to the
+#           Docket section when there is none. Nothing is ever written into
+#           the managed clone. With --check, fails when .docket-target is
+#           missing.
+#   Any install or --check in a project with a .docket-target validates it
+#   with target.sh and fails when it is invalid; --check also warns when the
+#   Docket section has no Managed repository bullet, or one that does not
+#   name the file's repository.
 #
 # The same command performs the first install and every later update. Files
 # present in the project's docket/ but absent from the skill are reported,
@@ -64,13 +86,50 @@ else
 fi
 check=0
 self=0
+sidecar=0
 target=""
-for arg in "$@"; do
+# Target-file values from the command line, in the order target.sh documents
+# them; tkeys holds the keys given, tvals their values.
+tkeys=""
+tvals=()
+set_tkey() {
+  case " $tkeys " in *" $1 "*)
+    echo "install: --$(echo "$1" | tr _ -) given twice" >&2
+    exit 2
+    ;;
+  esac
+  case "$2" in *"
+"*)
+    echo "install: --$(echo "$1" | tr _ -) must be one line" >&2
+    exit 2
+    ;;
+  esac
+  tkeys="$tkeys${tkeys:+ }$1"
+  tvals+=("$2")
+}
+while [ "$#" -gt 0 ]; do
+  arg="$1"
+  shift
   case "$arg" in
   --check) check=1 ;;
   --self) self=1 ;;
+  --sidecar) sidecar=1 ;;
+  --repo | --dir | --base | --remote | --branch-prefix | --worktree-dir | --land-comment)
+    [ "$#" -gt 0 ] || {
+      echo "install: $arg needs a value" >&2
+      exit 2
+    }
+    key="${arg#--}"
+    set_tkey "$(echo "$key" | tr - _)" "$1"
+    shift
+    ;;
+  --repo=* | --dir=* | --base=* | --remote=* | --branch-prefix=* | --worktree-dir=* | --land-comment=*)
+    key="${arg%%=*}"
+    key="${key#--}"
+    set_tkey "$(echo "$key" | tr - _)" "${arg#*=}"
+    ;;
   -h | --help)
-    sed -n '2,51p' "$0"
+    awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"
     exit 0
     ;;
   -*)
@@ -86,6 +145,32 @@ for arg in "$@"; do
     ;;
   esac
 done
+if [ -n "$tkeys" ] && [ "$sidecar" -eq 0 ]; then
+  echo "install: --repo, --dir and the other target options need --sidecar" >&2
+  exit 2
+fi
+if [ "$sidecar" -eq 1 ] && [ "$self" -eq 1 ]; then
+  echo "install: --sidecar and --self cannot be combined; the skill's own repository is not a sidecar" >&2
+  exit 2
+fi
+if [ "$check" -eq 1 ] && [ -n "$tkeys" ]; then
+  echo "install: --check writes nothing, so it takes no target options; it validates the existing .docket-target" >&2
+  exit 2
+fi
+has_tkey() { case " $tkeys " in *" $1 "*) return 0 ;; esac; return 1; }
+# The value given for key $1.
+tval() {
+  local i=0 k
+  for k in $tkeys; do
+    [ "$k" = "$1" ] && { printf '%s' "${tvals[$i]}"; return 0; }
+    i=$((i + 1))
+  done
+  return 1
+}
+if [ -n "$tkeys" ] && ! { has_tkey repo && has_tkey dir; }; then
+  echo "install: --sidecar needs both --repo and --dir to write .docket-target (or neither, to keep an existing one)" >&2
+  exit 2
+fi
 fragment="$skill/templates/AGENTS.md"
 [ -d "$src" ] && [ -f "$fragment" ] || {
   echo "install: $src or $fragment is missing; the skill checkout is incomplete" >&2
@@ -284,6 +369,102 @@ warn_layout() {
 exclude="$(git -C "$top" rev-parse --git-path info/exclude)"
 case "$exclude" in /*) ;; *) exclude="$top/$exclude" ;; esac
 
+# Managed-repository target (sidecar mode). target.sh is the one parser of
+# the file; the skill's copy is used, which is what docket/ holds after an
+# install. Its loader is called with this project as the sidecar root (not
+# through target.sh's own entry point, which would take the repository holding
+# the script, the skill, as the sidecar when DOCKET_TARGET_FILE is set), so
+# relative paths resolve against this sidecar's main worktree, whatever the
+# current directory, and its check that the clone is not the sidecar itself
+# applies. The file is always passed as an absolute path, so the loader
+# never reads the current directory. resolve_target FILE [LABEL] prints the
+# resolved settings, so two files that say the same thing compare equal; its
+# errors name the file as LABEL (default: its path).
+target_file="$top/.docket-target"
+top_phys="$(cd "$top" && pwd -P)"
+resolve_target() {
+  local label="${2:-$1}"
+  if [ ! -f "$1" ]; then
+    if [ -L "$1" ]; then
+      echo "install: $label is not a regular file: a symlink to $(readlink "$1"), which does not exist" >&2
+    else
+      echo "install: $label is not a regular file" >&2
+    fi
+    return 1
+  fi
+  (
+    DOCKET_TARGET_FILE="$1"
+    # shellcheck source=templates/docket/scripts/target.sh
+    . "$src/scripts/target.sh"
+    docket_target_load "$top" || exit 1
+    # A sidecar inside the managed clone's working tree, or one of its other
+    # worktrees, would put docket's files in someone else's checkout.
+    git -C "$TARGET_DIR" worktree list --porcelain | sed -n 's/^worktree //p' | while IFS= read -r w; do
+      w="$(cd "$w" 2>/dev/null && pwd -P)" || continue
+      case "$top_phys/" in "$w"/*)
+        echo "docket target: this sidecar ($top_phys) is inside the managed clone's worktree $w; create the sidecar outside it" >&2
+        exit 1
+        ;;
+      esac
+    done || exit 1
+    printf 'repo: %s\ndir: %s\nbase: %s/%s\nbranches: %s\nworktrees: %s\nland_comment: %s\n' \
+      "$TARGET_REPO" "$TARGET_DIR" "$TARGET_REMOTE" "$TARGET_BASE" "$(docket_target_branch '<queue>' '<slug>')" \
+      "$TARGET_WORKTREE_DIR" "$TARGET_LAND_COMMENT"
+  ) >"$tmp/resolved" 2>"$tmp/resolve-err" || {
+    awk -v f="$1" -v l="$label" '{ out = ""; while ((i = index($0, f)) > 0) { out = out substr($0, 1, i - 1) l; $0 = substr($0, i + length(f)) } print "install: " out $0 }' "$tmp/resolve-err" >&2
+    return 1
+  }
+  cat "$tmp/resolved"
+}
+managed_bullet() {
+  printf -- '- Managed repository: work happens in `%s`, whose clone, base and branch names are set in `.docket-target`; that repository'"'"'s CI, PR template, reviews and merge process govern changes there, and nothing from this sidecar is written into its clone.\n' "$1"
+}
+has_managed_bullet() { block "$agents" | grep -q '^- Managed repository:'; }
+# Build the target file from the options in $tmp/target. Relative paths in it
+# resolve as they will once it is written: against the sidecar's main worktree.
+write_target=0
+if [ "$sidecar" -eq 1 ] && [ "$check" -eq 0 ] && [ -n "$tkeys" ]; then
+  {
+    echo '# Managed repository for this sidecar; the format is in docket/scripts/target.sh.'
+    for k in repo dir base remote branch_prefix worktree_dir land_comment; do
+      has_tkey "$k" || continue
+      v="$(tval "$k")"
+      case "$v" in *[[:space:]]\#*)
+        echo "install: --$(echo "$k" | tr _ -) '$v' contains ' #', which starts a comment in .docket-target" >&2
+        exit 2
+        ;;
+      esac
+      printf '%s=%s\n' "$k" "$v"
+    done
+  } >"$tmp/target" || exit 2
+  resolve_target "$tmp/target" "the options" >"$tmp/want-target" || {
+    echo "install: the target options do not form a valid .docket-target; nothing was written" >&2
+    exit 2
+  }
+  if [ -e "$target_file" ] || [ -L "$target_file" ]; then
+    if ! resolve_target "$target_file" >"$tmp/have-target"; then
+      echo "install: $target_file exists and is invalid; fix or remove it by hand. Nothing was written" >&2
+      exit 2
+    fi
+    if ! cmp -s "$tmp/have-target" "$tmp/want-target"; then
+      show_diff -u --label "$target_file" --label "from the options" "$tmp/have-target" "$tmp/want-target" >&2 || true
+      echo "install: refusing to overwrite $target_file, which names different settings; edit or remove it by hand. Nothing was written" >&2
+      exit 2
+    fi
+  else
+    write_target=1
+  fi
+elif [ "$sidecar" -eq 1 ] && [ "$check" -eq 0 ]; then
+  if [ ! -e "$target_file" ] && [ ! -L "$target_file" ]; then
+    echo "install: --sidecar without --repo and --dir needs an existing $target_file; nothing was written" >&2
+    exit 2
+  fi
+  if ! resolve_target "$target_file" >/dev/null; then
+    echo "install: $target_file exists and is invalid; fix or remove it by hand. Nothing was written" >&2
+    exit 2
+  fi
+fi
+
 if [ "$check" -eq 1 ]; then
   status=0
   if [ ! -d "$dst" ]; then
@@ -368,6 +549,22 @@ if [ "$check" -eq 1 ]; then
     fi
   fi
   { grep -qxF '.feral/' "$exclude" 2>/dev/null; } && echo "install: warning: stale '.feral/' line in $exclude; rerun install.sh to remove it" >&2
+  if [ -e "$target_file" ] || [ -L "$target_file" ]; then
+    if resolve_target "$target_file" >"$tmp/have-target"; then
+      repo="$(sed -n 's/^repo: //p' "$tmp/have-target")"
+      if agents_state && ! has_managed_bullet; then
+        echo "install: warning: $target_file names a managed repository but the Docket section of $agents has no '- Managed repository:' bullet; rerun install.sh --sidecar to add it" >&2
+      elif agents_state && ! block "$agents" | grep '^- Managed repository:' | grep -qF "\`$repo\`"; then
+        echo "install: warning: the Managed repository bullet in $agents does not name $repo, the repository $target_file names; correct the bullet" >&2
+      fi
+    else
+      echo "install: $target_file is invalid; fix it, then run bash docket/scripts/target.sh" >&2
+      status=1
+    fi
+  elif [ "$sidecar" -eq 1 ]; then
+    echo "install: --sidecar: $target_file does not exist" >&2
+    status=1
+  fi
   warn_layout
   if [ "$status" -eq 0 ]; then
     echo "install: $dst and the Docket section of $agents match the skill"
@@ -479,12 +676,49 @@ elif [ -f "$claude" ] && ! grep -qx '@AGENTS.md' "$claude"; then
   claude_note="appended @AGENTS.md to $claude"
 fi
 
+# Sidecar: the target file (checked above, before anything was written) and
+# the settings bullet naming the managed repository. An existing target file
+# is validated in any install.
+target_note=""
+if [ "$write_target" -eq 1 ]; then
+  cp "$tmp/target" "$target_file"
+  target_note="wrote $target_file"
+fi
+if [ -e "$target_file" ] || [ -L "$target_file" ]; then
+  if resolve_target "$target_file" >"$tmp/have-target"; then
+    [ -n "$target_note" ] || target_note="$target_file is valid"
+    repo="$(sed -n 's/^repo: //p' "$tmp/have-target")"
+    if agents_state && ! has_managed_bullet; then
+      if [ "$sidecar" -eq 1 ]; then
+        managed_bullet "$repo" >"$tmp/bullet"
+        awk -v b="$begin" -v e="$end" -v f="$tmp/bullet" '
+          { l[NR] = $0 }
+          $0 == b { inb = 1 }
+          inb && /^- / { last = NR }
+          $0 == e { inb = 0 }
+          END { getline add < f; for (i = 1; i <= NR; i++) { print l[i]; if (i == last) print add } }' "$agents" >"$tmp/agents"
+        cp "$tmp/agents" "$agents"
+        target_note="$target_note; added the Managed repository bullet to the Docket section of $agents"
+      else
+        echo "install: warning: $target_file names a managed repository but the Docket section of $agents has no '- Managed repository:' bullet; rerun with --sidecar to add it" >&2
+      fi
+    fi
+  else
+    echo "install: $target_file is invalid; fix it, then run bash docket/scripts/target.sh" >&2
+    status=1
+  fi
+fi
+
 echo "install: copied $copied files from $src to $dst (VERSION $(cat "$dst/VERSION"))"
 [ -z "$agents_note" ] || echo "install: $agents_note"
 [ -z "$claude_note" ] || echo "install: $claude_note"
+[ -z "$target_note" ] || echo "install: $target_note"
 [ "$added_exclude" -eq 1 ] && echo "install: added .docket/ to $exclude"
 [ "$removed_exclude" -eq 1 ] && echo "install: removed the stale .feral/ line from $exclude"
+if [ "$sidecar" -eq 1 ]; then
+  echo "install: sidecar: the managed repository's CI, PR template, branch protection and merge process stay its own; set up only this repository's hygiene checks, and run its own checks on managed work with scripts/check-mine.sh (see references/setup.md, section 7)"
+fi
 warn_layout
 echo "install: changes in $top:"
-git -C "$top" status --short docket/ AGENTS.md CLAUDE.md
+git -C "$top" status --short docket/ AGENTS.md CLAUDE.md .docket-target
 exit "$status"

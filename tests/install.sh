@@ -21,7 +21,16 @@
 # into a repository whose docket/ is the skill; a normal --check of a copied
 # VERSION 'self'; a squashed-subtree host, reached directly and through a
 # symlink, with an unrelated host change and a committed README edit under
-# the skill (both clean) and a committed edit under its templates/ (dirty).
+# the skill (both clean) and a committed edit under its templates/ (dirty);
+# --sidecar: usage errors and invalid options writing nothing, the target
+# file and Managed repository bullet written, a relative dir matched from a
+# linked sidecar worktree, nothing written into the
+# managed clone, idempotent reruns, a conflicting or invalid target file
+# refused, --check failing on an invalid one and warning on a missing bullet,
+# and a plain install writing neither; check-mine.sh checking only the files
+# the branch touched since its merge base, failing and fixing, refusing a
+# check that writes and a worktree outside the managed clone, and needing
+# --base without a target file.
 #
 # Usage: bash tests/install.sh   (from anywhere; needs git and bash 3.2+)
 set -euo pipefail
@@ -85,6 +94,10 @@ expect 'first install did not list the settings to fill in' 'settings to fill in
 for f in "$p"/docket/scripts/*.sh; do [ -x "$f" ] || fail "$f is not executable after install"; done
 grep -qxF '.docket/' "$p/.git/info/exclude" || fail '.docket/ was not added to the exclude file'
 refute 'install warned about docs/superpowers in a project without it' 'docs/superpowers'
+[ ! -e "$p/.docket-target" ] || fail 'a plain install wrote .docket-target'
+refute 'a plain install mentioned a sidecar' 'sidecar'
+refute 'a plain install added the Managed repository bullet' 'Managed repository'
+! grep -q '^- Managed repository:' "$p/AGENTS.md" || fail 'a plain install added the Managed repository bullet'
 run 1 '--check with placeholders' bash "$inst" --check "$p"
 expect '--check did not name the placeholder settings' 'settings not filled in'
 fill "$p"
@@ -489,4 +502,190 @@ newproj ten; p="$work/ten"
 run 0 'install from a subtree host with a committed local edit' bash "$host/skills/docket/install.sh" "$p"
 grep -q -- "$(printf '%.12s' "$upstream")-dirty" "$p/docket/VERSION" || { echo "install-test: a committed edit under the skill did not mark VERSION dirty: $(cat "$p/docket/VERSION")" >&2; exit 1; }
 expect 'committed edit under the skill was not explained' 'differs from upstream commit'
+
+# Sidecar mode: a managed repository (a bare remote and a clone of it) that
+# docket is never installed in, and a sidecar pointed at it.
+git init --quiet --bare "$work/managed.git"
+git -C "$work/managed.git" symbolic-ref HEAD refs/heads/main
+git clone --quiet "$work/managed.git" "$work/managed" 2>/dev/null
+m="$work/managed"
+git -C "$m" config user.name 'Managed fixture'; git -C "$m" config user.email 'managed-fixture@example.invalid'
+git -C "$m" config core.hooksPath /dev/null
+git -C "$m" checkout --quiet -b main
+printf 'a\n' > "$m/a.md"; printf 'old\n' > "$m/old.md"; printf 'same\n' > "$m/same.md"; printf 'b\n' > "$m/b.txt"; printf 'ren\n' > "$m/ren.md"
+git -C "$m" add -A && git -C "$m" commit --quiet -m 'Managed repository'
+git -C "$m" push --quiet origin main 2>/dev/null
+git -C "$m" remote set-head origin main
+m_files="$(cd "$m" && ls -A | sort)"; m_config="$(git -C "$m" config --list --local | sort)"
+newproj side; s="$work/side"
+# Usage errors write nothing.
+run 2 'target options without --sidecar' bash "$inst" --repo owner/managed --dir ../managed "$s"
+expect 'target options without --sidecar were accepted' 'need --sidecar'
+run 2 '--sidecar with --repo but no --dir' bash "$inst" --sidecar --repo owner/managed "$s"
+expect '--sidecar without --dir was accepted' 'needs both --repo and --dir'
+run 2 '--sidecar without options or a target file' bash "$inst" --sidecar "$s"
+expect '--sidecar without a target file was accepted' 'needs an existing'
+run 2 '--sidecar with --self' bash "$inst" --sidecar --self "$s"
+run 2 '--check with target options' bash "$inst" --check --sidecar --repo owner/managed --dir ../managed "$s"
+run 2 '--sidecar with a missing clone' bash "$inst" --sidecar --repo owner/managed --dir ../nowhere "$s"
+expect 'a missing clone was not reported by target.sh' 'does not exist'
+expect 'invalid options were not reported as the options' 'the options: dir'
+refute 'invalid options were reported by their temporary path' 'docket-install.'
+expect 'a refused sidecar install did not say nothing was written' 'nothing was written'
+run 2 '--sidecar pointing at the sidecar itself' bash "$inst" --sidecar --repo owner/managed --dir . "$s"
+expect 'the sidecar as its own clone was accepted' 'is the sidecar repository itself'
+run 2 '--sidecar with a comment in a value' bash "$inst" --sidecar --repo owner/managed --dir ../managed --land-comment 'merge #now' "$s"
+[ ! -e "$s/docket" ] && [ ! -e "$s/.docket-target" ] && [ ! -e "$s/AGENTS.md" ] || fail 'a refused sidecar install wrote files'
+# A sidecar inside the managed clone's working tree, or inside another of its
+# worktrees, is refused: its files would sit in someone else's checkout.
+git init --quiet "$m/nested"
+run 2 '--sidecar nested in the managed clone' bash "$inst" --sidecar --repo owner/managed --dir .. "$m/nested"
+expect 'a sidecar inside the managed clone was accepted' 'inside the managed clone'
+[ ! -e "$m/nested/docket" ] || fail 'a refused nested sidecar install wrote docket/'
+rm -rf "$m/nested"
+git -C "$m" worktree add --quiet --detach "$work/managed-wt-nest" HEAD
+git init --quiet "$work/managed-wt-nest/sub"
+run 2 '--sidecar nested in a managed worktree' bash "$inst" --sidecar --repo owner/managed --dir ../../managed "$work/managed-wt-nest/sub"
+expect 'a sidecar inside a managed worktree was accepted' 'inside the managed clone'
+git -C "$m" worktree remove --force "$work/managed-wt-nest"
+run 1 '--check --sidecar before any install' bash "$inst" --check --sidecar "$s"
+# The install writes the target file, as given, and the settings bullet.
+run 0 'sidecar install' sh -c 'cd "$1" && bash "$2" --sidecar --repo owner/managed --dir ../managed --branch-prefix me/ --land-comment=/merge' sh "$s" "$inst"
+expect 'sidecar install did not report the target file' "wrote $s/.docket-target"
+expect 'sidecar install did not report the bullet' 'added the Managed repository bullet'
+expect 'sidecar install did not point at the sidecar setup' 'check-mine.sh'
+[ "$(cat "$s/.docket-target")" = "$(printf '# Managed repository for this sidecar; the format is in docket/scripts/target.sh.\nrepo=owner/managed\ndir=../managed\nbranch_prefix=me/\nland_comment=/merge')" ] || fail "unexpected .docket-target: $(cat "$s/.docket-target")"
+[ "$(grep -c '^- Managed repository: work happens in `owner/managed`' "$s/AGENTS.md")" -eq 1 ] || fail 'the Managed repository bullet is missing or repeated'
+l_bullet="$(lineof "$s/AGENTS.md" '- Managed repository:')"; l_env="$(lineof "$s/AGENTS.md" '- Environment:')"
+[ "$l_bullet" -eq $((l_env + 1)) ] || fail 'the Managed repository bullet does not follow the template bullets'
+(cd "$s" && bash docket/scripts/target.sh) > "$log" 2>&1 || fail "the installed target.sh rejected the written file: $(cat "$log")"
+expect 'the written file did not resolve the branch prefix' 'branches: me/<slug>'
+[ "$(cd "$m" && ls -A | sort)" = "$m_files" ] || fail 'the sidecar install wrote into the managed clone'
+[ "$(git -C "$m" config --list --local | sort)" = "$m_config" ] || fail 'the sidecar install changed the managed clone config'
+[ -z "$(git -C "$m" status --porcelain)" ] || fail 'the sidecar install left changes in the managed clone'
+fill "$s"
+run 0 '--check of a sidecar' bash "$inst" --check "$s"
+expect '--check of a sidecar did not match' 'match the skill'
+run 0 '--check --sidecar of a sidecar' bash "$inst" --check --sidecar "$s"
+# Idempotent: the same settings, spelled differently, change nothing.
+cp "$s/AGENTS.md" "$work/side-agents.before"; cp "$s/.docket-target" "$work/side-target.before"
+run 0 'sidecar rerun with the same settings' bash "$inst" --sidecar --repo owner/managed --dir "$m" --branch-prefix me/ --land-comment /merge --base main "$s"
+expect 'sidecar rerun did not report a valid target' 'is valid'
+run 0 'sidecar rerun without options' bash "$inst" --sidecar "$s"
+# A relative dir is the sidecar's, whatever the current directory.
+run 0 'sidecar rerun from an unrelated directory' sh -c 'cd / && bash "$1" --sidecar --repo owner/managed --dir ../managed --branch-prefix me/ --land-comment /merge "$2"' sh "$inst" "$s"
+expect 'a relative dir from an unrelated directory did not match' 'is valid'
+cmp -s "$s/AGENTS.md" "$work/side-agents.before" || fail 'sidecar rerun changed AGENTS.md'
+cmp -s "$s/.docket-target" "$work/side-target.before" || fail 'sidecar rerun changed .docket-target'
+# From a linked worktree of the sidecar, a relative dir still resolves against
+# the main worktree, so the same options match the committed file.
+git -C "$s" add -A && git -C "$s" commit --quiet -m 'Install docket as a sidecar'
+mkdir -p "$work/wts"; git -C "$s" worktree add --quiet --detach "$work/wts/side-wt" HEAD
+run 0 'sidecar rerun from a linked worktree' sh -c 'cd "$1" && bash "$2" --sidecar --repo owner/managed --dir ../managed --branch-prefix me/ --land-comment /merge' sh "$work/wts/side-wt" "$inst"
+expect 'a linked worktree did not resolve dir against the main worktree' 'is valid'
+cmp -s "$work/wts/side-wt/.docket-target" "$work/side-target.before" || fail 'a rerun from a linked worktree changed .docket-target'
+git -C "$s" worktree remove --force "$work/wts/side-wt"
+# A conflicting target file is refused, and left alone.
+run 2 'sidecar install with a different repo' bash "$inst" --sidecar --repo owner/other --dir ../managed --branch-prefix me/ --land-comment /merge "$s"
+expect 'a conflicting target file was not refused' 'refusing to overwrite'
+expect 'the refusal did not show the difference' '+repo: owner/other'
+cmp -s "$s/.docket-target" "$work/side-target.before" || fail 'a refused sidecar install changed .docket-target'
+# An invalid target file fails --check and an install, which still resyncs.
+printf 'bogus=1\n' >> "$s/.docket-target"
+run 1 '--check with an invalid target file' bash "$inst" --check "$s"
+expect '--check did not name the invalid key' "unknown key 'bogus'"
+expect '--check did not report the invalid target file' '.docket-target is invalid'
+run 1 'install with an invalid target file' bash "$inst" "$s"
+expect 'install did not report the invalid target file' '.docket-target is invalid'
+run 2 'sidecar install over an invalid target file' bash "$inst" --sidecar --repo owner/managed --dir ../managed "$s"
+expect 'an invalid existing target file was not reported' 'exists and is invalid'
+# --sidecar without options refuses an invalid file before writing anything.
+rm "$s/docket/README.md"
+run 2 'sidecar install without options over an invalid target file' bash "$inst" --sidecar "$s"
+expect 'an invalid existing target file was not reported without options' 'exists and is invalid'
+[ ! -e "$s/docket/README.md" ] || fail '--sidecar over an invalid target file wrote docket/'
+run 1 'resync with an invalid target file' bash "$inst" "$s"
+cp "$work/side-target.before" "$s/.docket-target"
+# A dangling symlink or a directory is named as such, not as DOCKET_TARGET_FILE.
+rm "$s/.docket-target"; ln -s nowhere "$s/.docket-target"
+run 1 '--check with a dangling .docket-target symlink' bash "$inst" --check "$s"
+expect 'a dangling .docket-target was not explained' 'is not a regular file'
+refute 'a dangling .docket-target was blamed on DOCKET_TARGET_FILE' 'DOCKET_TARGET_FILE'
+rm "$s/.docket-target"; mkdir "$s/.docket-target"
+run 2 '--sidecar with a .docket-target directory' bash "$inst" --sidecar "$s"
+expect 'a .docket-target directory was not explained' 'is not a regular file'
+refute 'a .docket-target directory was blamed on DOCKET_TARGET_FILE' 'DOCKET_TARGET_FILE'
+rmdir "$s/.docket-target"; cp "$work/side-target.before" "$s/.docket-target"
+# A bullet naming another repository than the target file is a warning.
+sed -i.bak 's/^- Managed repository: work happens in `owner\/managed`/- Managed repository: work happens in `owner\/elsewhere`/' "$s/AGENTS.md"; rm -f "$s/AGENTS.md.bak"
+run 0 '--check with a bullet naming another repository' bash "$inst" --check "$s"
+expect '--check did not warn about a bullet naming another repository' 'does not name owner/managed'
+cp "$work/side-agents.before" "$s/AGENTS.md"
+# A missing bullet is a warning, added back only with --sidecar.
+sed -i.bak '/^- Managed repository:/d' "$s/AGENTS.md"; rm -f "$s/AGENTS.md.bak"
+run 0 '--check without the Managed repository bullet' bash "$inst" --check "$s"
+expect '--check did not warn about the missing bullet' "no '- Managed repository:' bullet"
+run 0 'plain install in a sidecar without the bullet' bash "$inst" "$s"
+expect 'plain install did not warn about the missing bullet' 'rerun with --sidecar'
+! grep -q '^- Managed repository:' "$s/AGENTS.md" || fail 'a plain install added the Managed repository bullet'
+run 0 'sidecar install re-adding the bullet' bash "$inst" --sidecar "$s"
+cmp -s "$s/AGENTS.md" "$work/side-agents.before" || fail 'the re-added bullet differs from the original'
+[ "$(cd "$m" && ls -A | sort)" = "$m_files" ] || fail 'a sidecar rerun wrote into the managed clone'
+
+# check-mine.sh, the diff-scoped own-checks skeleton, copied into the sidecar
+# with rules: a checker that logs its arguments and fails on BAD, a fixer
+# that replaces it, and a check that writes, which must fail the run.
+mkdir -p "$s/scripts"
+cp "$skill/templates/scripts/check-mine.sh" "$s/scripts/check-mine.sh"
+run 0 'check-mine with no rules' sh -c 'cd "$1" && bash "$2/scripts/check-mine.sh"' sh "$m" "$s"
+expect 'check-mine without rules did not say so' 'no rules configured'
+printf '#!/bin/sh\nfor f; do echo "$f" >> "%s/checked.log"; done\n! grep -l BAD "$@"\n' "$work" > "$work/checker.sh"
+printf '#!/bin/sh\nfor f; do sed s/BAD/good/ "$f" > "$f.new" && mv "$f.new" "$f"; done\n' > "$work/fixer.sh"
+printf '#!/bin/sh\nfor f; do echo more >> "$f"; done\n' > "$work/writer.sh"
+awk -v w="$work" -v q="'" '{ print } /^configure\(\) \{$/ {
+  print "  rule " q "*.md" q " " q "sh " w "/checker.sh" q " " q "sh " w "/fixer.sh" q
+  print "  rule " q "*.txt" q " " q "sh " w "/checker.sh" q
+}' "$skill/templates/scripts/check-mine.sh" > "$s/scripts/check-mine.sh"
+awk -v w="$work" -v q="'" '{ print } /^configure\(\) \{$/ { print "  rule " q "*.txt" q " " q "sh " w "/writer.sh" q }' \
+  "$skill/templates/scripts/check-mine.sh" > "$s/scripts/check-writer.sh"
+# A managed worktree whose branch edits a.md, deletes old.md and adds new.md
+# and -dash.md (untracked) and renames ren.md to a spaced name, while the
+# base moves on to change same.md: only those are the user's, and a name
+# starting with - is passed as ./-dash.md.
+wt="$work/managed-worktrees/mine"
+git -C "$m" worktree add --quiet --no-track -b me/mine "$wt" origin/main
+printf 'a2\n' > "$wt/a.md"; git -C "$wt" rm --quiet old.md; git -C "$wt" mv ren.md 're named.md'
+git -C "$wt" commit --quiet -am 'My change'
+printf 'new\n' > "$wt/new.md"; printf 'dash\n' > "$wt/-dash.md"
+git -C "$m" clone --quiet "$work/managed.git" "$work/managed-other" 2>/dev/null
+printf 'moved\n' > "$work/managed-other/same.md"
+git -C "$work/managed-other" -c user.name=o -c user.email=o@example.invalid commit --quiet -am 'Base moves on'
+git -C "$work/managed-other" push --quiet origin HEAD:main 2>/dev/null
+git -C "$m" fetch --quiet origin
+rm -f "$work/checked.log"
+run 0 'check-mine in a managed worktree' sh -c 'cd "$1" && bash "$2/scripts/check-mine.sh"' sh "$wt" "$s"
+expect 'check-mine did not report passing' 'all rules passed'
+[ "$(sort "$work/checked.log" | paste -sd'|' -)" = './-dash.md|a.md|new.md|re named.md' ] || fail "check-mine checked $(sort "$work/checked.log" | paste -sd'|' -), expected ./-dash.md|a.md|new.md|re named.md"
+printf 'BAD\n' > "$wt/new.md"
+run 1 'check-mine with a failing file' bash "$s/scripts/check-mine.sh" --worktree "$wt"
+expect 'check-mine did not name the failing rule' 'failed on *.md'
+grep -qx BAD "$wt/new.md" || fail 'check-mine changed a file without --fix'
+run 0 'check-mine --fix' bash "$s/scripts/check-mine.sh" --fix --worktree "$wt"
+grep -qx good "$wt/new.md" || fail 'check-mine --fix did not run the fixer'
+run 0 'check-mine after the fix' bash "$s/scripts/check-mine.sh" --worktree "$wt"
+run 2 'check-mine from the sidecar without --worktree' sh -c 'cd "$1" && bash scripts/check-mine.sh' sh "$s"
+expect 'check-mine accepted a worktree outside the managed clone' 'is not a worktree of the managed clone'
+printf 'b2\n' > "$wt/b.txt"
+run 1 'check-mine with a check that writes' bash "$s/scripts/check-writer.sh" --worktree "$wt"
+expect 'a writing check was not caught' 'changed files it was only to check'
+# Without a target file the base must be given.
+newproj plainmine; p="$work/plainmine"
+mkdir -p "$p/scripts"; cp "$s/scripts/check-mine.sh" "$p/scripts/"
+printf 'x\n' > "$p/x.md"
+run 2 'check-mine without a target or --base' sh -c 'cd "$1" && bash scripts/check-mine.sh' sh "$p"
+expect 'check-mine without a base did not ask for one' 'pass --base'
+rm -f "$work/checked.log"
+run 0 'check-mine with --base and no target' sh -c 'cd "$1" && bash scripts/check-mine.sh --base main' sh "$p"
+[ "$(cat "$work/checked.log")" = 'x.md' ] || fail "check-mine without a target checked $(cat "$work/checked.log")"
+diff <(echo "$m_config") <(git -C "$m" config --list --local | sort) >&2 || fail "check-mine changed the managed clone config"
 echo 'install-test: all checks passed'

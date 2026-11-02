@@ -35,7 +35,7 @@ The user needs only these phrases; this skill works out the rest by inspecting t
 
 | Operation | Read | Tools |
 | --- | --- | --- |
-| Adopt, repair, audit or compare the workflow in a repository, or set up a sidecar for a repository docket cannot be installed in | [setup](references/setup.md), then the pillar references it points to | `install.sh [--check]`, `check-queues`, `check-links`, `review-due`, `gh api` protection inspection |
+| Adopt, repair, audit or compare the workflow in a repository, or set up a sidecar for a repository docket cannot be installed in | [setup](references/setup.md), then the pillar references it points to | `install.sh [--check] [--sidecar]`, `check-queues`, `check-links`, `review-due`, `gh api` protection inspection |
 | Coordinate a fan-out of writers and reviewers, or an unattended run | [parallel-work](references/parallel-work.md), [pr-and-landing](references/pr-and-landing.md) | `claim-check`, `start-work`, `check-pr-markers`, `pr-labels` |
 | Triage the queues, split a batch, or reconcile claims | [queues](references/queues.md) | `check-queues`, `claim-check` |
 | Run a full or incremental codebase review, or reconcile finding closure | [reviews](references/reviews.md) | `review-due` |
