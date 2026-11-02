@@ -104,7 +104,7 @@ else
   current=""
 fi
 # The main worktree is listed first; it can never be removed, so a branch checked out there is only reported.
-main_wt="$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')"
+main_wt="$(git worktree list --porcelain | awk '/^worktree / && !p { p = substr($0, 10) } END { print p }')"
 
 wt_for() {
   git worktree list --porcelain | awk -v b="refs/heads/$1" '
