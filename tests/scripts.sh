@@ -1149,6 +1149,8 @@ GH
   [ "$rc" = 2 ] || { echo "scripts-test: pr-health accepted a bad --repo ($rc)" >&2; exit 1; }
   prh_env bash "$prh" --pr '' > "$fixture/result.log" 2>&1; rc=$?
   [ "$rc" = 2 ] && grep -q 'needs a PR number' "$fixture/result.log" || { echo "scripts-test: pr-health accepted an empty --pr ($rc)" >&2; exit 1; }
+  prh_env bash "$prh" --pr ' ' > "$fixture/result.log" 2>&1; rc=$?
+  [ "$rc" = 2 ] && grep -q 'takes a PR number' "$fixture/result.log" || { echo "scripts-test: pr-health accepted a whitespace --pr ($rc)" >&2; exit 1; }
   prh_env bash "$prh" --pr 11 --land-comment '  ' > "$fixture/result.log" 2>&1; rc=$?
   [ "$rc" = 2 ] && grep -q 'needs non-empty text' "$fixture/result.log" || { echo "scripts-test: pr-health accepted an empty --land-comment ($rc)" >&2; exit 1; }
   prh_env bash "$prh" --pr 99 > "$fixture/result.log" 2>&1; rc=$?

@@ -53,6 +53,8 @@ while [ $# -gt 0 ]; do
     --repo) repo="$2"; shift 2 ;;
     --pr)
       [ -n "$2" ] || { echo "pr-health: --pr needs a PR number" >&2; exit 2; }
+      # Checked here, before word splitting can drop a blank value.
+      case "$2" in *[!0-9]*) echo "pr-health: --pr takes a PR number, not '$2'" >&2; exit 2 ;; esac
       prs="$prs $2"; shift 2 ;;
     --land-comment)
       # Trimmed as comment bodies are, so the comparison is like for like.
