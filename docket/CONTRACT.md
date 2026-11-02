@@ -97,6 +97,8 @@ publication.
   review paths. A new change or rebase that invalidates a gate returns
   it to draft/pending. Readiness and agent review do not authorise
   landing.
+- In hosted mode run `bash docket/scripts/pr-health.sh` at session start
+  and before reporting PR status, rather than relying on memory.
 - Landing requires the current `main` base, green applicable gates,
   landed stack parents and every acceptance gate from the original queue
   entry. A remainder cannot waive one. Hosted merging remains the user's

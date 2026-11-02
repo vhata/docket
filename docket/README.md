@@ -129,6 +129,7 @@ tracking when creating a branch and preserves its other settings.
 | `scripts/start-work.sh` | Runs the claim check, then creates the `<queue>/<slug>` branch and its worktree. Local mode uses local main and skips forge/fetch operations. |
 | `scripts/land-local.sh` | After explicit user approval, squash-lands the exact reviewed branch head into the clean base checkout, using the title and description and writing a landing receipt. |
 | `scripts/cleanup-landed.sh` | Removes branches and worktrees proved landed by merged PRs or verified local receipts; a dry run unless `--apply` is given. Known caches in a worktree are discarded with it; other ignored files hold it back unless `--discard-ignored` is given. |
+| `scripts/pr-health.sh` | Reports, read-only, on open pull requests (the current user's by default, or `--pr`, `--repo`): CI checks, review decision, merge state and conflicts, commits behind the base, a landing comment (`--land-comment`) on a PR that is still open, and queue markers whose entry is no longer in this checkout. `--strict` exits 1 on failing checks, changes requested or conflicts. |
 | `scripts/review-due.sh` | Measures movement since the last recorded codebase review and says whether an incremental or full review is due; binary assets are not counted as source. |
 
 Run the scripts from anywhere inside the project as

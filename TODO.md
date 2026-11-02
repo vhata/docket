@@ -69,9 +69,6 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 - [SCRIPTS] `managed-repo-target` — **A sidecar repository's docket scripts claim, start and clean up work in a configured managed repository.** `start-work.sh`, `claim-check.sh` and `cleanup-landed.sh` run git with `-C <dir>` and `gh` with `--repo <repo>` from a tracked target file, with a configurable branch prefix.
   - Source: [docs/specs/2026-11-01-managed-repository-mode.md](docs/specs/2026-11-01-managed-repository-mode.md), 2026-11-01
   - Starting point: the spec's design items 1, 5 and 6; the cwd assumption in `ARCHITECTURE.md` and each script's `git rev-parse --show-toplevel`.
-- [SCRIPTS] `pr-health` — **A read-only `pr-health.sh` reports CI status, review decision, mergeability and base staleness for open PRs the queues reference.** Useful in both normal and managed-repository mode.
-  - Source: [docs/specs/2026-11-01-managed-repository-mode.md](docs/specs/2026-11-01-managed-repository-mode.md), 2026-11-01
-  - Starting point: the spec's design item 7.
 
 ### P3 Low
 
