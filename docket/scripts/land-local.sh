@@ -20,7 +20,7 @@ set -euo pipefail
 fail() { echo "land-local: $*" >&2; exit 1; }
 usage() { sed -n '2,17p' "$0"; exit 2; }
 [ $# -gt 0 ] || usage
-case "$1" in -h|--help) sed -n '2,16p' "$0"; exit 0 ;; -*) usage ;; esac
+case "$1" in -h|--help) sed -n '2,17p' "$0"; exit 0 ;; -*) usage ;; esac
 branch="$1"; shift
 title=""; body=""; approved=""; base="main"
 while [ $# -gt 0 ]; do

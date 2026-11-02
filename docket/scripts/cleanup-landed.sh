@@ -29,8 +29,9 @@
 #   prunes the target's remote. It also reads the "PR:" lines in the
 #   sidecar's TODO.md and review/BACKLOG.md and lists each entry whose pull
 #   requests in the target have all closed: "resolve" when one merged (remove
-#   the entry in a direct sidecar commit), "release" when none did. It never
-#   edits the queues. --no-target ignores the target file.
+#   the entry in a direct sidecar commit), "release" when none did (confirm
+#   first that it did not land some other way). It never edits the queues.
+#   --no-target ignores the target file.
 set -euo pipefail
 
 # Ignored paths whose last component matches this are reproducible build or
@@ -59,7 +60,7 @@ while [ $# -gt 0 ]; do
     --base) base="$2"; shift 2 ;;
     --empty) empty=1; shift ;;
     --discard-ignored) discard_ignored=1; shift ;;
-    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,34p' "$0"; exit 0 ;;
     *) echo "cleanup-landed: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -251,7 +252,7 @@ if [ -n "$DOCKET_TARGET" ]; then
       if [ -n "$merged" ]; then
         echo "resolve $slug:$merged merged; remove its entry from the sidecar's $qf in a direct commit to its main carrying '$marker' and the PR reference"
       elif [ -n "$closed" ]; then
-        echo "release $slug:$closed closed unmerged; drop the PR: line from the sidecar's $qf, or record the replacement PR"
+        echo "release $slug:$closed closed without GitHub's merged state; confirm it did not land (some merge processes close after squashing) before releasing: drop the PR: line from the sidecar's $qf, or record the replacement PR"
       fi
     done <<< "$claimed"
   fi

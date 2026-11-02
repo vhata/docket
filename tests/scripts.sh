@@ -1564,20 +1564,84 @@ pass 'PR outside the target with --no-target' bash docket/scripts/check-queues.s
 # CI has no managed clone: the repo line alone drives the warning.
 printf 'repo = owner/managed  # trailing comment\ndir=%s/no-clone-here\n' "$tgt" > "$tgt/ci.target"
 reject 'PR repo check without the clone' 'outside the managed repository owner/managed' env DOCKET_TARGET_FILE="$tgt/ci.target" bash docket/scripts/check-queues.sh --todo "$tgt/sc-todo.md" --strict
+# A relative DOCKET_TARGET_FILE is taken from the caller's directory and
+# named in the warning.
+reject 'relative target file' "outside the managed repository owner/managed in $sidecar/review/../../ci.target" in_dir "$sidecar/review" env DOCKET_TARGET_FILE=../../ci.target bash "$sidecar/docket/scripts/check-queues.sh" --todo "$tgt/sc-todo.md" --strict
 # Without a target file only the format is checked.
 pass 'PR line in an ordinary repository' in_dir "$fixture" bash "$fixture/docket/scripts/check-queues.sh" --todo "$tgt/sc-todo.md" --strict
 sc_q '  - PR: owner#5'
 reject 'malformed PR line in an ordinary repository' 'expected owner/repo#N' in_dir "$fixture" bash "$fixture/docket/scripts/check-queues.sh" --todo "$tgt/sc-todo.md"
 
-# claim-check.sh: a PR: line is a claim, in target mode and with --no-target,
-# and only a note for the worker's own recheck.
+# A second fake answers "pr view" from FIXTURE_VIEW_PRS: number, state, head
+# branch, head sha, cross-repository. --jq .state prints the state alone.
+mkdir -p "$tgt/viewbin"
+cat > "$tgt/viewbin/gh" <<'GH'
+#!/usr/bin/env bash
+if [ "$1 $2" = 'pr view' ]; then
+  printf '%s | GH_REPO=%s\n' "$*" "${GH_REPO:-}" >> "$FIXTURE_GH_LOG"
+  num="$3"; shift 3; repo=""; jqx=""
+  while [ $# -gt 0 ]; do case "$1" in --repo) repo="$2"; shift 2 ;; --jq|-q) jqx="$2"; shift 2 ;; *) shift ;; esac; done
+  [ "$repo" = owner/managed ] && [ "${GH_REPO:-}" = owner/managed ] || { echo 'VIOLATION pr view without the target' >> "$FIXTURE_GH_LOG"; exit 3; }
+  awk -F '\t' -v n="$num" -v only="$jqx" '$1 == n { if (only == ".state") print $2; else print $2 "\t" $3 "\t" $4 "\t" $5; found = 1 } END { exit !found }' "$FIXTURE_VIEW_PRS"
+  exit
+fi
+exec "$(dirname "$0")/../bin/gh" "$@"
+GH
+chmod +x "$tgt/viewbin/gh"
+printf '30\tMERGED\n31\tOPEN\n32\tCLOSED\n' > "$tgt/view.tsv"
+tgv() { tgh env PATH="$tgt/viewbin:$tgt/bin:$PATH" FIXTURE_VIEW_PRS="$tgt/view.tsv" "$@"; }
+
+# claim-check.sh: a PR: line is a claim, in target mode and with --no-target.
 : > "$prs"
-reject 'claim recorded by a PR line' 'queue entry in TODO.md is claimed by PR: owner/managed#30' tgh bash "$tclaim" sc-claimed
-reject 'backlog claim recorded by a PR line' 'queue entry in review/BACKLOG.md is claimed by PR: owner/managed#30' tgh bash "$tclaim" tgt-backlog
-reject 'PR line claim with --no-target' 'queue entry in TODO.md is claimed by PR: owner/managed#30' tgh bash "$tclaim" --no-target --local sc-claimed
-pass 'PR line on the own recheck' tgh bash "$tclaim" --exclude-branch todo/sc-claimed sc-claimed
-expect 'own recheck did not note the PR line' 'note: the entry in TODO.md records PR: owner/managed#30; taken to be your own'
-pass 'entry without a PR line' tgh bash "$tclaim" sc-free
+reject 'claim recorded by a PR line' 'queue entry in TODO.md is claimed by PR: owner/managed#30' tgv bash "$tclaim" sc-claimed
+reject 'backlog claim recorded by a PR line' 'queue entry in review/BACKLOG.md is claimed by PR: owner/managed#30' tgv bash "$tclaim" tgt-backlog
+reject 'PR line claim with --no-target' 'queue entry in TODO.md is claimed by PR: owner/managed#30' tgv bash "$tclaim" --no-target --local sc-claimed
+pass 'entry without a PR line' tgv bash "$tclaim" sc-free
+# A PR: line after the entry's section ended belongs to no entry.
+cp TODO.md "$tgt/todo.saved"
+printf '\n### P3 Low\n\n  - PR: owner/managed#77\n' >> TODO.md
+pass 'PR line under the next heading' tgv bash "$tclaim" sc-free
+cp "$tgt/todo.saved" TODO.md
+# The worker's own recheck: a note only when every recorded PR is an open
+# same-repository PR headed by the own branch at an owned tip.
+pass 'start-work for the own recheck' tgv bash "$sw" todo sc-self
+sc_wt="$managed-worktrees/todo-sc-self"
+git -C "$sc_wt" commit --quiet --allow-empty -m 'Own sidecar-claims work'
+sc_tip="$(git -C "$sc_wt" rev-parse HEAD)"
+printf -- '- [CORE] `sc-self` **Own claim.**\n  - Source: scripts regression fixture\n  - PR: owner/managed#40\n' >> TODO.md
+printf '40\tOPEN\ttodo/sc-self\t%s\tfalse\n41\tOPEN\ttodo/sc-other\t%s\tfalse\n42\tOPEN\ttodo/sc-self\t%s\ttrue\n' "$sc_tip" "$sc_tip" "$sc_tip" >> "$tgt/view.tsv"
+pass 'own PR line on --self' in_dir "$sc_wt" tgv bash "$tclaim" --self sc-self
+expect 'own --self recheck did not note the PR line' 'note: the entry in TODO.md records PR: owner/managed#40, your own open PR'
+pass 'own PR line on --exclude-branch' tgv bash "$tclaim" --exclude-branch todo/sc-self sc-self
+expect 'own --exclude-branch recheck did not note the PR line' 'your own open PR'
+reject 'merged PR line on --exclude-branch' 'queue entry in TODO.md is claimed by PR: owner/managed#30' tgv bash "$tclaim" --exclude-branch todo/sc-self sc-claimed
+sed -i.bak 's/  - PR: owner\/managed#40$/  - PR: owner\/managed#40, owner\/managed#41/' TODO.md
+reject "another worker's PR on --self" 'claimed by PR: owner/managed#40, owner/managed#41' in_dir "$sc_wt" tgv bash "$tclaim" --self sc-self
+sed -i.bak 's/  - PR: owner\/managed#40, owner\/managed#41$/  - PR: owner\/managed#42/' TODO.md
+reject 'fork PR on --self' 'claimed by PR: owner/managed#42' in_dir "$sc_wt" tgv bash "$tclaim" --self sc-self
+sed -i.bak 's/  - PR: owner\/managed#42$/  - PR: other\/repo#40/' TODO.md
+reject 'foreign PR on --self' 'claimed by PR: other/repo#40' in_dir "$sc_wt" tgv bash "$tclaim" --self sc-self
+git -C "$sc_wt" commit --quiet --allow-empty -m 'Later own work'
+printf '43\tOPEN\ttodo/sc-self\t%s\tfalse\n' "$(git -C "$managed" rev-parse origin/main)" >> "$tgt/view.tsv"
+sed -i.bak 's/  - PR: other\/repo#40$/  - PR: owner\/managed#43/' TODO.md
+reject 'unowned tip on --self' 'claimed by PR: owner/managed#43' in_dir "$sc_wt" tgv bash "$tclaim" --self sc-self
+pass 'PR line on --self without gh' in_dir "$sc_wt" tgv bash "$tclaim" --self --local sc-self
+expect 'local --self recheck did not note the PR line' 'taken to be your own, unverified without gh'
+rm -f TODO.md.bak
+cp "$tgt/todo.saved" TODO.md
+git -C "$managed" worktree remove --force "$sc_wt"
+git -C "$managed" branch --quiet -D todo/sc-self
+# The entry as published on origin/main counts when the checkout is stale.
+git checkout --quiet -b sc-published
+printf -- '- [CORE] `sc-elsewhere` **Claimed on the published main.**\n  - Source: scripts regression fixture\n  - PR: owner/managed#44\n' >> TODO.md
+rm -f TODO.md.bak
+git commit --quiet -am 'Published claim'
+git update-ref refs/remotes/origin/main HEAD
+git checkout --quiet main
+git branch --quiet -D sc-published
+reject 'PR line on origin/main' 'queue entry in TODO.md on origin/main is claimed by PR: owner/managed#44' tgv bash "$tclaim" --local sc-elsewhere
+git update-ref -d refs/remotes/origin/main
+pass 'no PR line without origin/main' tgv bash "$tclaim" --local sc-elsewhere
 
 # start-work.sh: the next steps name the PR: line and the sidecar file.
 pass 'target start-work names the PR line' tgh bash "$sw" todo sc-free
@@ -1593,29 +1657,16 @@ for b in todo/sc-free review/sc-review task/sc-task; do
 done
 
 # cleanup-landed.sh: entries whose target PRs all closed are listed, never
-# edited. A second fake answers "pr view" from FIXTURE_VIEW_PRS.
-mkdir -p "$tgt/viewbin"
-cat > "$tgt/viewbin/gh" <<'GH'
-#!/usr/bin/env bash
-if [ "$1 $2" = 'pr view' ]; then
-  printf '%s | GH_REPO=%s\n' "$*" "${GH_REPO:-}" >> "$FIXTURE_GH_LOG"
-  num="$3"; shift 3; repo=""
-  while [ $# -gt 0 ]; do case "$1" in --repo) repo="$2"; shift 2 ;; *) shift ;; esac; done
-  [ "$repo" = owner/managed ] && [ "${GH_REPO:-}" = owner/managed ] || { echo 'VIOLATION pr view without the target' >> "$FIXTURE_GH_LOG"; exit 3; }
-  awk -F '\t' -v n="$num" '$1 == n { print $2; found = 1 } END { exit !found }' "$FIXTURE_VIEW_PRS"
-  exit
-fi
-exec "$(dirname "$0")/../bin/gh" "$@"
-GH
-chmod +x "$tgt/viewbin/gh"
-printf '30\tMERGED\n31\tOPEN\n32\tCLOSED\n' > "$tgt/view.tsv"
-tgv() { tgh env PATH="$tgt/viewbin:$tgt/bin:$PATH" FIXTURE_VIEW_PRS="$tgt/view.tsv" "$@"; }
+# edited. A PR in another repository is not queried, and one the forge cannot
+# read keeps its entry open.
+printf -- '- [CORE] `sc-foreign` **Claimed in another repository.**\n  - Source: scripts regression fixture\n  - PR: other/repo#30\n- [CORE] `sc-unknown` **One PR unreadable.**\n  - Source: scripts regression fixture\n  - PR: owner/managed#32, owner/managed#99\n' >> TODO.md
 before="$(git rev-parse HEAD)"; cp TODO.md "$tgt/todo.before"
 pass 'target cleanup reports finished claims' tgv bash "$tclean"
 expect 'cleanup did not ask to resolve a merged claim' "resolve sc-claimed: owner/managed#30 merged; remove its entry from the sidecar's TODO.md in a direct commit to its main carrying 'Resolves TODO: sc-claimed'"
 expect 'cleanup did not name the backlog marker' "resolve tgt-backlog: owner/managed#30 merged; remove its entry from the sidecar's review/BACKLOG.md in a direct commit to its main carrying 'Resolves review backlog: tgt-backlog'"
-expect 'cleanup did not ask to release a closed claim' "release sc-closed: owner/managed#32 closed unmerged"
-grep -Eq 'sc-open|sc-mixed|sc-free' "$fixture/result.log" && { echo 'scripts-test: cleanup reported an entry whose PR is still open' >&2; cat "$fixture/result.log" >&2; exit 1; }
+expect 'cleanup did not ask to release a closed claim' "release sc-closed: owner/managed#32 closed without GitHub's merged state; confirm it did not land (some merge processes close after squashing) before releasing"
+expect 'cleanup did not report an unreadable PR' 'note: could not read owner/managed#99 for sc-unknown'
+grep -Eq 'sc-open|sc-mixed|sc-free|sc-foreign|(resolve|release) sc-unknown' "$fixture/result.log" && { echo 'scripts-test: cleanup reported an entry whose PRs are open, foreign or unreadable' >&2; cat "$fixture/result.log" >&2; exit 1; }
 [ "$(git rev-parse HEAD)" = "$before" ] && cmp -s TODO.md "$tgt/todo.before" || { echo 'scripts-test: cleanup edited the sidecar queue' >&2; exit 1; }
 pass 'target cleanup --apply reports finished claims' tgv bash "$tclean" --apply
 expect 'cleanup --apply did not report' 'resolve sc-claimed:'
@@ -1624,6 +1675,7 @@ pass 'target cleanup --local' tgv bash "$tclean" --local
 expect 'cleanup --local did not say the claims went unchecked' 'were not checked for resolution'
 pass 'cleanup --no-target ignores PR lines' tgv bash "$tclean" --no-target
 grep -q 'resolve sc-claimed' "$fixture/result.log" && { echo 'scripts-test: cleanup --no-target reported target claims' >&2; exit 1; }
+git checkout --quiet -- TODO.md
 
 # check-pr-markers.sh and pr-labels.sh stand down in a sidecar, from the
 # sidecar or a managed worktree, without a forge call; --no-target checks the
@@ -1646,6 +1698,19 @@ pass 'check-pr-markers --no-target passes a sidecar PR' tgh bash "$tmarkers" --n
 pass 'pr-labels --no-target labels a sidecar PR' tgh bash "$tlabels" --no-target --body "$tgt/sidecar-body.md" --base main
 expect 'pr-labels --no-target gave no labels' 'type:docs'
 reject 'a bad target still stops check-pr-markers' "bad.target:3: unknown key 'shade'" tgh env DOCKET_TARGET_FILE="$tgt/bad.target" bash "$tmarkers" --body "$tgt/sidecar-body.md"
+
+# land-local.sh in a sidecar checks the sidecar's own description.
+git stash push --quiet --include-untracked
+git checkout --quiet -b task/sc-land
+printf 'land me\n' > sc-land.txt
+git add sc-land.txt
+git commit --quiet -m 'Sidecar change to land'
+sc_land="$(git rev-parse HEAD)"
+git checkout --quiet main
+reject 'land-local in a sidecar checks the body' 'description has no "## " headings' tgh bash docket/scripts/land-local.sh task/sc-land --title 'Sidecar change' --body "$tgt/managed-body.md" --approved-head "$sc_land"
+[ "$(git rev-parse main)" = "$before" ] || { echo 'scripts-test: land-local landed a bad sidecar description' >&2; exit 1; }
+git branch --quiet -D task/sc-land
+git stash pop --quiet
 
 # ci.sh in the sidecar's CI, which has no managed clone: the queue check reads
 # only the repo line and the markers are checked for the sidecar's own PR.

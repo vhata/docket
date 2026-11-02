@@ -111,8 +111,11 @@ Triage runs when the user asks, when Needs triage holds more than about a dozen 
    main --head HEAD --strict`.
 5. In a sidecar the managed PR carries no marker: once it is open, add
    `PR: <repo>#<number>` to the entry in a direct commit to the
-   sidecar's `main`, and push it. `claim-check.sh` treats an entry with
-   a `PR:` line as claimed.
+   sidecar's `main`, and push it (`start-work.sh` prints the line for
+   `todo` and `review` work; roadmap claims are out of scope in a
+   sidecar). `claim-check.sh` treats an entry with a `PR:` line as
+   claimed; on the worker's own `--self` recheck only when gh confirms
+   every listed PR is the worker's open PR.
 6. Abandoned work: close the draft and leave the entry untouched (in a sidecar, drop its `PR:` line). Remove the worktree and branch only when the worktree is clean and the branch has no unmerged work; otherwise ask.
 
 ## Markers
@@ -156,9 +159,13 @@ change ready.
 - **Sidecar:** the managed PR cannot touch the sidecar's queues. After
   it merges, remove the entry (or file the remainder) in a direct commit
   to the sidecar's `main` whose message carries the marker, such as
-  `Resolves TODO: <slug>`, and the PR reference. `cleanup-landed.sh`
-  lists entries whose PRs have all closed: "resolve" when one merged,
-  "release" when none did.
+  `Resolves TODO: <slug>` or `Resolves review backlog: <slug>`, and the
+  PR reference. If the merged PR leaves a remainder in the same entry,
+  drop that PR from its `PR:` line. `cleanup-landed.sh` lists entries
+  whose PRs have all closed: "resolve" when one merged, "release" when
+  none did. A PR closed without GitHub's merged state may still have
+  landed, since some merge processes close after squashing; confirm it
+  did not before releasing.
 
 Landing a fix removes the backlog entry but does not close a review
 finding; the next incremental review verifies and records closure (see

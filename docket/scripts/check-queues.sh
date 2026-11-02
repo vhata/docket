@@ -21,6 +21,9 @@
 set -euo pipefail
 
 orig="$PWD"
+# A relative DOCKET_TARGET_FILE is taken from the caller's directory, as
+# target.sh does.
+case "${DOCKET_TARGET_FILE:-}" in ""|/*) ;; *) DOCKET_TARGET_FILE="$orig/$DOCKET_TARGET_FILE" ;; esac
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$root"
@@ -48,11 +51,12 @@ if [ -z "$todo" ] && [ -z "$backlog" ]; then
   exit 2
 fi
 
-target_repo=""
+target_repo=""; target_file=""
 if [ "$no_target" -eq 0 ]; then
   # shellcheck source=target.sh
   . "$here/target.sh"
   target_repo="$(docket_target_repo "$root")"
+  target_file="${DOCKET_TARGET_FILE:-$root/.docket-target}"
 fi
 
 # Pass the queue files as separate arguments so paths with spaces survive.
@@ -60,7 +64,7 @@ set --
 [ -n "$todo" ] && set -- "$@" "$todo"
 [ -n "$backlog" ] && set -- "$@" "$backlog"
 
-awk -v strict="$strict" -v backlog_path="$backlog" -v target_repo="$target_repo" '
+awk -v strict="$strict" -v backlog_path="$backlog" -v target_repo="$target_repo" -v target_file="$target_file" '
 function report(level, file, line, msg) {
   if (level == "warning" && strict) level = "error"
   if (level == "error") errors++
@@ -177,7 +181,7 @@ FNR == 1 { finish_entry(); stage = ""; priority = ""; file_is_backlog = (FILENAM
       ref = tmp[i]; gsub(/^[ \t]+|[ \t]+$/, "", ref)
       if (ref !~ /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[1-9][0-9]*$/) { if (n > 1 || ref != "") report("error", FILENAME, FNR, "PR line for `" cur "` has \"" ref "\"; expected owner/repo#N, comma-separated"); continue }
       prrepo = ref; sub(/#.*/, "", prrepo)
-      if (target_repo != "" && prrepo != target_repo) report("warning", FILENAME, FNR, "PR line for `" cur "` names " ref ", outside the managed repository " target_repo " in .docket-target")
+      if (target_repo != "" && prrepo != target_repo) report("warning", FILENAME, FNR, "PR line for `" cur "` names " ref ", outside the managed repository " target_repo " in " target_file)
     }
   }
   else if (key == "Related") {
