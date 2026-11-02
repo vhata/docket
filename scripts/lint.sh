@@ -10,6 +10,12 @@ files=(templates/docket/scripts/*.sh install.sh tests/*.sh scripts/*.sh .githook
 for f in "${files[@]}"; do
   /bin/bash -n "$f" || { echo "lint: $f does not parse under /bin/bash" >&2; exit 1; }
 done
+# The suites build fixture repositories; run from a hook in a linked worktree
+# they would otherwise act on this repository through the exported GIT_DIR.
+for t in tests/*.sh; do
+  grep -q '^unset \$(git rev-parse --local-env-vars)$' "$t" \
+    || { echo "lint: $t does not clear git's local environment variables before building fixtures" >&2; exit 1; }
+done
 echo "lint: ${#files[@]} scripts parse under /bin/bash $(/bin/bash -c 'echo $BASH_VERSION')"
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck -S warning -s bash "${files[@]}"
