@@ -43,7 +43,17 @@ set -euo pipefail
 unset $(git rev-parse --local-env-vars)
 root="$(cd "$(dirname "$0")/.." && pwd)"
 work="$(cd "$(mktemp -d)" && pwd -P)"
-trap 'rm -rf "$work"' EXIT
+# Run every script under the bash running this suite. The suite calls scripts
+# as `bash <script>` and through `#!/usr/bin/env bash` shebangs, which resolve
+# bash through PATH; on macOS a newer bash usually comes first there, so a
+# suite started under /bin/bash (3.2, as scripts/test.sh does) would otherwise
+# test the scripts under the newer one.
+suitebash="$(mktemp -d)"
+trap 'rm -rf "$work" "$suitebash"' EXIT
+ln -s "$BASH" "$suitebash/bash"
+PATH="$suitebash:$PATH"; export PATH
+[ "$(bash -c 'echo "$BASH_VERSION"')" = "$BASH_VERSION" ] \
+  || { echo "install-test: bash on PATH is not the suite's bash ($BASH_VERSION)" >&2; exit 1; }
 log="$work/log"
 
 skill="$work/skill"

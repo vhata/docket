@@ -29,7 +29,17 @@ fi
 fixture="$(mktemp -d)"
 external="$(mktemp -d)"
 gitcfg="$(mktemp)"
-trap 'rm -rf "$fixture" "$external" "$gitcfg"' EXIT
+# Run every script under the bash running this suite. The suite calls scripts
+# as `bash <script>` and through `#!/usr/bin/env bash` shebangs, which resolve
+# bash through PATH; on macOS a newer bash usually comes first there, so a
+# suite started under /bin/bash (3.2, as scripts/test.sh does) would otherwise
+# test the scripts under the newer one.
+suitebash="$(mktemp -d)"
+trap 'rm -rf "$fixture" "$external" "$gitcfg" "$suitebash"' EXIT
+ln -s "$BASH" "$suitebash/bash"
+PATH="$suitebash:$PATH"; export PATH
+[ "$(bash -c 'echo "$BASH_VERSION"')" = "$BASH_VERSION" ] \
+  || { echo "scripts-test: bash on PATH is not the suite's bash ($BASH_VERSION)" >&2; exit 1; }
 # Isolate every fixture from the user's and the system's git configuration
 # (fetch.prune, init.defaultBranch, identity and the like): each repository
 # sets its own identity, and behaviour must not depend on the machine.

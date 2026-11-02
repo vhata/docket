@@ -16,14 +16,16 @@ Each check is a standalone script, runnable from any directory, exiting non-zero
 
 | Script | Runs | Pre-commit | Pre-push | CI on PR | CI on main | Scheduled |
 | --- | --- | --- | --- | --- | --- | --- |
-| `scripts/lint.sh` | `/bin/bash -n` on every shell script and hook; `shellcheck -S warning` where installed | yes | | yes | yes | yes |
+| `scripts/lint.sh` | `/bin/bash -n` on every shell script and hook; each suite clears git's local environment and puts its own bash first on PATH; `shellcheck -S warning` where installed | yes | | yes | yes | yes |
 | `scripts/vendor-check.sh` | `install.sh --self --check`: `docket/` matches `templates/docket/`, `VERSION` is `self`, the Docket section of `AGENTS.md` matches and its settings are filled | yes | | yes | yes | yes |
-| `scripts/test.sh` | `tests/scripts.sh` and `tests/install.sh` under `/bin/bash` | | yes | yes | yes | yes |
+| `scripts/test.sh` | `tests/scripts.sh` and `tests/install.sh` under `/bin/bash`, with the scripts and installer they call also under `/bin/bash` | | yes | yes | yes | yes |
 | `docket/scripts/ci.sh` | queue hygiene, Markdown links, PR markers against the queues | yes | | yes | yes | yes |
 | `docket/scripts/review-due.sh` | review cadence report | | | | | yes |
 | `scripts/check.sh` | lint, vendor-check, test, then `docket/scripts/ci.sh` | | | | | yes |
 
 CI runs the three gate scripts as separate steps of one job, on Ubuntu and macOS, so a failure names its gate; `scripts/check.sh` runs the same scripts in the same order plus the hygiene check, and is what to run before opening or updating a PR. `scripts/lint.sh` skips shellcheck when it is not installed and says so, except on a Linux CI runner (`CI` set), where a missing shellcheck fails the gate. In practice shellcheck runs on the Ubuntu jobs and is skipped on macOS, whose runner image does not ship it.
+
+The suites call the scripts as `bash <script>` and through `#!/usr/bin/env bash` shebangs, which find bash on PATH, where a newer bash often comes before `/bin/bash`. Each suite therefore starts by putting a link to its own bash (`$BASH`) first on PATH and fails if `bash` on PATH then reports a different version. Started by `scripts/test.sh` the scripts run under `/bin/bash`, 3.2 on macOS, whatever else is installed; started as `bash tests/scripts.sh` they run under that bash.
 
 Hooks are the tracked `.githooks/pre-commit` and `.githooks/pre-push`, wired with `git config core.hooksPath .githooks` by `bash scripts/setup.sh`. Pre-commit only checks, never rewrites, and checks the working tree rather than the staged files. Measured pre-commit time: about 1.4 s warm on an Apple-silicon Mac (2026-10-12). Bypassing a hook is for a broken toolchain only; state the bypass and the equivalent checks in the PR.
 
