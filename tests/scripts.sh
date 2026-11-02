@@ -548,6 +548,13 @@ wt="$fixture/.worktrees/todo-fixture-self-task"
 pass 'start-work on a free slug' env PATH="$nogh" bash docket/scripts/start-work.sh todo fixture-self-task --base main
 [ -d "$wt" ] || { echo 'scripts-test: start-work created no worktree' >&2; exit 1; }
 reject 'start-work on a claimed slug' 'existing claim' env PATH="$nogh" bash docket/scripts/start-work.sh fix fixture-self-task --base main
+# The queue becomes the branch prefix; any other word, including another
+# case of a queue name, would name a branch the marker checks do not know.
+for q in TODO Todo tasks feature; do
+  reject "start-work with queue $q" 'queue must be one of' env PATH="$nogh" bash docket/scripts/start-work.sh "$q" fixture-bad-queue --base main
+done
+git rev-parse --verify --quiet refs/heads/TODO/fixture-bad-queue >/dev/null && { echo 'scripts-test: start-work created a branch for a bad queue' >&2; exit 1; }
+[ -e .worktrees/TODO-fixture-bad-queue ] && { echo 'scripts-test: start-work created a worktree for a bad queue' >&2; exit 1; }
 # A --dir outside the repository cannot be ignored by it: start-work must leave
 # the exclude file alone and print no .gitignore advice, however often it runs.
 cp .git/info/exclude "$fixture/exclude.before"
