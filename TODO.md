@@ -45,15 +45,6 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 
 ### P2 Normal
 
-- [SCRIPTS] `sidecar-claims` — **In managed-repository mode, claims and resolution are recorded in the sidecar's queue, not the managed repository's PR body.** A `PR: owner/repo#N` line on the entry, validated by `check-queues.sh`; `check-pr-markers.sh` and `pr-labels.sh` stand down; the PR follows the managed repository's own template.
-  - Source: [docs/specs/2026-11-01-managed-repository-mode.md](docs/specs/2026-11-01-managed-repository-mode.md), 2026-11-01
-  - Starting point: the spec's design items 2, 3 and 4, and the Review mode section of `templates/docket/CONTRACT.md`.
-  - Depends on: `managed-repo-target`
-- [INSTALLER] `sidecar-install` — **`install.sh` can set up a sidecar: target file and settings bullet written, code CI, PR template, protection and local landing skipped, plus a diff-scoped check for the user's own changes in the managed repository.**
-  - Source: [docs/specs/2026-11-01-managed-repository-mode.md](docs/specs/2026-11-01-managed-repository-mode.md), 2026-11-01
-  - Starting point: the spec's design items 8 and 9, and `references/setup.md`.
-  - Depends on: `managed-repo-target`
-
 ### P3 Low
 
 ### Unprioritized
@@ -66,9 +57,12 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 
 ### P2 Normal
 
-- [SCRIPTS] `managed-repo-target` — **A sidecar repository's docket scripts claim, start and clean up work in a configured managed repository.** `start-work.sh`, `claim-check.sh` and `cleanup-landed.sh` run git with `-C <dir>` and `gh` with `--repo <repo>` from a tracked target file, with a configurable branch prefix.
+- [SCRIPTS] `sidecar-claims` — **In managed-repository mode, claims and resolution are recorded in the sidecar's queue, not the managed repository's PR body.** A `PR: owner/repo#N` line on the entry, validated by `check-queues.sh`; `check-pr-markers.sh` and `pr-labels.sh` stand down; the PR follows the managed repository's own template.
   - Source: [docs/specs/2026-11-01-managed-repository-mode.md](docs/specs/2026-11-01-managed-repository-mode.md), 2026-11-01
-  - Starting point: the spec's design items 1, 5 and 6; the cwd assumption in `ARCHITECTURE.md` and each script's `git rev-parse --show-toplevel`.
+  - Starting point: the spec's design items 2, 3 and 4, and the Review mode and Managed repository sections of `templates/docket/CONTRACT.md`.
+- [INSTALLER] `sidecar-install` — **`install.sh` can set up a sidecar: target file and settings bullet written, code CI, PR template, protection and local landing skipped, plus a diff-scoped check for the user's own changes in the managed repository.**
+  - Source: [docs/specs/2026-11-01-managed-repository-mode.md](docs/specs/2026-11-01-managed-repository-mode.md), 2026-11-01
+  - Starting point: the spec's design items 8 and 9, and `references/setup.md`.
 
 ### P3 Low
 

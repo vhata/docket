@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Regression checks for the vendored scripts, run against a disposable git
 # repository. Exercises check-pr-markers.sh, check-queues.sh, claim-check.sh,
-# start-work.sh, review-due.sh, check-links.sh and cleanup-landed.sh with
+# start-work.sh, review-due.sh, check-links.sh and cleanup-landed.sh (also in
+# managed-repository target mode, with target.sh) with
 # positive and negative fixtures (gh is replaced by a fake on PATH), and checks
 # that every script is executable on disk and in the committed mode.
 #
@@ -27,7 +28,12 @@ if git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
 fi
 fixture="$(mktemp -d)"
 external="$(mktemp -d)"
-trap 'rm -rf "$fixture" "$external"' EXIT
+gitcfg="$(mktemp)"
+trap 'rm -rf "$fixture" "$external" "$gitcfg"' EXIT
+# Isolate every fixture from the user's and the system's git configuration
+# (fetch.prune, init.defaultBranch, identity and the like): each repository
+# sets its own identity, and behaviour must not depend on the machine.
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg"
 mkdir -p "$fixture/docket/scripts" "$fixture/review" "$fixture/bin"
 cp "$scripts"/*.sh "$fixture/docket/scripts/"
 cp "$root/templates/.github/pull_request_template.md" "$fixture/template.md"
@@ -545,6 +551,12 @@ for n in one two; do
   git worktree remove --force "$external/todo-fixture-external-$n"
   git branch --quiet -D "todo/fixture-external-$n"
 done
+# Without a target file a relative --dir is still taken from the root, even
+# when start-work runs from a subdirectory.
+pass 'start-work from a subdirectory with a relative --dir' in_dir "$fixture/review" env PATH="$nogh" bash "$fixture/docket/scripts/start-work.sh" todo fixture-subdir --base main --dir .worktrees
+[ -d "$fixture/.worktrees/todo-fixture-subdir" ] && [ ! -e "$fixture/review/.worktrees" ] || { echo 'scripts-test: a relative --dir without a target was not taken from the root' >&2; exit 1; }
+git worktree remove --force "$fixture/.worktrees/todo-fixture-subdir"
+git branch --quiet -D todo/fixture-subdir
 git -C "$wt" commit --quiet --allow-empty -m 'Own fixture work'
 own_sha="$(git -C "$wt" rev-parse HEAD)"
 foreign_sha="$(git commit-tree -p main -m 'Another worker' "$(git rev-parse 'main^{tree}')")"
@@ -1171,5 +1183,323 @@ else
   echo 'scripts-test: note: jq not installed; pr-health.sh fixtures skipped'
 fi
 # ---- end pr-health.sh ---------------------------------------------------
+# ==== Managed-repository target (target.sh) ================================
+# A sidecar repository holds docket and the queues; branches, worktrees and
+# PRs belong to a separate managed clone with a bare "remote". The fake gh
+# fails any call that does not name the target, by --repo and by GH_REPO.
+tgt="$external/target"
+mkdir -p "$tgt/bin"
+git init --quiet --bare "$tgt/remote.git"
+git -C "$tgt/remote.git" symbolic-ref HEAD refs/heads/main
+tgt_git() { git -c user.name='Target fixture' -c user.email='target-fixture@example.invalid' -c core.hooksPath=/dev/null "$@"; }
+tgt_git clone --quiet "$tgt/remote.git" "$tgt/seed" 2>/dev/null
+tgt_git -C "$tgt/seed" commit --quiet --allow-empty -m 'Managed initial'
+tgt_git -C "$tgt/seed" push --quiet origin HEAD:main
+tgt_git clone --quiet "$tgt/remote.git" "$tgt/managed"
+managed="$(cd "$tgt/managed" && pwd -P)"
+git -C "$managed" config user.name 'Target fixture'
+git -C "$managed" config user.email 'target-fixture@example.invalid'
+git -C "$managed" config core.hooksPath /dev/null
+# The remote moves on after the clone: start-work must fetch it.
+tgt_git -C "$tgt/seed" commit --quiet --allow-empty -m 'Managed second'
+tgt_git -C "$tgt/seed" push --quiet origin HEAD:main
+remote_tip="$(git -C "$tgt/remote.git" rev-parse main)"
+sidecar="$tgt/sidecar"
+mkdir -p "$sidecar/docket/scripts" "$sidecar/review"
+cp "$scripts"/*.sh "$sidecar/docket/scripts/"
+cd "$sidecar"
+git init --quiet
+git symbolic-ref HEAD refs/heads/main
+git config user.name 'Sidecar fixture'
+git config user.email 'sidecar-fixture@example.invalid'
+git config core.hooksPath /dev/null
+printf '.worktrees/\n.docket/\n' > .gitignore
+cat > review/BACKLOG.md <<'QUEUE'
+# Review backlog
+
+## P2 Normal
+
+- [CORE] `tgt-backlog` **Fix the mapped finding.**
+  - Source: scripts regression fixture
+  - Findings: `tgt-finding`
+QUEUE
+cat > .docket-target <<'TARGET'
+# Managed repository for this sidecar.
+repo = owner/managed
+dir=../managed     # relative to this file
+TARGET
+git add .
+git commit --quiet -m 'Sidecar fixture'
+cat > "$tgt/bin/gh" <<'GH'
+#!/usr/bin/env bash
+# Fake forge for target mode. Records are lines of FIXTURE_TARGET_PRS:
+# state, number, draft, cross-repository, head sha, head branch, merge date
+# (- when unmerged), author, title. The caller's login is "me";
+# FIXTURE_GH_FAIL=1 fails every PR query.
+printf '%s | GH_REPO=%s\n' "$*" "${GH_REPO:-}" >> "$FIXTURE_GH_LOG"
+violation() { printf 'VIOLATION %s\n' "$1" >> "$FIXTURE_GH_LOG"; echo "fake gh: $1" >&2; exit 3; }
+[ "${GH_REPO:-}" = owner/managed ] || violation "GH_REPO is '${GH_REPO:-}', not the target"
+case "$1 $2" in
+  'auth status') exit 0 ;;
+  'repo view') [ "${3:-}" = owner/managed ] || violation "repo view without the target"; exit 0 ;;
+  'api user') echo me; exit 0 ;;
+  'pr list') [ -z "${FIXTURE_GH_FAIL:-}" ] || { echo 'fake gh: forge unavailable' >&2; exit 1; } ;;
+  *) violation "unexpected call: $*" ;;
+esac
+shift 2
+repo=""; head=""; state=""; jqx=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --repo) repo="$2"; shift 2 ;;
+    --head) head="$2"; shift 2 ;;
+    --state) state="$2"; shift 2 ;;
+    --jq) jqx="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ "$repo" = owner/managed ] || violation "pr list without --repo owner/managed"
+json="["; sep=""; plain=""
+tab="$(printf '\t')"
+while IFS="$tab" read -r st num draft cross oid ref merged author title; do
+  [ -n "$st" ] && [ "$ref" = "$head" ] || continue
+  case "$state" in all) ;; merged) [ "$st" = MERGED ] || continue ;; open) [ "$st" = OPEN ] || continue ;; esac
+  if [ "$merged" != - ]; then at="\"${merged}T00:00:00Z\""; else at=null; fi
+  json="$json$sep{\"state\":\"$st\",\"number\":$num,\"isDraft\":$draft,\"isCrossRepository\":$cross,\"headRefOid\":\"$oid\",\"headRefName\":\"$ref\",\"mergedAt\":$at,\"author\":{\"login\":\"$author\"},\"title\":\"$title\"}"
+  sep=","
+  case "$state" in
+    all) plain="$plain$st$tab$num$tab$draft$tab$cross$tab$oid$tab$ref$tab$merged$tab$author$tab$title
+" ;;
+    merged) [ -n "$plain" ] || plain="$num $oid
+" ;;
+    open) [ -n "$plain" ] || plain="$num
+" ;;
+  esac
+done < "${FIXTURE_TARGET_PRS:-/dev/null}"
+if command -v jq >/dev/null 2>&1; then printf '%s]' "$json" | jq -r "$jqx"; else printf '%s' "$plain"; fi
+GH
+chmod +x "$tgt/bin/gh"
+tgt_log="$tgt/gh.log"
+prs="$tgt/prs.tsv"
+: > "$prs"; : > "$tgt_log"
+# An inherited GH_REPO naming another repository must not leak into queries.
+tgh() { env PATH="$tgt/bin:$PATH" GH_REPO=wrong/repository FIXTURE_GH_LOG="$tgt_log" FIXTURE_TARGET_PRS="$prs" "$@"; }
+sw="$sidecar/docket/scripts/start-work.sh"
+tclaim="$sidecar/docket/scripts/claim-check.sh"
+tclean="$sidecar/docket/scripts/cleanup-landed.sh"
+tdue="$sidecar/docket/scripts/review-due.sh"
+tshow="$sidecar/docket/scripts/target.sh"
+
+# The loader: comments, whitespace, relative and ~/ paths, defaults.
+pass 'target file with comments and a relative dir' bash "$tshow"
+expect 'relative dir was not resolved' "dir: $managed"
+expect 'default branches are not <queue>/<slug>' 'branches: <queue>/<slug>'
+expect 'default worktree dir is not a sibling of the clone' "worktrees: $managed-worktrees/<queue>-<slug>"
+expect 'default base is not origin/main' 'base: origin/main'
+printf 'repo=owner/managed\n  dir = ~/managed   # under HOME\n\nbranch_prefix=me/\nland_comment=/merge now\n' > "$tgt/home.target"
+pass 'target file with ~/' env HOME="$tgt" DOCKET_TARGET_FILE="$tgt/home.target" bash "$tshow"
+expect 'a home-relative dir was not expanded' "dir: $managed"
+expect 'branch_prefix was not applied' 'branches: me/<slug>'
+expect 'land_comment was not read' 'land_comment: /merge now'
+pass 'target --no-target' bash "$tshow" --no-target
+expect '--no-target still loaded the target' 'no managed-repository target'
+# A sidecar worktree resolves the relative dir against the main worktree.
+git worktree add --quiet --detach "$sidecar/.worktrees/side" main
+pass 'target from a sidecar worktree' in_dir "$sidecar/.worktrees/side" bash "$sidecar/.worktrees/side/docket/scripts/target.sh"
+expect 'a sidecar worktree resolved dir against itself' "dir: $managed"
+git worktree remove --force "$sidecar/.worktrees/side"
+# A sidecar whose git directory lives elsewhere (--separate-git-dir, or a
+# .git file as in a submodule) still resolves against its main worktree.
+git init --quiet --separate-git-dir "$tgt/sep.git" "$tgt/sepside"
+mkdir -p "$tgt/sepside/docket/scripts"
+cp "$scripts"/*.sh "$tgt/sepside/docket/scripts/"
+printf 'repo=owner/managed\ndir=../managed\n' > "$tgt/sepside/.docket-target"
+pass 'target from a separate-git-dir sidecar' in_dir "$tgt/sepside" bash "$tgt/sepside/docket/scripts/target.sh"
+expect 'a separate-git-dir sidecar resolved dir against its git directory' "dir: $managed"
+bad() {
+  label="$1"; expected="$2"; content="$3"
+  printf "$content" > "$tgt/bad.target"
+  reject "bad target: $label" "$expected" env DOCKET_TARGET_FILE="$tgt/bad.target" bash "$tshow"
+}
+bad 'unknown key' "bad.target:2: unknown key 'colour'" "repo=owner/managed\ncolour=blue\ndir=$managed\n"
+bad 'malformed line' "bad.target:1: expected key=value, got 'just some text'" "just some text\n"
+bad 'missing repo' "bad.target: required key 'repo' is missing" "dir=$managed\n"
+bad 'missing dir' "bad.target: required key 'dir' is missing" "repo=owner/managed\n"
+bad 'repo not owner/repo' "bad.target:1: repo must be owner/repo" "repo=managed\ndir=$managed\n"
+bad 'repeated key' "bad.target:3: 'repo' is set twice" "repo=owner/managed\ndir=$managed\nrepo=owner/other\n"
+bad 'prefix without a slash' "bad.target:3: branch_prefix must end in '/'" "repo=owner/managed\ndir=$managed\nbranch_prefix=me\n"
+bad 'missing dir path' 'does not exist' "repo=owner/managed\ndir=$tgt/nowhere\n"
+bad 'dir not a repository' 'is not a git working tree' "repo=owner/managed\ndir=$tgt/bin\n"
+bad 'dir is the sidecar' 'is the sidecar repository itself' "repo=owner/managed\ndir=$sidecar\n"
+bad 'missing remote' "has no remote 'upstream'" "repo=owner/managed\ndir=$managed\nremote=upstream\n"
+reject 'DOCKET_TARGET_FILE names nothing' 'which is not a file' env DOCKET_TARGET_FILE="$tgt/absent.target" bash "$tshow"
+printf 'repo=owner/managed\ndir=%s\nshade=dark\n' "$managed" > "$tgt/bad.target"
+reject 'bad target stops start-work' "bad.target:3: unknown key 'shade'" tgh env DOCKET_TARGET_FILE="$tgt/bad.target" bash "$sw" todo tgt-bad
+reject 'bad target stops claim-check' "bad.target:3: unknown key 'shade'" tgh env DOCKET_TARGET_FILE="$tgt/bad.target" bash "$tclaim" tgt-bad
+reject 'bad target stops cleanup-landed' "bad.target:3: unknown key 'shade'" tgh env DOCKET_TARGET_FILE="$tgt/bad.target" bash "$tclean"
+reject 'bad target stops review-due' "bad.target:3: unknown key 'shade'" tgh env DOCKET_TARGET_FILE="$tgt/bad.target" bash "$tdue"
+
+# start-work: the branch and worktree land in the managed clone, from the
+# fetched remote base, and nothing is written into the clone's exclude file.
+mkdir -p "$managed/.git/info"; touch "$managed/.git/info/exclude"
+cp "$managed/.git/info/exclude" "$tgt/exclude.before"
+pass 'target start-work' tgh bash "$sw" todo tgt-one
+expect 'start-work did not name the claim record' "the sidecar's queue entry is the claim record"
+tgt_wt="$managed-worktrees/todo-tgt-one"
+[ -d "$tgt_wt" ] || { echo 'scripts-test: target start-work created no worktree beside the clone' >&2; cat "$fixture/result.log" >&2; exit 1; }
+[ "$(git -C "$tgt_wt" rev-parse HEAD)" = "$remote_tip" ] || { echo 'scripts-test: target start-work did not start from the fetched remote base' >&2; exit 1; }
+[ "$(git -C "$tgt_wt" symbolic-ref --short HEAD)" = todo/tgt-one ] || { echo 'scripts-test: target worktree is on the wrong branch' >&2; exit 1; }
+git rev-parse --verify --quiet refs/heads/todo/tgt-one >/dev/null && { echo 'scripts-test: target start-work created the branch in the sidecar' >&2; exit 1; }
+[ "$(git worktree list | wc -l | tr -d ' ')" = 1 ] || { echo 'scripts-test: target start-work added a sidecar worktree' >&2; git worktree list >&2; exit 1; }
+cmp -s "$managed/.git/info/exclude" "$tgt/exclude.before" || { echo 'scripts-test: target start-work wrote the managed exclude file' >&2; exit 1; }
+grep -q '^pr list .*--head todo/tgt-one' "$tgt_log" || { echo 'scripts-test: target claim check made no PR query' >&2; cat "$tgt_log" >&2; exit 1; }
+
+# claim-check: branches and worktrees in the managed clone, PRs by head branch.
+reject 'target claim on a started slug' 'branch: todo/tgt-one' tgh bash "$tclaim" tgt-one
+expect 'target claim did not report the managed worktree' "worktree: $tgt_wt [todo/tgt-one]"
+reject 'target start-work on a claimed slug' 'existing claim' tgh bash "$sw" fix tgt-one
+git -C "$tgt_wt" commit --quiet --allow-empty -m 'Own target work'
+own_tip="$(git -C "$tgt_wt" rev-parse HEAD)"
+printf 'OPEN\t7\ttrue\tfalse\t%s\ttodo/tgt-one\t-\tme\tManaged title\n' "$own_tip" > "$prs"
+reject 'target open PR without --self' 'open PR owner/managed#7 [draft] todo/tgt-one: Managed title' tgh bash "$tclaim" tgt-one
+pass 'target own PR with --self' in_dir "$tgt_wt" tgh bash "$tclaim" --self tgt-one
+pass 'target --self with DOCKET_TARGET_FILE' in_dir "$tgt_wt" tgh env DOCKET_TARGET_FILE="$sidecar/.docket-target" bash "$tclaim" --self tgt-one
+printf 'OPEN\t8\tfalse\ttrue\t%s\ttodo/tgt-one\t-\tme\tFork title\n' "$own_tip" > "$prs"
+reject 'target fork PR with --self' 'open PR owner/managed#8 [ready]' in_dir "$tgt_wt" tgh bash "$tclaim" --self tgt-one
+reject 'target --self outside the managed clone' 'must run from a worktree of the managed clone' tgh bash "$tclaim" --self tgt-one
+printf 'MERGED\t9\tfalse\tfalse\t%s\ttask/tgt-done\t2026-10-30\tme\tDone title\n' "$remote_tip" > "$prs"
+reject 'target merged PR by head branch' 'merged PR owner/managed#9 (2026-10-30) carried this slug: Done title' tgh bash "$tclaim" tgt-done
+# Someone else's merged or closed PR on the name is a note, not a claim, and
+# a queue named by --queue narrows the names to that one.
+printf 'MERGED\t13\tfalse\tfalse\t%s\ttodo/tgt-other\t2026-10-30\talice\tTheirs\nCLOSED\t14\tfalse\tfalse\t%s\ttodo/tgt-other\t-\talice\tAbandoned\nOPEN\t15\tfalse\tfalse\t%s\tfix/tgt-other\t-\talice\tOther queue\n' "$remote_tip" "$remote_tip" "$remote_tip" > "$prs"
+pass "target merged PR by someone else" tgh bash "$tclaim" --queue todo tgt-other
+expect 'merged PR by someone else was not noted' 'note: merged PR owner/managed#13 by alice'
+expect 'closed PR by someone else was not noted' 'note: closed PR owner/managed#14 by alice'
+grep -q 'fix/tgt-other' "$fixture/result.log" && { echo 'scripts-test: --queue todo still queried fix/' >&2; exit 1; }
+reject 'target open PR in another queue without --queue' 'open PR owner/managed#15' tgh bash "$tclaim" tgt-other
+: > "$prs"
+pass 'target unclaimed slug' tgh bash "$tclaim" tgt-free
+grep -q -- '--head tgt-free ' "$tgt_log" && { echo 'scripts-test: target claim queried the bare slug' >&2; exit 1; }
+# Other contributors' branches that merely end in the slug are not claims.
+git -C "$managed" update-ref refs/remotes/origin/alice/tgt-alice "$remote_tip"
+git -C "$managed" branch --quiet alice/tgt-alice origin/main
+pass 'target branch under another name' tgh bash "$tclaim" tgt-alice
+git -C "$managed" update-ref -d refs/remotes/origin/alice/tgt-alice
+git -C "$managed" branch --quiet -D alice/tgt-alice
+# A failed PR query is an error: start-work reports it as one, not as a claim.
+set +e
+tgh env FIXTURE_GH_FAIL=1 bash "$sw" todo tgt-unverified > "$fixture/result.log" 2>&1; rc=$?
+set -e
+[ "$rc" = 2 ] && grep -q 'ownership is unverified' "$fixture/result.log" || { echo "scripts-test: start-work did not report a failed claim check (exit $rc)" >&2; cat "$fixture/result.log" >&2; exit 1; }
+git -C "$managed" branch --quiet fix/tgt-finding origin/main
+reject 'target backlog finding from the sidecar backlog' 'branch: fix/tgt-finding' tgh bash "$tclaim" tgt-backlog
+git -C "$managed" branch --quiet -D fix/tgt-finding
+pass 'target claim with --no-target' tgh bash "$tclaim" --no-target tgt-one
+
+# --no-target works on the sidecar itself, as without a target file.
+pass 'start-work --no-target' tgh bash "$sw" todo tgt-sidecar --no-target
+[ -d "$sidecar/.worktrees/todo-tgt-sidecar" ] && git rev-parse --verify --quiet refs/heads/todo/tgt-sidecar >/dev/null || { echo 'scripts-test: start-work --no-target did not work in the sidecar' >&2; exit 1; }
+git -C "$managed" rev-parse --verify --quiet refs/heads/todo/tgt-sidecar >/dev/null && { echo 'scripts-test: start-work --no-target touched the managed clone' >&2; exit 1; }
+git worktree remove --force "$sidecar/.worktrees/todo-tgt-sidecar"
+git branch --quiet -D todo/tgt-sidecar
+
+# A branch prefix, and a worktree directory inside the clone, which is then
+# excluded there.
+printf 'repo=owner/managed\ndir=%s\nbranch_prefix=me/\nworktree_dir=%s/.wt\n' "$managed" "$managed" > "$tgt/prefix.target"
+pass 'target start-work with a prefix' tgh env DOCKET_TARGET_FILE="$tgt/prefix.target" bash "$sw" todo tgt-two
+[ "$(git -C "$managed/.wt/todo-tgt-two" symbolic-ref --short HEAD)" = me/tgt-two ] || { echo 'scripts-test: branch_prefix was not used' >&2; exit 1; }
+grep -qx '.wt/' "$managed/.git/info/exclude" || { echo 'scripts-test: a worktree dir inside the clone was not excluded there' >&2; exit 1; }
+[ -z "$(git -C "$managed" status --porcelain)" ] || { echo 'scripts-test: the managed clone shows the worktree dir' >&2; exit 1; }
+reject 'target claim on a prefixed branch' 'branch: me/tgt-two' tgh env DOCKET_TARGET_FILE="$tgt/prefix.target" bash "$tclaim" tgt-two
+# Taken from the caller's directory, and the same file reaches claim-check
+# after start-work moves to the sidecar root.
+pass 'relative DOCKET_TARGET_FILE' in_dir "$sidecar/review" tgh env DOCKET_TARGET_FILE=../../prefix.target bash "$sw" todo tgt-rel
+[ "$(git -C "$managed/.wt/todo-tgt-rel" symbolic-ref --short HEAD)" = me/tgt-rel ] || { echo 'scripts-test: relative DOCKET_TARGET_FILE was not used' >&2; exit 1; }
+git -C "$managed" worktree remove --force "$managed/.wt/todo-tgt-rel"
+git -C "$managed" branch --quiet -D me/tgt-rel
+# A relative --dir is taken from the caller's directory, not the sidecar root.
+pass 'target start-work with a relative --dir' in_dir "$sidecar/review" tgh bash "$sw" todo tgt-reldir --dir reldir
+[ -d "$sidecar/review/reldir/todo-tgt-reldir" ] || { echo 'scripts-test: relative --dir was not taken from the caller' >&2; exit 1; }
+git -C "$managed" worktree remove --force "$sidecar/review/reldir/todo-tgt-reldir"
+git -C "$managed" branch --quiet -D todo/tgt-reldir
+rm -rf "$sidecar/review/reldir"
+
+# cleanup-landed: landing proved by a merged PR in the target, only docket
+# branches considered, the base never deleted, the remote pruned.
+git -C "$managed" branch --quiet personal origin/main
+# The user's own branches carry docket-like names but no marker: neither the
+# merged nor the --empty path may touch them.
+git -C "$managed" branch --quiet fix/tgt-mine origin/main
+git -C "$managed" branch --quiet me/tgt-mine origin/main
+# A marked branch with nothing beyond the remote base, behind which the local
+# base lags: --empty must measure against <remote>/<base>.
+git -C "$managed" branch --quiet todo/tgt-empty origin/main
+git -C "$managed" config branch.todo/tgt-empty.docket true
+tgt_git -C "$tgt/seed" push --quiet origin HEAD:refs/heads/todo/tgt-stale
+git -C "$managed" fetch --quiet origin
+tgt_git -C "$tgt/seed" push --quiet origin :refs/heads/todo/tgt-stale
+git -C "$managed" checkout --quiet --detach
+main_tip="$(git -C "$managed" rev-parse main)"
+printf 'MERGED\t10\tfalse\tfalse\t%s\ttodo/tgt-one\t2026-10-31\tme\tOne\nMERGED\t11\tfalse\tfalse\t%s\tpersonal\t2026-10-31\tme\tPersonal\nMERGED\t12\tfalse\tfalse\t%s\tmain\t2026-10-31\tme\tBase\nMERGED\t16\tfalse\tfalse\t%s\tfix/tgt-mine\t2026-10-31\tme\tMine\nMERGED\t17\tfalse\tfalse\t%s\tme/tgt-mine\t2026-10-31\tme\tMine too\n' "$own_tip" "$remote_tip" "$main_tip" "$remote_tip" "$remote_tip" > "$prs"
+pass 'target cleanup dry run' tgh bash "$tclean"
+expect 'target cleanup did not plan the landed worktree' "remove worktree $tgt_wt and branch todo/tgt-one (merged in PR #10"
+grep -Eq 'personal|branch main|tgt-mine' "$fixture/result.log" && { echo 'scripts-test: target cleanup considered a non-docket branch or the base' >&2; cat "$fixture/result.log" >&2; exit 1; }
+[ -d "$tgt_wt" ] || { echo 'scripts-test: target cleanup dry run removed a worktree' >&2; exit 1; }
+pass 'target cleanup --apply' tgh bash "$tclean" --apply --empty
+for b in fix/tgt-mine me/tgt-mine personal main; do
+  git -C "$managed" rev-parse --verify --quiet "refs/heads/$b" >/dev/null || { echo "scripts-test: target cleanup deleted the unmarked branch $b" >&2; exit 1; }
+done
+git -C "$managed" rev-parse --verify --quiet refs/heads/todo/tgt-empty >/dev/null && { echo 'scripts-test: target --empty did not measure against the remote base' >&2; cat "$fixture/result.log" >&2; exit 1; }
+[ -z "$(git -C "$managed" config --get branch.todo/tgt-one.docket || true)" ] || { echo 'scripts-test: target cleanup kept the marker of a deleted branch' >&2; exit 1; }
+[ ! -d "$tgt_wt" ] || { echo 'scripts-test: target cleanup kept the landed worktree' >&2; exit 1; }
+git -C "$managed" rev-parse --verify --quiet refs/heads/todo/tgt-one >/dev/null && { echo 'scripts-test: target cleanup kept the landed branch' >&2; exit 1; }
+git -C "$managed" rev-parse --verify --quiet refs/heads/main >/dev/null && git -C "$managed" rev-parse --verify --quiet refs/heads/personal >/dev/null || { echo 'scripts-test: target cleanup deleted the base or a personal branch' >&2; exit 1; }
+git -C "$managed" rev-parse --verify --quiet refs/remotes/origin/todo/tgt-stale >/dev/null && { echo 'scripts-test: target cleanup did not prune the remote' >&2; exit 1; }
+git -C "$managed" rev-parse --verify --quiet refs/heads/me/tgt-two >/dev/null || { echo 'scripts-test: target cleanup removed an unlanded branch' >&2; exit 1; }
+pass 'target cleanup --no-target' tgh bash "$tclean" --no-target
+grep -q 'managed-repository target' "$fixture/result.log" && { echo 'scripts-test: cleanup --no-target used the target' >&2; exit 1; }
+
+# A target whose base is not main: owned() measures against the target base,
+# cleanup never deletes that base whatever --base says, and it skips the
+# branch checked out in the managed worktree it runs from.
+tgt_git -C "$tgt/seed" checkout --quiet -b trunk
+tgt_git -C "$tgt/seed" commit --quiet --allow-empty -m 'Trunk only'
+tgt_git -C "$tgt/seed" push --quiet origin trunk
+trunk_tip="$(git -C "$tgt/seed" rev-parse HEAD)"
+printf 'repo=owner/managed\ndir=%s\nbase=trunk\nbranch_prefix=tr/\n' "$managed" > "$tgt/trunk.target"
+ttr() { tgh env DOCKET_TARGET_FILE="$tgt/trunk.target" "$@"; }
+: > "$prs"
+pass 'trunk start-work' ttr bash "$sw" todo tgt-trunk
+trunk_wt="$managed-worktrees/todo-tgt-trunk"
+[ "$(git -C "$trunk_wt" rev-parse HEAD)" = "$trunk_tip" ] || { echo 'scripts-test: start-work did not start from the target base' >&2; exit 1; }
+git -C "$trunk_wt" commit --quiet --allow-empty -m 'Own trunk work'
+own_trunk="$(git -C "$trunk_wt" rev-parse HEAD)"
+printf 'OPEN\t20\ttrue\tfalse\t%s\ttr/tgt-trunk\t-\tme\tAt base\n' "$trunk_tip" > "$prs"
+reject 'PR at the target base with --self' 'open PR owner/managed#20' in_dir "$trunk_wt" ttr bash "$tclaim" --self tgt-trunk
+git -C "$managed" branch --quiet trunk origin/trunk
+git -C "$managed" config branch.trunk.docket true
+printf 'MERGED\t21\tfalse\tfalse\t%s\ttr/tgt-trunk\t2026-10-31\tme\tTrunk work\nMERGED\t22\tfalse\tfalse\t%s\ttrunk\t2026-10-31\tme\tBase\n' "$own_trunk" "$trunk_tip" > "$prs"
+pass 'cleanup from a managed worktree' in_dir "$trunk_wt" ttr bash "$tclean" --base main
+expect 'cleanup did not skip the branch checked out here' 'skip tr/tgt-trunk (checked out here)'
+grep -q 'branch trunk ' "$fixture/result.log" && { echo 'scripts-test: cleanup considered the target base' >&2; cat "$fixture/result.log" >&2; exit 1; }
+git -C "$managed" worktree remove --force "$trunk_wt"
+git -C "$managed" branch --quiet -D tr/tgt-trunk trunk
+: > "$prs"
+
+# review-due: commits resolve in the managed clone, the index in the sidecar.
+printf '| Date | Type | Commit |\n| %s | full | `%s` |\n' "$(date -u +%Y-%m-%d)" "$remote_tip" > review/README.md
+pass 'target review-due' tgh bash "$tdue"
+expect 'target review-due did not measure the managed clone' 'verdict: no review due'
+expect 'target review-due did not default to the remote base' 'since then: 0 commits'
+pass 'review-due --no-target' tgh bash "$tdue" --no-target
+expect 'review-due --no-target resolved the managed commit' 'BASELINE LOST'
+pass 'review-due --repo-dir' tgh bash "$tdue" --no-target --repo-dir "$managed" --base origin/main
+expect 'review-due --repo-dir did not resolve the commit' 'verdict: no review due'
+pass 'review-due with a relative --repo-dir' in_dir "$sidecar/review" tgh bash "$tdue" --no-target --repo-dir ../../managed --base origin/main
+expect 'a relative --repo-dir was not taken from the caller' 'verdict: no review due'
+
+grep -q VIOLATION "$tgt_log" && { echo 'scripts-test: a target-mode gh call did not name the target' >&2; grep VIOLATION "$tgt_log" >&2; exit 1; }
+grep -q '^pr list' "$tgt_log" || { echo 'scripts-test: target mode made no PR queries' >&2; exit 1; }
+cd "$fixture"
+# ==== End of managed-repository target fixtures ============================
 
 echo 'scripts-test: all checks passed'

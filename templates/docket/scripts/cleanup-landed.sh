@@ -3,7 +3,7 @@
 # placeholder branches. Dry run by default and the dry run changes nothing;
 # pass --apply to act.
 #
-# Usage: docket/scripts/cleanup-landed.sh [--apply] [--base main] [--empty] [--discard-ignored] [--local]
+# Usage: docket/scripts/cleanup-landed.sh [--apply] [--base main] [--empty] [--discard-ignored] [--local] [--no-target]
 #   A branch is "landed" only when gh finds a merged PR whose head was this
 #   branch AND the branch's current tip is the commit that PR merged. A branch
 #   with commits after the merged head is kept and reported. A verified local
@@ -19,6 +19,14 @@
 #   The allowlist goes by name, so keep records out of directories named like
 #   build output (build, out, dist, coverage, test-results).
 #   Nothing is pushed; remote branches are untouched.
+#   With a managed-repository target (.docket-target; see target.sh) it works
+#   in the managed clone: only branches start-work.sh marked as docket's
+#   (git config branch.<name>.docket true) are considered, on both the merged
+#   and the --empty paths, so the user's own branches are never touched;
+#   landing is proved by a merged PR in the target repository; --empty measures
+#   against <remote>/<base>; the base defaults to the target's and is never
+#   deleted; deleting a branch also removes its marker; and --apply fetches and
+#   prunes the target's remote. --no-target ignores the target file.
 set -euo pipefail
 
 # Ignored paths whose last component matches this are reproducible build or
@@ -35,33 +43,61 @@ non_cache_ignored() {
   done
 }
 
-root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "cleanup-landed: not in a git repository" >&2; exit 2; }
-cd "$root"
-apply=0; base="main"; empty=0; discard_ignored=0; local_only=0
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+orig="$(pwd)"
+git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "cleanup-landed: not in a git repository" >&2; exit 2; }
+apply=0; base=""; empty=0; discard_ignored=0; local_only=0; no_target=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --local) local_only=1; shift ;;
+    --no-target) no_target=--no-target; shift ;;
     --apply) apply=1; shift ;;
     --base) base="$2"; shift 2 ;;
     --empty) empty=1; shift ;;
     --discard-ignored) discard_ignored=1; shift ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
     *) echo "cleanup-landed: unknown argument $1" >&2; exit 2 ;;
   esac
 done
-
-unset GH_REPO
+# shellcheck source=target.sh
+. "$here/target.sh"
+docket_target_init "$here" "$no_target" || exit 2
+remote="origin"; repo_args=()
+if [ -n "$DOCKET_TARGET" ]; then
+  [ -n "$base" ] || base="$TARGET_BASE"
+  remote="$TARGET_REMOTE"; repo_args=(--repo "$TARGET_REPO")
+  # GH_REPO is pinned to the target as well, so no query can fall back to cwd.
+  export GH_REPO="$TARGET_REPO"
+  echo "cleanup-landed: managed-repository target $TARGET_REPO (clone $TARGET_DIR)"
+  cd "$TARGET_DIR"
+else
+  [ -n "$base" ] || base="main"
+  unset GH_REPO
+  cd "$DOCKET_SIDECAR_ROOT"
+fi
+# In target mode, only branches start-work.sh marked as docket's are
+# candidates; a name alone proves nothing in someone else's clone.
+docket_branch() {
+  [ -n "$DOCKET_TARGET" ] || return 0
+  [ "$(git config --get "branch.$1.docket" 2>/dev/null || true)" = true ]
+}
 [ -n "$(git remote)" ] || local_only=1
 common="$(git rev-parse --git-common-dir)"
 common="$(cd "$common" && pwd -P)"
 have_gh=0
-if [ "$local_only" -eq 0 ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh repo view >/dev/null 2>&1; then have_gh=1; fi
+if [ "$local_only" -eq 0 ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh repo view ${DOCKET_TARGET:+"$TARGET_REPO"} >/dev/null 2>&1; then have_gh=1; fi
 [ "$apply" -eq 1 ] && mode="APPLY" || mode="DRY RUN (changes nothing; pass --apply to act)"
 echo "cleanup-landed: $mode"
 if [ "$have_gh" -eq 0 ]; then
   echo "cleanup-landed: merged-PR detection is OFF; checking verified local landing receipts"
 fi
-current="$(git branch --show-current || true)"
+if [ -z "$DOCKET_TARGET" ]; then
+  current="$(git branch --show-current || true)"
+elif docket_target_contains "$orig"; then
+  current="$(git -C "$orig" branch --show-current || true)"
+else
+  current=""
+fi
 # The main worktree is listed first; it can never be removed, so a branch checked out there is only reported.
 main_wt="$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')"
 
@@ -74,6 +110,8 @@ wt_for() {
 removed=0; kept=0
 for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   [ "$br" = "$base" ] || [ "$br" = "main" ] || [ "$br" = "master" ] && continue
+  [ -n "$DOCKET_TARGET" ] && [ "$br" = "$TARGET_BASE" ] && continue
+  docket_branch "$br" || continue
   [ "$br" = "$current" ] && { echo "skip $br (checked out here)"; continue; }
   tip="$(git rev-parse "$br")"
   reason=""
@@ -98,7 +136,7 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     fi
   fi
   if [ -z "$reason" ] && [ "$have_gh" -eq 1 ]; then
-    merged="$(gh pr list --head "$br" --state merged --json number,headRefOid --jq '.[0] | select(. != null) | "\(.number) \(.headRefOid)"' 2>/dev/null || true)"
+    merged="$(gh pr list ${repo_args[@]+"${repo_args[@]}"} --head "$br" --state merged --json number,headRefOid --jq '.[0] | select(. != null) | "\(.number) \(.headRefOid)"' 2>/dev/null || true)"
     if [ -n "$merged" ]; then
       num="${merged%% *}"; oid="${merged##* }"
       if [ "$oid" = "$tip" ]; then
@@ -114,8 +152,10 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     fi
   fi
   if [ -z "$reason" ] && [ "$empty" -eq 1 ]; then
-    ahead="$(git rev-list --count "$base..$br" 2>/dev/null || echo 1)"
-    openpr=""; [ "$have_gh" -eq 1 ] && openpr="$(gh pr list --head "$br" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+    upto="$base"
+    if [ -n "$DOCKET_TARGET" ] && git rev-parse --verify --quiet "refs/remotes/$remote/$base" >/dev/null; then upto="$remote/$base"; fi
+    ahead="$(git rev-list --count "$upto..$br" 2>/dev/null || echo 1)"
+    openpr=""; [ "$have_gh" -eq 1 ] && openpr="$(gh pr list ${repo_args[@]+"${repo_args[@]}"} --head "$br" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
     if [ "$ahead" -eq 0 ] && [ -z "$openpr" ] && [ -z "$(wt_for "$br")" ]; then reason="no commits beyond $base, no PR, no worktree"; fi
   fi
   [ -n "$reason" ] || continue
@@ -167,6 +207,8 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
       echo "keep $br: branch moved during cleanup or ref deletion failed"
       kept=$((kept + 1)); continue
     fi
+    # The docket marker goes with the branch it marked.
+    [ -z "$DOCKET_TARGET" ] || git config --unset-all "branch.$br.docket" 2>/dev/null || true
   fi
   removed=$((removed + 1))
 done
@@ -176,5 +218,5 @@ if [ "$stale" -gt 0 ]; then
   if [ "$apply" -eq 1 ]; then git worktree prune; echo "cleanup-landed: pruned $stale stale worktree registration(s) (directories were already gone)"
   else echo "note: $stale prunable worktree registration(s); --apply prunes them (a missing directory does not by itself prove its branch landed)"; fi
 fi
-if [ "$apply" -eq 1 ] && [ "$local_only" -eq 0 ] && git remote get-url origin >/dev/null 2>&1; then git fetch --prune --quiet origin 2>/dev/null || true; fi
+if [ "$apply" -eq 1 ] && [ "$local_only" -eq 0 ] && git remote get-url "$remote" >/dev/null 2>&1; then git fetch --prune --quiet "$remote" 2>/dev/null || true; fi
 exit 0

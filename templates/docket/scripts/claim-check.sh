@@ -4,7 +4,7 @@
 # (already done). For a review backlog slug, also checks every finding slug
 # it maps.
 #
-# Usage: docket/scripts/claim-check.sh [--local] [--self | --exclude-branch NAME] <slug> [slug...]
+# Usage: docket/scripts/claim-check.sh [--local] [--no-target] [--queue Q] [--self | --exclude-branch NAME] <slug> [slug...]
 #   --self                 recheck from inside the claimed worktree: ignore the
 #                          branch checked out here and its worktree, plus remote
 #                          copies and same-repository open PRs of that branch
@@ -20,28 +20,56 @@
 # when a forge query fails (ownership is then unverified).
 # --local skips forge queries for repositories without a PR-capable remote.
 # With no configured remotes this is automatic. Needs git; gh for PRs.
+# With a managed-repository target (.docket-target; see target.sh), only the
+# exact branch name docket would create counts: <branch_prefix><slug>, or
+# <queue>/<slug> (all five queues unless --queue names one). Branches and
+# worktrees are checked in the managed clone; PRs in the target repository by
+# that head name only (its PR bodies carry no markers). An open PR is a claim;
+# a merged one is a claim when you authored it and a note otherwise. --self
+# must run from a managed worktree, on a branch pushed to the managed
+# repository itself (forks are not supported). --no-target ignores the file.
 set -euo pipefail
 
-root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-cd "$root"
-usage() { sed -n '2,21p' "$0"; exit 2; }
-self=""; local_only=0
+usage() { sed -n '2,30p' "$0"; exit 2; }
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+orig="$(pwd)"
+self=""; self_here=0; local_only=0; no_target=""; queue=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --local) local_only=1; shift ;;
-    --self)
-      self="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-      [ -n "$self" ] || { echo "claim-check: --self needs a checked-out branch, but no branch is checked out here (detached HEAD)" >&2; exit 2; }
-      shift ;;
+    --no-target) no_target=--no-target; shift ;;
+    --queue)
+      [ $# -ge 2 ] && [ -n "$2" ] || usage
+      queue="$2"; shift 2 ;;
+    --self) self_here=1; shift ;;
     --exclude-branch)
       [ $# -ge 2 ] && [ -n "$2" ] || usage
-      self="$2"; shift 2 ;;
+      self="$2"; self_here=0; shift 2 ;;
     --) shift; break ;;
     -*) echo "claim-check: unknown argument $1" >&2; usage ;;
     *) break ;;
   esac
 done
 [ $# -ge 1 ] || usage
+# shellcheck source=target.sh
+. "$here/target.sh"
+docket_target_init "$here" "$no_target" || exit 2
+root="$DOCKET_SIDECAR_ROOT"
+backlog="$root/review/BACKLOG.md"
+if [ -n "$DOCKET_TARGET" ]; then
+  if [ "$self_here" -eq 1 ]; then
+    docket_target_contains "$orig" || { echo "claim-check: --self in target mode must run from a worktree of the managed clone $TARGET_DIR (or use --exclude-branch NAME)" >&2; exit 2; }
+    self="$(git -C "$orig" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  fi
+  echo "note: managed-repository target $TARGET_REPO (clone $TARGET_DIR); PRs are matched by head branch only"
+  cd "$TARGET_DIR"
+else
+  cd "$root"
+  [ "$self_here" -eq 0 ] || self="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+fi
+if [ "$self_here" -eq 1 ] && [ -z "$self" ]; then
+  echo "claim-check: --self needs a checked-out branch, but no branch is checked out here (detached HEAD)" >&2; exit 2
+fi
 case "$self" in *\"*|*\\*) echo "claim-check: unsupported character in branch name $self" >&2; exit 2 ;; esac
 tab="$(printf '\t')"
 [ -n "$(git remote)" ] || local_only=1
@@ -55,6 +83,7 @@ if [ -n "$self" ]; then
   self_tip="$(git rev-parse --verify --quiet "refs/heads/$self^{commit}" || true)"
   base_refs="refs/heads/main"
   [ "$local_only" -eq 1 ] || base_refs="refs/remotes/origin/HEAD refs/remotes/origin/main $base_refs"
+  [ -z "$DOCKET_TARGET" ] || base_refs="refs/remotes/$TARGET_REMOTE/$TARGET_BASE refs/heads/$TARGET_BASE"
   for b in $base_refs; do
     base_tip="$(git rev-parse --verify --quiet "$b^{commit}" || true)"
     [ -z "$base_tip" ] || break
@@ -69,28 +98,34 @@ owned() {
   return 0
 }
 
-# Never let an inherited GH_REPO redirect queries to another repository.
-unset GH_REPO
+# Never let an inherited GH_REPO redirect queries to another repository. In
+# target mode every query names the target, and GH_REPO is pinned to it too.
 have_gh=0
-if [ "$local_only" -eq 0 ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh repo view >/dev/null 2>&1; then have_gh=1; fi
+if [ -n "$DOCKET_TARGET" ]; then
+  export GH_REPO="$TARGET_REPO"
+  if [ "$local_only" -eq 0 ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh repo view "$TARGET_REPO" >/dev/null 2>&1; then have_gh=1; fi
+else
+  unset GH_REPO
+  if [ "$local_only" -eq 0 ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh repo view >/dev/null 2>&1; then have_gh=1; fi
+fi
 [ "$local_only" -eq 0 ] || echo "note: local review mode; forge queries are disabled"
 [ "$have_gh" -eq 1 ] || echo "note: no authenticated gh for this repository (no remote, not logged in, or gh missing); pull requests were NOT checked, so this claim check covers branches and worktrees only"
 
 expand() {
   # Print the slug plus any finding slugs its backlog entry maps.
   echo "$1"
-  if [ -f review/BACKLOG.md ]; then
+  if [ -f "$backlog" ]; then
     awk -v slug="$1" '
       /^- / { inblock = ($0 ~ "^- \\[[A-Z][A-Z0-9_-]*\\] `" slug "`") }
       inblock && /^  - Findings:/ { s = $0; while (match(s, /`[^`]+`/)) { print substr(s, RSTART + 1, RLENGTH - 2); s = substr(s, RSTART + RLENGTH) } }
-    ' review/BACKLOG.md
+    ' "$backlog"
   fi
 }
 
 # Open PRs headed by the own branch are tagged "own<TAB>sha<TAB>repo<TAB>" by
 # jq; drop_own removes them only for this repository and an owned tip.
 own_pre=""; own_post=""; this_repo=""
-if [ -n "$self" ] && [ "$have_gh" -eq 1 ]; then
+if [ -n "$self" ] && [ "$have_gh" -eq 1 ] && [ -z "$DOCKET_TARGET" ]; then
   own_pre="(if .head.ref == \"$self\" then \"own\\t\\(.head.sha)\\t\\(.head.repo.full_name // \"\")\\t\" else \"\" end) + ("
   own_post=")"
   this_repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
@@ -108,6 +143,28 @@ drop_own() {
 }
 fail_query() { echo "claim-check: hosted PR query failed; ownership remains unverified" >&2; exit 2; }
 
+# Target mode: the branch names docket would create for the slug.
+target_names() {
+  local q
+  if [ -n "$TARGET_BRANCH_PREFIX" ]; then printf '%s%s\n' "$TARGET_BRANCH_PREFIX" "$1"
+  elif [ -n "$queue" ]; then printf '%s/%s\n' "$queue" "$1"
+  else for q in todo review roadmap fix task; do printf '%s/%s\n' "$q" "$1"; done
+  fi
+}
+# PRs in the managed repository headed by one of those names. Each line is
+# state, number, draft, cross-repository, head sha, head branch, merge date,
+# author (- when absent; no field may be empty, since read collapses tabs),
+# title.
+target_prs() {
+  local cand
+  for cand in $(target_names "$1"); do
+    gh pr list --repo "$TARGET_REPO" --head "$cand" --state all --limit 100 \
+      --json number,state,isDraft,isCrossRepository,headRefOid,headRefName,title,mergedAt,author \
+      --jq '.[] | "\(.state)\t\(.number)\t\(.isDraft)\t\(.isCrossRepository)\t\(.headRefOid)\t\(.headRefName)\t\((.mergedAt // "-")[0:10])\t\(.author.login // "-")\t\(.title)"' || return 1
+  done
+}
+me=""; me_known=0
+
 claims=0
 for requested in "$@"; do
   for slug in $(expand "$requested"); do
@@ -116,7 +173,30 @@ for requested in "$@"; do
     echo "$slug" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || { echo "claim-check: slug '$slug' is not lowercase kebab-case" >&2; exit 2; }
     [ "$slug" = "$requested" ] && label="$slug" || label="$slug (finding mapped by $requested)"
     echo "== $label"
-    if [ "$have_gh" -eq 1 ]; then
+    if [ "$have_gh" -eq 1 ] && [ -n "$DOCKET_TARGET" ]; then
+      prs="$(target_prs "$slug")" || fail_query
+      if [ "$me_known" -eq 0 ] && [ -n "$prs" ]; then
+        me="$(gh api user --jq .login 2>/dev/null || true)"; me_known=1
+      fi
+      while IFS="$tab" read -r state num draft cross oid head merged author title; do
+        case "$state" in
+          OPEN)
+            if [ -n "$self" ] && [ "$head" = "$self" ] && [ "$cross" = false ] && owned "$oid"; then continue; fi
+            [ "$draft" = true ] && draft=draft || draft=ready
+            echo "  open PR $TARGET_REPO#$num [$draft] $head: $title"; claims=$((claims + 1)) ;;
+          MERGED|CLOSED)
+            # Without a known login every merged PR counts, the safe side.
+            if [ -n "$me" ] && [ "$author" != "$me" ]; then
+              [ "$state" = MERGED ] && kind=merged || kind=closed
+              echo "  note: $kind PR $TARGET_REPO#$num by $author had head $head: $title"
+            elif [ "$state" = MERGED ]; then
+              echo "  merged PR $TARGET_REPO#$num ($merged) carried this slug: $title"
+              echo "  -> confirm the queue entry is still current (a remainder may have been filed) before claiming"
+              claims=$((claims + 1))
+            fi ;;
+        esac
+      done <<< "$prs"
+    elif [ "$have_gh" -eq 1 ]; then
       # Paginate the forge's pull records directly: search does not index head
       # branches, and indexing delays must not hide a freshly published claim.
       # Open PRs: a claim is a body marker naming the slug or a head branch whose
@@ -166,9 +246,22 @@ for requested in "$@"; do
     # Branches whose last path component is the slug (todo/<slug>, origin/fix/<slug>, <slug>).
     # Whole-component matching: a slug that is a substring of another branch name is not a claim.
     # With --self, refs/heads/<self> is skipped always and a remote copy only when its tip is owned.
-    branches="$(git for-each-ref --format='%(refname)%09%(objectname)' refs/heads refs/remotes 2>/dev/null | while IFS="$tab" read -r ref sha; do
+    # In target mode only the exact names docket would create, locally or on
+    # the target remote, count. One awk pass filters every ref.
+    names=""
+    [ -z "$DOCKET_TARGET" ] || names="$(target_names "$slug" | tr '\n' ' ')"
+    branches="$(git for-each-ref --format='%(refname)%09%(objectname)' refs/heads refs/remotes 2>/dev/null |
+      awk -F "$tab" -v slug="$slug" -v names="$names" -v remote="${TARGET_REMOTE:-}" '
+        BEGIN { n = split(names, a, " "); for (i = 1; i <= n; i++) { want["refs/heads/" a[i]] = 1; want["refs/remotes/" remote "/" a[i]] = 1 } }
+        {
+          if (names != "") { if (!($1 in want)) next }
+          else {
+            s = $1; sub(/^refs\/(heads|remotes)\//, "", s)
+            if (!(s == slug || (length(s) > length(slug) && substr(s, length(s) - length(slug)) == "/" slug))) next
+          }
+          print
+        }' | while IFS="$tab" read -r ref sha; do
       short="${ref#refs/heads/}"; short="${short#refs/remotes/}"
-      echo "$short" | grep -Eq "(^|/)${slug}\$" || continue
       if [ -n "$self" ]; then
         [ "$ref" = "refs/heads/$self" ] && continue
         if [ "${ref#refs/remotes/}" != "$ref" ] && [ "${short#*/}" = "$self" ] && owned "$sha"; then continue; fi
@@ -179,11 +272,13 @@ for requested in "$@"; do
     # Worktrees checked out on such a branch, or whose directory is named <queue>-<slug> or <slug>.
     # The main worktree is never a task worktree: it matches only through its branch, never its directory name.
     # With --self, the worktree checked out on the own branch is skipped.
-    wts="$(git worktree list --porcelain | awk -v brre="^refs/heads/([^/]+/)?${slug}\$" -v dirre="^((todo|review|roadmap|fix|task)-)?${slug}\$" -v own="${self:+refs/heads/$self}" '
-      function flush(   n, parts) {
+    wts="$(git worktree list --porcelain | awk -v brre="^refs/heads/([^/]+/)?${slug}\$" -v dirre="^((todo|review|roadmap|fix|task)-)?${slug}\$" -v own="${self:+refs/heads/$self}" -v names="$names" '
+      BEGIN { k = split(names, a, " "); for (i = 1; i <= k; i++) want["refs/heads/" a[i]] = 1 }
+      function flush(   n, parts, onbranch) {
         if (p == "") return
         n = split(p, parts, "/")
-        if (!(own != "" && b == own) && (b ~ brre || (!ismain && parts[n] ~ dirre))) print p (b != "" ? " [" substr(b, 12) "]" : " (detached)")
+        onbranch = (names != "") ? (b in want) : (b ~ brre)
+        if (!(own != "" && b == own) && (onbranch || (!ismain && parts[n] ~ dirre))) print p (b != "" ? " [" substr(b, 12) "]" : " (detached)")
         p = ""; b = ""
       }
       /^worktree / { flush(); p = substr($0, 10); ismain = (++count == 1) }

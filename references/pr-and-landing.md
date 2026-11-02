@@ -244,6 +244,16 @@ Stack when step N+1 cannot start until step N's code exists and waiting for N to
 - **Never merge a PR whose base is not the default branch.** One repository merged a child into its already-squashed parent branch, orphaning the engine code and forcing a hand cherry-pick onto main. Before any merge: `gh pr view N --json baseRefName,mergeStateStatus`.
 - The `gh stack` extension automates init, rebase, submit and ordered merge for stacks. It consumes issue numbers for stack objects, and `submit --auto` generates titles from branch names, so set titles and bodies afterwards. Native stacking is optional; the rules above hold either way.
 - Expect many force-pushes and draft/ready flips while a stack lands; convert children back to draft while they are being rebased so nobody merges a stale one.
+- In a [managed repository](#landing-in-a-managed-repository) these rules apply unchanged, with `--repo <repo>` on each `gh` call, provided the managed repository accepts PRs against branches other than its base.
+
+## Landing in a managed repository
+
+A sidecar's `.docket-target` names a managed repository whose own policies govern its PRs (see [setup](setup.md#7-a-sidecar-for-a-managed-repository)). The unit of work is the same (branch, worktree, change description, independent review), and the managed repository decides how it lands.
+
+- Push the branch to the managed repository itself and open the PR as a draft there: `gh pr create --repo <repo> --base <base> --draft` from the worktree `start-work.sh` made. Contributing through a fork is not yet supported in target mode. The body follows the managed repository's own PR template when it has one. The rules about writing for a future `git log` reader still hold, because squash-merging repositories make the description the commit body. Docket markers and the `Type:` line stay out of the body; record them in the sidecar's `.docket/state-<slug>.md`.
+- Never push to the managed repository's base, and never use `land-local.sh` there. The merge is the managed repository's process: its required reviews, its CI and its merge button or merge bot.
+- Without a `land_comment`, the user merges through that process. With one, posting the comment is the landing action, so it is the user's unless delegated in the turn or the sidecar's `AGENTS.md`, like any hosted merge. Merge bots of this kind commonly rebase the PR onto the current base and run CI there before squashing, which covers docket's current-base landing requirement without a manual rebase. Many abandon the merge when the branch changes after the comment, so the branch is frozen from the comment until the PR merges or the bot reports a failure: no pushes, rebases or force-pushes in that window.
+- After it merges, run `bash docket/scripts/cleanup-landed.sh` from the sidecar, then again with `--apply`. Landing is proved by the merged PR in the managed repository at the branch's exact tip, as in hosted mode; only branches `start-work.sh` marked as docket's in the managed clone are touched, and its base never is.
 
 ## After landing: cleanup
 

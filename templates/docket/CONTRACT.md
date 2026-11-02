@@ -20,6 +20,24 @@ report the blocker; do not bypass its hosted review or landing policy.
 Without push authority, keep the same local artifacts pending
 publication.
 
+## Managed repository
+
+A sidecar repository holds docket, the queues and plans for work in a
+separate managed repository that docket cannot be installed in. Its
+tracked `.docket-target` file (format in `docket/scripts/target.sh`)
+names the managed repository and its local clone. `claim-check.sh`,
+`start-work.sh` and `cleanup-landed.sh` then work on branches and
+worktrees in that clone and PRs in that repository, matched by head
+branch; `review-due.sh` resolves commits there. From a managed
+worktree, run the sidecar's scripts by absolute path. Pass `--no-target`
+for work on the sidecar itself, and set `DOCKET_TARGET_FILE` only per
+command. The managed repository's template, CI and merge process govern
+its PRs; docket markers stay out of their bodies. Push branches to the
+managed repository itself (forks are not supported), never to its base.
+Its configured `land_comment`, when posted, merges, so it stays the
+user's unless delegated; after posting it, leave the branch untouched
+until the PR merges or the merge fails.
+
 ## Workflow
 
 - Branch `<queue>/<slug>` for queued work (`todo/`, `review/`,
