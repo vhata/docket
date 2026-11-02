@@ -281,6 +281,20 @@ Type: docs
 reject 'wide body message' 'no work-tracking markers found' bash "$markers" --body body.md --base "$base" --head "$base" --branch task/direct --strict
 grep -Fq 'no well-formed markers' "$fixture/result.log" && { echo 'scripts-test: a wide body blamed its markers' >&2; exit 1; }
 
+# Finding membership: a claimed finding is found in an entry present at both
+# base and head however long the entry is. The padding makes the first entry
+# outrun a pipe buffer, so a grep -q reading from a pipe would exit on the
+# early match and leave the producer to die of SIGPIPE, which pipefail turns
+# into a miss.
+{
+  printf '# Review backlog\n\n## P2 Normal\n\n- [CORE] `long-batch` **Fix the reviewed batch.**\n  - Source: scripts regression fixture\n  - Findings: `early-finding`\n'
+  awk 'BEGIN { for (i = 0; i < 3000; i++) printf "  - Evidence line %05d, padding the entry past the size of a pipe buffer.\n", i }'
+} > review/BACKLOG.md
+git add review/BACKLOG.md
+git commit --quiet -m 'Long backlog entry fixture'
+printf '## Why\n\nA reviewed fix.\n\nType: fix\nClaims review backlog: long-batch\nClaims review finding: early-finding\n' > body.md
+pass 'finding in a long entry at base and head' bash "$markers" --body body.md --base HEAD --head HEAD --branch fix/long-batch --strict
+
 # pr-labels.sh: labels from the branch, the type line and the claimed or
 # resolved entries, looked up at base and then at head.
 labels="docket/scripts/pr-labels.sh"
@@ -789,6 +803,26 @@ grep -q 'node_modules' "$fixture/result.log" && grep 'node_modules' "$fixture/re
 pass 'cleanup-landed --apply --discard-ignored' in_dir "$fixture/.worktrees/runner" env PATH="$fixture/bin:$PATH" FIXTURE_MERGED="$merged" bash "$cleanup" --apply --discard-ignored
 [ ! -d "$fixture/.worktrees/landed-record" ] || { echo 'scripts-test: --discard-ignored kept the record-holding worktree' >&2; exit 1; }
 [ ! -d "$fixture/.worktrees/landed-log" ] || { echo 'scripts-test: --discard-ignored kept the log-holding worktree' >&2; exit 1; }
+# A long status listing is read whole: one modified tracked file ahead of
+# thousands of ignored ones still keeps the worktree, even with
+# --discard-ignored, and the list of ignored files stops at ten lines without
+# ending the run. Reading the listing through a pipe into grep -q or head
+# would kill its writer with SIGPIPE under pipefail.
+busy="$fixture/.worktrees/landed-busy"
+git worktree add --quiet -b landed-busy "$busy" main
+git -C "$busy" commit --quiet --allow-empty -m 'Landed, busy worktree'
+mkdir -p "$busy/results"
+i=0
+while [ "$i" -lt 3000 ]; do : > "$busy/results/run-output-with-a-long-enough-name-$i.log"; i=$((i + 1)); done
+echo changed >> "$busy/TODO.md"
+pass 'cleanup-landed with a long status listing' in_dir "$fixture/.worktrees/runner" env PATH="$fixture/bin:$PATH" FIXTURE_MERGED=landed-busy bash "$cleanup" --discard-ignored
+expect 'a modified file ahead of many ignored ones was missed' 'has modified or untracked files'
+git -C "$busy" checkout --quiet -- TODO.md
+pass 'cleanup-landed with many ignored files' in_dir "$fixture/.worktrees/runner" env PATH="$fixture/bin:$PATH" FIXTURE_MERGED=landed-busy bash "$cleanup"
+expect 'many ignored files ended the run early' '0 branch(es) would be removed, 1 kept for inspection'
+[ "$(grep -c '^    .*results/run-output' "$fixture/result.log")" -eq 10 ] || { echo 'scripts-test: cleanup-landed did not list exactly ten ignored files' >&2; cat "$fixture/result.log" >&2; exit 1; }
+git worktree remove --force "$busy"
+git branch --quiet -D landed-busy
 git worktree remove --force "$fixture/.worktrees/runner"
 git branch --quiet -D landed-dirty landed-main runner
 
