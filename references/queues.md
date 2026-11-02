@@ -22,9 +22,10 @@ description validation, approval and landing.
   - Related: `other-slug`                                          (optional)
   - Findings: `finding-slug`, `finding-slug`                       (review backlog only, required)
   - Remaining from: `original-slug` / Split from: `original-slug` (lineage, when applicable)
+  - PR: owner/repo#N, owner/repo#M                                 (sidecar only: the managed PRs that claim it)
 ```
 
-Slugs are unique across all queues and never change when an entry moves. `Blocked by:` and `Related:` may also name an entry in another repository's queue as `` `repo:slug` `` (or `` `owner/repo:slug` `` where the bare name is ambiguous); the validator leaves those unresolved, and rejects them in `Depends on:`, which orders work within one repository. One area marker per entry; the repository defines its area list. Free-form indented lines for evidence are fine. `bash docket/scripts/check-queues.sh` validates all of this.
+Slugs are unique across all queues and never change when an entry moves. `Blocked by:` and `Related:` may also name an entry in another repository's queue as `` `repo:slug` `` (or `` `owner/repo:slug` `` where the bare name is ambiguous); the validator leaves those unresolved, and rejects them in `Depends on:`, which orders work within one repository. One area marker per entry; the repository defines its area list. Free-form indented lines for evidence are fine. A `PR:` line is how a sidecar records a claim on work in its managed repository, whose PR bodies carry no markers; one line per entry, `owner/repo#N` items separated by commas, and a repository other than the one in `.docket-target` is a warning. `bash docket/scripts/check-queues.sh` validates all of this.
 
 ## Stages and priorities
 
@@ -110,7 +111,8 @@ Review-close triage of findings is a separate step owned by codebase reviews (se
    Local review ends with explicit user approval and a squash landing,
    followed by cleanup. Missing forge access or push authority holds
    hosted work for publication; it does not permit local landing.
-5. Abandoning the work releases the claim: close the draft and leave the entry untouched. Remove the worktree and branch only when the worktree is clean and the branch holds no unmerged work; otherwise ask, because deleting unmerged work is the user's call.
+5. In a sidecar, the claim record is the queue entry. Once the managed PR is open, add `PR: <repo>#<number>` to the entry as a direct commit to the sidecar's main and push it; `start-work.sh` prints the exact line. `claim-check.sh` reports any entry with a `PR:` line as claimed, in every mode, and as a note only on the worker's own `--self` or `--exclude-branch` recheck. Pull the sidecar's main before checking, because the line is only visible once fetched.
+6. Abandoning the work releases the claim (in a sidecar, also drop the `PR:` line): close the draft and leave the entry untouched. Remove the worktree and branch only when the worktree is clean and the branch holds no unmerged work; otherwise ask, because deleting unmerged work is the user's call.
 
 ## Markers
 
@@ -160,6 +162,7 @@ complete entry, not the part that was convenient.
 - **Partial**: remove the original; add a remainder with a new slug, reassessed stage, priority and area, and a ``Remaining from: `original-slug` `` line (the validator reads the backticked slug). Use the `Partially resolves` and `Remaining` pair. For review work the remainder lists only the still-open findings; never mark the others resolved. A remainder records what is left; it cannot waive an acceptance condition the original carried, so a PR that delivers a subset is ready only if the entry or the user allows separate delivery of that subset.
 - **Split for parallel subsets**: land the split as a direct commit to `main` first (bookkeeping, see [pr-and-landing](pr-and-landing.md#direct-to-main)). Keep the original slug on one narrowed entry; give the other subsets new slugs with a ``Split from: `original-slug` `` line. Only then can several agents claim subsets. Splitting is bookkeeping, not resolution.
 - **Rejected or obsolete**: remove with the reason stated in the PR.
+- **In a sidecar**: the managed PR cannot edit the sidecar's queues, so the resolution is a direct commit to the sidecar's main after the PR merges. It removes the entry (or files the remainder, as above), and its message carries the marker that a PR body would have carried, such as `Resolves TODO: <slug>`, plus the PR reference (`owner/repo#N`). `cleanup-landed.sh` in target mode lists every entry whose `PR:` PRs have all closed: "resolve" when one merged, "release" when none did. It reports and never edits the queues.
 
 A review finding is not closed by its fix PR. The fix PR supplies evidence (code, validation scenario, reviewer confirmation); the next incremental review records closure. Review backlog entries, which are scheduling units, are removed by the fix PR like any other entry.
 

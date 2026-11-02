@@ -2,8 +2,10 @@
 # Managed-repository target: lets a sidecar repository's docket scripts work
 # in a separate repository (the managed repository) that docket is not
 # installed in. Sourced by start-work.sh, claim-check.sh, cleanup-landed.sh
-# and review-due.sh; run directly, it validates the target file and prints the
-# resolved settings.
+# and review-due.sh, which act on the managed repository; by
+# check-pr-markers.sh and pr-labels.sh, which stand down there; and by
+# check-queues.sh, which reads only the repo key. Run directly, it validates
+# the target file and prints the resolved settings.
 #
 # Usage: bash docket/scripts/target.sh [--no-target]
 #
@@ -44,6 +46,10 @@
 #     (the clone's absolute toplevel), TARGET_BASE, TARGET_REMOTE,
 #     TARGET_BRANCH_PREFIX, TARGET_WORKTREE_DIR (absolute) and
 #     TARGET_LAND_COMMENT. Returns 2 after printing an error.
+#   docket_target_repo <sidecar-root>
+#     Prints the repo value of DOCKET_TARGET_FILE or
+#     <sidecar-root>/.docket-target, or nothing without a file or a repo
+#     line. Validates nothing else and needs no clone, so CI can use it.
 #   docket_target_branch <queue> <slug>
 #     Prints the branch name for a unit of work in target mode.
 #   docket_target_contains <path>
@@ -175,6 +181,21 @@ docket_target_load() {
   return 0
 }
 
+docket_target_repo() {
+  local file="${DOCKET_TARGET_FILE:-$1/.docket-target}" line key
+  [ -f "$file" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="$(docket_target_trim "$line")"
+    case "$line" in ""|"#"*) continue ;; esac
+    line="${line%%[[:space:]]#*}"
+    case "$line" in *=*) ;; *) continue ;; esac
+    key="$(docket_target_trim "${line%%=*}")"
+    [ "$key" = repo ] || continue
+    printf '%s\n' "$(docket_target_trim "${line#*=}")"
+    return 0
+  done < "$file"
+}
+
 docket_target_init() {
   local script_dir="$1" no_target="${2:-}" here_top script_top
   docket_target_reset
@@ -217,7 +238,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   case "${1:-}" in
     --no-target) opt=--no-target ;;
     "") ;;
-    *) sed -n '2,8p' "$0"; exit 2 ;;
+    *) sed -n '2,10p' "$0"; exit 2 ;;
   esac
   docket_target_init "$(cd "$(dirname "$0")" && pwd)" "$opt" || exit 2
   if [ -z "$DOCKET_TARGET" ]; then

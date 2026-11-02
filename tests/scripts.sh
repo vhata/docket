@@ -1502,4 +1502,166 @@ grep -q '^pr list' "$tgt_log" || { echo 'scripts-test: target mode made no PR qu
 cd "$fixture"
 # ==== End of managed-repository target fixtures ============================
 
+# ==== Sidecar claims and resolution (PR: lines) ============================
+# In a sidecar the queue entry records the claim with a "PR: owner/repo#N"
+# line; check-queues.sh validates it, claim-check.sh reports it,
+# start-work.sh says how to add it, cleanup-landed.sh reports entries whose
+# PRs have finished, and check-pr-markers.sh and pr-labels.sh stand down for
+# the managed repository's PRs while --no-target keeps them working for the
+# sidecar's own. Reuses the sidecar, the managed clone and the fake forge
+# above.
+cd "$sidecar"
+cat > TODO.md <<'QUEUE'
+# TODO
+
+## Ready for separate work
+
+### P2 Normal
+
+- [CORE] `sc-claimed` **Claimed through the managed repository.**
+  - Source: scripts regression fixture
+  - PR: owner/managed#30
+- [CORE] `sc-open` **Still in review.**
+  - Source: scripts regression fixture
+  - PR: owner/managed#31
+- [CORE] `sc-closed` **Abandoned in the managed repository.**
+  - Source: scripts regression fixture
+  - PR: owner/managed#32
+- [CORE] `sc-mixed` **Split over two PRs, one still open.**
+  - Source: scripts regression fixture
+  - PR: owner/managed#30, owner/managed#31
+- [CORE] `sc-free` **Not yet claimed.**
+  - Source: scripts regression fixture
+QUEUE
+cat >> review/BACKLOG.md <<'QUEUE'
+  - PR: owner/managed#30
+QUEUE
+git add TODO.md review/BACKLOG.md
+git commit --quiet -m 'Sidecar queue with PR lines'
+
+# check-queues.sh: the PR: line's format in any mode, and in a sidecar the
+# repository, read from the target file without the clone.
+pass 'PR lines in a sidecar queue' bash docket/scripts/check-queues.sh --strict
+sc_q() {
+  # sc_q LINE: a one-entry queue whose entry carries LINE.
+  printf '# TODO\n\n## Ready for separate work\n\n### P2 Normal\n\n- [CORE] `sc-one` **Outcome.**\n  - Source: fixture\n%s\n' "$1" > "$tgt/sc-todo.md"
+}
+for bad_line in '  - PR: #12' '  - PR: owner/managed' '  - PR: owner/managed#0' '  - PR: owner/managed#12 (draft)' '  - PR: owner/managed#12; owner/managed#13'; do
+  sc_q "$bad_line"
+  reject "malformed PR line: $bad_line" 'expected owner/repo#N, comma-separated' bash docket/scripts/check-queues.sh --todo "$tgt/sc-todo.md"
+done
+sc_q '  - PR:'
+reject 'empty PR line' 'empty PR line for `sc-one`' bash docket/scripts/check-queues.sh --todo "$tgt/sc-todo.md"
+sc_q "$(printf '  - PR: owner/managed#12\n  - PR: owner/managed#13')"
+reject 'two PR lines' '`sc-one` has a second PR line' bash docket/scripts/check-queues.sh --todo "$tgt/sc-todo.md"
+sc_q '  - PR: owner/managed#12,owner/managed#13 , owner/managed#14'
+pass 'PR line spacing' bash docket/scripts/check-queues.sh --todo "$tgt/sc-todo.md" --strict
+sc_q '  - PR: other/repo#5'
+pass 'PR outside the target warns' bash docket/scripts/check-queues.sh --todo "$tgt/sc-todo.md"
+expect 'no warning for a PR outside the target' 'warning: PR line for `sc-one` names other/repo#5, outside the managed repository owner/managed'
+reject 'PR outside the target under --strict' 'outside the managed repository owner/managed' bash docket/scripts/check-queues.sh --todo "$tgt/sc-todo.md" --strict
+pass 'PR outside the target with --no-target' bash docket/scripts/check-queues.sh --todo "$tgt/sc-todo.md" --strict --no-target
+# CI has no managed clone: the repo line alone drives the warning.
+printf 'repo = owner/managed  # trailing comment\ndir=%s/no-clone-here\n' "$tgt" > "$tgt/ci.target"
+reject 'PR repo check without the clone' 'outside the managed repository owner/managed' env DOCKET_TARGET_FILE="$tgt/ci.target" bash docket/scripts/check-queues.sh --todo "$tgt/sc-todo.md" --strict
+# Without a target file only the format is checked.
+pass 'PR line in an ordinary repository' in_dir "$fixture" bash "$fixture/docket/scripts/check-queues.sh" --todo "$tgt/sc-todo.md" --strict
+sc_q '  - PR: owner#5'
+reject 'malformed PR line in an ordinary repository' 'expected owner/repo#N' in_dir "$fixture" bash "$fixture/docket/scripts/check-queues.sh" --todo "$tgt/sc-todo.md"
+
+# claim-check.sh: a PR: line is a claim, in target mode and with --no-target,
+# and only a note for the worker's own recheck.
+: > "$prs"
+reject 'claim recorded by a PR line' 'queue entry in TODO.md is claimed by PR: owner/managed#30' tgh bash "$tclaim" sc-claimed
+reject 'backlog claim recorded by a PR line' 'queue entry in review/BACKLOG.md is claimed by PR: owner/managed#30' tgh bash "$tclaim" tgt-backlog
+reject 'PR line claim with --no-target' 'queue entry in TODO.md is claimed by PR: owner/managed#30' tgh bash "$tclaim" --no-target --local sc-claimed
+pass 'PR line on the own recheck' tgh bash "$tclaim" --exclude-branch todo/sc-claimed sc-claimed
+expect 'own recheck did not note the PR line' 'note: the entry in TODO.md records PR: owner/managed#30; taken to be your own'
+pass 'entry without a PR line' tgh bash "$tclaim" sc-free
+
+# start-work.sh: the next steps name the PR: line and the sidecar file.
+pass 'target start-work names the PR line' tgh bash "$sw" todo sc-free
+expect 'start-work did not give the PR line' "then record the claim: add '  - PR: owner/managed#<number>' to the 'sc-free' entry in the sidecar's TODO.md as a direct commit to the sidecar's main"
+expect 'start-work did not keep markers in the state file' "the 'Claims TODO: sc-free' marker, the Type: line and state in the sidecar's .docket/state-sc-free.md"
+pass 'target start-work for a backlog entry' tgh bash "$sw" review sc-review --no-check
+expect 'start-work named the wrong queue file' "to the 'sc-review' entry in the sidecar's review/BACKLOG.md"
+pass 'target start-work for a direct task' tgh bash "$sw" task sc-task
+grep -q 'record the claim' "$fixture/result.log" && { echo 'scripts-test: start-work asked for a PR line without a queue entry' >&2; exit 1; }
+for b in todo/sc-free review/sc-review task/sc-task; do
+  git -C "$managed" worktree remove --force "$managed-worktrees/${b%%/*}-${b#*/}"
+  git -C "$managed" branch --quiet -D "$b"
+done
+
+# cleanup-landed.sh: entries whose target PRs all closed are listed, never
+# edited. A second fake answers "pr view" from FIXTURE_VIEW_PRS.
+mkdir -p "$tgt/viewbin"
+cat > "$tgt/viewbin/gh" <<'GH'
+#!/usr/bin/env bash
+if [ "$1 $2" = 'pr view' ]; then
+  printf '%s | GH_REPO=%s\n' "$*" "${GH_REPO:-}" >> "$FIXTURE_GH_LOG"
+  num="$3"; shift 3; repo=""
+  while [ $# -gt 0 ]; do case "$1" in --repo) repo="$2"; shift 2 ;; *) shift ;; esac; done
+  [ "$repo" = owner/managed ] && [ "${GH_REPO:-}" = owner/managed ] || { echo 'VIOLATION pr view without the target' >> "$FIXTURE_GH_LOG"; exit 3; }
+  awk -F '\t' -v n="$num" '$1 == n { print $2; found = 1 } END { exit !found }' "$FIXTURE_VIEW_PRS"
+  exit
+fi
+exec "$(dirname "$0")/../bin/gh" "$@"
+GH
+chmod +x "$tgt/viewbin/gh"
+printf '30\tMERGED\n31\tOPEN\n32\tCLOSED\n' > "$tgt/view.tsv"
+tgv() { tgh env PATH="$tgt/viewbin:$tgt/bin:$PATH" FIXTURE_VIEW_PRS="$tgt/view.tsv" "$@"; }
+before="$(git rev-parse HEAD)"; cp TODO.md "$tgt/todo.before"
+pass 'target cleanup reports finished claims' tgv bash "$tclean"
+expect 'cleanup did not ask to resolve a merged claim' "resolve sc-claimed: owner/managed#30 merged; remove its entry from the sidecar's TODO.md in a direct commit to its main carrying 'Resolves TODO: sc-claimed'"
+expect 'cleanup did not name the backlog marker' "resolve tgt-backlog: owner/managed#30 merged; remove its entry from the sidecar's review/BACKLOG.md in a direct commit to its main carrying 'Resolves review backlog: tgt-backlog'"
+expect 'cleanup did not ask to release a closed claim' "release sc-closed: owner/managed#32 closed unmerged"
+grep -Eq 'sc-open|sc-mixed|sc-free' "$fixture/result.log" && { echo 'scripts-test: cleanup reported an entry whose PR is still open' >&2; cat "$fixture/result.log" >&2; exit 1; }
+[ "$(git rev-parse HEAD)" = "$before" ] && cmp -s TODO.md "$tgt/todo.before" || { echo 'scripts-test: cleanup edited the sidecar queue' >&2; exit 1; }
+pass 'target cleanup --apply reports finished claims' tgv bash "$tclean" --apply
+expect 'cleanup --apply did not report' 'resolve sc-claimed:'
+cmp -s TODO.md "$tgt/todo.before" || { echo 'scripts-test: cleanup --apply edited the sidecar queue' >&2; exit 1; }
+pass 'target cleanup --local' tgv bash "$tclean" --local
+expect 'cleanup --local did not say the claims went unchecked' 'were not checked for resolution'
+pass 'cleanup --no-target ignores PR lines' tgv bash "$tclean" --no-target
+grep -q 'resolve sc-claimed' "$fixture/result.log" && { echo 'scripts-test: cleanup --no-target reported target claims' >&2; exit 1; }
+
+# check-pr-markers.sh and pr-labels.sh stand down in a sidecar, from the
+# sidecar or a managed worktree, without a forge call; --no-target checks the
+# sidecar's own PR.
+printf 'No heading, no markers.\n' > "$tgt/managed-body.md"
+printf '## Why\n\nA sidecar change.\n\nType: docs\n' > "$tgt/sidecar-body.md"
+calls="$(wc -l < "$tgt_log")"
+tmarkers="$sidecar/docket/scripts/check-pr-markers.sh"
+tlabels="$sidecar/docket/scripts/pr-labels.sh"
+pass 'check-pr-markers stands down' tgh bash "$tmarkers" --body "$tgt/managed-body.md" --strict
+expect 'check-pr-markers did not say it stands down' "check-pr-markers: not applicable: owner/managed's PRs follow its own template"
+pass 'check-pr-markers --pr stands down' tgh bash "$tmarkers" --pr 7
+pass 'check-pr-markers stands down in a managed worktree' in_dir "$managed/.wt/todo-tgt-two" tgh bash "$tmarkers" --body "$tgt/managed-body.md"
+expect 'check-pr-markers did not stand down in a managed worktree' 'not applicable'
+pass 'pr-labels stands down' tgh bash "$tlabels" --pr 7 --apply
+expect 'pr-labels did not say it stands down' 'pr-labels: not applicable: docket labels are not used in owner/managed'
+[ "$(wc -l < "$tgt_log")" = "$calls" ] || { echo 'scripts-test: a stood-down script called gh' >&2; tail -n 3 "$tgt_log" >&2; exit 1; }
+reject 'check-pr-markers --no-target checks the sidecar PR' 'description has no "## " headings' tgh bash "$tmarkers" --no-target --body "$tgt/managed-body.md"
+pass 'check-pr-markers --no-target passes a sidecar PR' tgh bash "$tmarkers" --no-target --body "$tgt/sidecar-body.md" --strict
+pass 'pr-labels --no-target labels a sidecar PR' tgh bash "$tlabels" --no-target --body "$tgt/sidecar-body.md" --base main
+expect 'pr-labels --no-target gave no labels' 'type:docs'
+reject 'a bad target still stops check-pr-markers' "bad.target:3: unknown key 'shade'" tgh env DOCKET_TARGET_FILE="$tgt/bad.target" bash "$tmarkers" --body "$tgt/sidecar-body.md"
+
+# ci.sh in the sidecar's CI, which has no managed clone: the queue check reads
+# only the repo line and the markers are checked for the sidecar's own PR.
+mkdir -p "$tgt/cibin"
+printf '#!/usr/bin/env bash\n[ "$1 $2" = "pr view" ] || exit 3\ncat "$FIXTURE_CI_BODY"\n' > "$tgt/cibin/gh"
+chmod +x "$tgt/cibin/gh"
+git update-ref refs/remotes/origin/main HEAD
+sci() { env -u GITHUB_EVENT_PATH PATH="$tgt/cibin:$PATH" DOCKET_TARGET_FILE="$tgt/ci.target" PR=5 BASE=main HEAD_BRANCH=task/sc-docs "$@"; }
+pass 'sidecar ci.sh checks its own PR' sci FIXTURE_CI_BODY="$tgt/sidecar-body.md" bash docket/scripts/ci.sh
+expect 'sidecar ci.sh skipped the markers' 'ci: all checks passed (check-queues, check-links, check-pr-markers)'
+reject 'sidecar ci.sh fails a bad sidecar PR' "check 'check-pr-markers' failed" sci FIXTURE_CI_BODY="$tgt/managed-body.md" bash docket/scripts/ci.sh
+git update-ref -d refs/remotes/origin/main
+
+grep -q VIOLATION "$tgt_log" && { echo 'scripts-test: a sidecar-claims gh call did not name the target' >&2; grep VIOLATION "$tgt_log" >&2; exit 1; }
+grep -q '^pr view 30 ' "$tgt_log" || { echo 'scripts-test: cleanup made no pr view query' >&2; exit 1; }
+cd "$fixture"
+# ==== End of sidecar claims fixtures =======================================
+
 echo 'scripts-test: all checks passed'

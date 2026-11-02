@@ -12,6 +12,9 @@
 #   --exclude-branch NAME  the same exclusion for a named local branch
 # A remote ref or PR with the same branch name but commits you do not have (or
 # from a fork) is another worker's claim and is still reported.
+# A queue entry (TODO.md, review/BACKLOG.md) carrying a "PR:" line is claimed
+# by those pull requests, in any mode; with --self or --exclude-branch it is
+# only a note, taken to be the worker's own PR.
 # A branch, worktree or PR head branch counts when its last path component is
 # the slug (todo/<slug>, origin/fix/<slug>, <slug>); a longer name that merely
 # contains the slug does not. A PR body counts when a marker line names the slug.
@@ -30,7 +33,7 @@
 # repository itself (forks are not supported). --no-target ignores the file.
 set -euo pipefail
 
-usage() { sed -n '2,30p' "$0"; exit 2; }
+usage() { sed -n '2,33p' "$0"; exit 2; }
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 orig="$(pwd)"
 self=""; self_here=0; local_only=0; no_target=""; queue=""
@@ -141,6 +144,15 @@ drop_own() {
     esac
   done
 }
+# The PR: line of the entry for a slug in one queue file, if any.
+queue_pr() {
+  [ -f "$1" ] || return 0
+  awk -v slug="$2" '
+    /^- / { inblock = ($0 ~ "^- \\[[A-Z][A-Z0-9_-]*\\] `" slug "`") ; next }
+    /^#/ { inblock = 0 }
+    inblock && /^  - PR:/ { v = $0; sub(/^  - PR:[ \t]*/, "", v); print v; exit }
+  ' "$1"
+}
 fail_query() { echo "claim-check: hosted PR query failed; ownership remains unverified" >&2; exit 2; }
 
 # Target mode: the branch names docket would create for the slug.
@@ -173,6 +185,16 @@ for requested in "$@"; do
     echo "$slug" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || { echo "claim-check: slug '$slug' is not lowercase kebab-case" >&2; exit 2; }
     [ "$slug" = "$requested" ] && label="$slug" || label="$slug (finding mapped by $requested)"
     echo "== $label"
+    for qf in TODO.md review/BACKLOG.md; do
+      recorded="$(queue_pr "$root/$qf" "$slug")"
+      [ -n "$recorded" ] || continue
+      if [ -n "$self" ]; then
+        echo "  note: the entry in $qf records PR: $recorded; taken to be your own (confirm it is)"
+      else
+        echo "  queue entry in $qf is claimed by PR: $recorded"
+        claims=$((claims + 1))
+      fi
+    done
     if [ "$have_gh" -eq 1 ] && [ -n "$DOCKET_TARGET" ]; then
       prs="$(target_prs "$slug")" || fail_query
       if [ "$me_known" -eq 0 ] && [ -n "$prs" ]; then

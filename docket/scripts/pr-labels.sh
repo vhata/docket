@@ -4,8 +4,8 @@
 # without parsing its body, and optionally apply them.
 #
 # Usage:
-#   docket/scripts/pr-labels.sh --body FILE [--branch NAME] [--base REF] [--head REF]
-#   docket/scripts/pr-labels.sh --pr PR [--apply] [--base REF] [--head REF]
+#   docket/scripts/pr-labels.sh --body FILE [--branch NAME] [--base REF] [--head REF] [--no-target]
+#   docket/scripts/pr-labels.sh --pr PR [--apply] [--base REF] [--head REF] [--no-target]
 #
 # PR is anything gh accepts: a number, a URL or a branch name. Defaults:
 # --base origin/main (with --pr, origin/<the PR's base branch>); --head HEAD
@@ -33,10 +33,16 @@
 # PR; and labels of the forms above that no longer apply are removed. Other
 # labels are never touched. Rerun after changing the Type line or the markers.
 #
+# In a sidecar with a managed-repository target (.docket-target; see
+# target.sh) the script stands down, printing one line and exiting 0, so no
+# docket labels are created in the managed repository; --no-target labels the
+# sidecar's own PRs.
+#
 # Exit 1 when gh fails, 2 on usage errors. Portable to bash 3.2.
 set -euo pipefail
 
 orig="$PWD"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$root"
 abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$orig" "$1" ;; esac; }
@@ -44,7 +50,7 @@ abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$orig" "$1" 
 # Change types; keep in step with check-pr-markers.sh.
 types="feature fix refactor perf docs test tooling review"
 
-body=""; pr=""; base=""; head=""; branch=""; apply=0; todo="TODO.md"; backlog="review/BACKLOG.md"
+body=""; pr=""; base=""; head=""; branch=""; apply=0; todo="TODO.md"; backlog="review/BACKLOG.md"; no_target=""
 while [ $# -gt 0 ]; do
   case "$1" in --body|--pr|--base|--head|--branch|--todo|--backlog)
     [ $# -ge 2 ] || { echo "pr-labels: $1 needs a value" >&2; exit 2; } ;;
@@ -58,11 +64,19 @@ while [ $# -gt 0 ]; do
     --todo) todo="$2"; shift 2 ;;
     --backlog) backlog="$2"; shift 2 ;;
     --apply) apply=1; shift ;;
-    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+    --no-target) no_target=--no-target; shift ;;
+    -h|--help) sed -n '2,41p' "$0"; exit 0 ;;
     *) echo "pr-labels: unknown argument $1" >&2; exit 2 ;;
   esac
 done
 [ "$apply" -eq 0 ] || [ -n "$pr" ] || { echo "pr-labels: --apply needs --pr" >&2; exit 2; }
+# shellcheck source=target.sh
+. "$here/target.sh"
+docket_target_init "$here" "$no_target" || exit 2
+if [ -n "$DOCKET_TARGET" ]; then
+  echo "pr-labels: not applicable: docket labels are not used in $TARGET_REPO, whose PRs follow its own process (pass --no-target for a sidecar PR)"
+  exit 0
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

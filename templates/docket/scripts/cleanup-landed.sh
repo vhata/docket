@@ -26,7 +26,11 @@
 #   landing is proved by a merged PR in the target repository; --empty measures
 #   against <remote>/<base>; the base defaults to the target's and is never
 #   deleted; deleting a branch also removes its marker; and --apply fetches and
-#   prunes the target's remote. --no-target ignores the target file.
+#   prunes the target's remote. It also reads the "PR:" lines in the
+#   sidecar's TODO.md and review/BACKLOG.md and lists each entry whose pull
+#   requests in the target have all closed: "resolve" when one merged (remove
+#   the entry in a direct sidecar commit), "release" when none did. It never
+#   edits the queues. --no-target ignores the target file.
 set -euo pipefail
 
 # Ignored paths whose last component matches this are reproducible build or
@@ -55,7 +59,7 @@ while [ $# -gt 0 ]; do
     --base) base="$2"; shift 2 ;;
     --empty) empty=1; shift ;;
     --discard-ignored) discard_ignored=1; shift ;;
-    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
     *) echo "cleanup-landed: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -213,6 +217,45 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   removed=$((removed + 1))
 done
 echo "cleanup-landed: $removed branch(es) $( [ "$apply" -eq 1 ] && echo removed || echo 'would be removed'), $kept kept for inspection"
+
+# Target mode: entries the sidecar's queues mark as claimed by PRs in the
+# target, and whether those PRs have finished. Reported only; the resolution
+# is a direct commit to the sidecar's main.
+if [ -n "$DOCKET_TARGET" ]; then
+  claimed="$(for qf in TODO.md review/BACKLOG.md; do
+    [ -f "$DOCKET_SIDECAR_ROOT/$qf" ] || continue
+    awk -v qf="$qf" '
+      /^- \[[A-Z][A-Z0-9_-]*\] `[a-z0-9][a-z0-9-]*`/ { s = $0; sub(/^- \[[A-Z][A-Z0-9_-]*\] `/, "", s); sub(/`.*/, "", s); next }
+      /^#/ || /^- / { s = "" }
+      s != "" && /^  - PR:/ { v = $0; sub(/^  - PR:[ \t]*/, "", v); print qf "\t" s "\t" v; s = "" }
+    ' "$DOCKET_SIDECAR_ROOT/$qf"
+  done)"
+  if [ -n "$claimed" ] && [ "$have_gh" -eq 0 ]; then
+    echo "note: the sidecar's queues record PRs, but merged-PR detection is off; their entries were not checked for resolution"
+  elif [ -n "$claimed" ]; then
+    while IFS="$(printf '\t')" read -r qf slug refs; do
+      open=""; merged=""; closed=""
+      for ref in $(printf '%s\n' "$refs" | tr ',' ' '); do
+        [ "${ref%%#*}" = "$TARGET_REPO" ] || continue
+        if ! state="$(gh pr view "${ref##*#}" --repo "$TARGET_REPO" --json state --jq .state 2>/dev/null < /dev/null)"; then
+          open="$open $ref"; echo "note: could not read $ref for $slug"; continue
+        fi
+        case "$state" in
+          MERGED) merged="$merged $ref" ;;
+          CLOSED) closed="$closed $ref" ;;
+          *) open="$open $ref" ;;
+        esac
+      done
+      [ -z "$open" ] || continue
+      [ "$qf" = TODO.md ] && marker="Resolves TODO: $slug" || marker="Resolves review backlog: $slug"
+      if [ -n "$merged" ]; then
+        echo "resolve $slug:$merged merged; remove its entry from the sidecar's $qf in a direct commit to its main carrying '$marker' and the PR reference"
+      elif [ -n "$closed" ]; then
+        echo "release $slug:$closed closed unmerged; drop the PR: line from the sidecar's $qf, or record the replacement PR"
+      fi
+    done <<< "$claimed"
+  fi
+fi
 stale="$(git worktree list --porcelain | grep -c '^prunable' || true)"
 if [ "$stale" -gt 0 ]; then
   if [ "$apply" -eq 1 ]; then git worktree prune; echo "cleanup-landed: pruned $stale stale worktree registration(s) (directories were already gone)"

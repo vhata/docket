@@ -14,10 +14,11 @@
 # after cleanup and garbage collection; it is local audit state, not a branch.
 # Failure after squash/commit leaves the state for inspection; never retry
 # blindly, reset the base, or discard task evidence to recover automatically.
+# It lands only in the repository it runs in; in a sidecar, its own work.
 set -euo pipefail
 
 fail() { echo "land-local: $*" >&2; exit 1; }
-usage() { sed -n '2,16p' "$0"; exit 2; }
+usage() { sed -n '2,17p' "$0"; exit 2; }
 [ $# -gt 0 ] || usage
 case "$1" in -h|--help) sed -n '2,16p' "$0"; exit 0 ;; -*) usage ;; esac
 branch="$1"; shift
@@ -83,7 +84,7 @@ finish() {
 trap finish EXIT
 printf '%s\n\n' "$title" > "$tmp/message"
 cp "$body" "$tmp/body"
-"$here/check-pr-markers.sh" --body "$tmp/body" --base "$old_base" --head "$head" --branch "$branch" --strict
+"$here/check-pr-markers.sh" --no-target --body "$tmp/body" --base "$old_base" --head "$head" --branch "$branch" --strict
 cat "$tmp/body" >> "$tmp/message"
 [ -z "$(tail -c 1 "$tmp/message")" ] || printf '\n' >> "$tmp/message"
 # Ref and cleanliness checks are repeated immediately before changing the base.

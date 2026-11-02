@@ -9,8 +9,8 @@
 # are at most 72 characters (warning).
 #
 # Usage:
-#   docket/scripts/check-pr-markers.sh --body FILE [--base REF] [--head REF] [--todo PATH] [--backlog PATH] [--strict] [--local]
-#   docket/scripts/check-pr-markers.sh --pr NUMBER [--base REF] [--head REF] [--strict]
+#   docket/scripts/check-pr-markers.sh --body FILE [--base REF] [--head REF] [--todo PATH] [--backlog PATH] [--strict] [--local] [--no-target]
+#   docket/scripts/check-pr-markers.sh --pr NUMBER [--base REF] [--head REF] [--strict] [--no-target]
 #
 # Defaults: --base origin/main (main without remotes or with --local), --head HEAD,
 # TODO.md, review/BACKLOG.md. --branch NAME (default: the head's branch) enables
@@ -19,6 +19,11 @@
 # or pass refs explicitly. In CI on a pull_request event use --base
 # "origin/$GITHUB_BASE_REF" and --head HEAD (the merge commit). --strict
 # turns warnings into errors. --local never queries a forge; use --body.
+#
+# In a sidecar with a managed-repository target (.docket-target; see
+# target.sh) the managed repository's PRs carry no markers, so the script
+# stands down: it prints one line and exits 0. --no-target checks a
+# description for the sidecar's own PR, as ci.sh and land-local.sh do.
 #
 # Marker vocabulary (one per line, at the start of the line rather than in a
 # list or quote; no backticks, no trailing punctuation):
@@ -45,12 +50,13 @@
 set -euo pipefail
 
 orig="$PWD"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$root"
 # Make a path given on the command line absolute relative to the caller's directory.
 abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$orig" "$1" ;; esac; }
 
-body=""; pr=""; base="origin/main"; head="HEAD"; todo="TODO.md"; backlog="review/BACKLOG.md"; branch=""; strict=0; local_only=0; explicit_base=0
+body=""; pr=""; base="origin/main"; head="HEAD"; todo="TODO.md"; backlog="review/BACKLOG.md"; branch=""; strict=0; local_only=0; explicit_base=0; no_target=
 while [ $# -gt 0 ]; do
   case "$1" in
     --body) body="$(abs "$2")"; shift 2 ;;
@@ -62,10 +68,18 @@ while [ $# -gt 0 ]; do
     --branch) branch="$2"; shift 2 ;;
     --strict) strict=1; shift ;;
     --local) local_only=1; shift ;;
-    -h|--help) sed -n '2,44p' "$0"; exit 0 ;;
+    --no-target) no_target=--no-target; shift ;;
+    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
     *) echo "check-pr-markers: unknown argument $1" >&2; exit 2 ;;
   esac
 done
+# shellcheck source=target.sh
+. "$here/target.sh"
+docket_target_init "$here" "$no_target" || exit 2
+if [ -n "$DOCKET_TARGET" ]; then
+  echo "check-pr-markers: not applicable: $TARGET_REPO's PRs follow its own template and carry no docket markers; the sidecar's queue records the claim (pass --no-target for a sidecar PR)"
+  exit 0
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
