@@ -1413,6 +1413,16 @@ git -C "$managed" remote add fileurl file:///me/managed.git
 git -C "$managed" remote add scpport git@github.com:443/managed.git
 git -C "$managed" remote add scphost git@github.com:me.example/managed.git
 git -C "$managed" remote add colonpath "$tgt/x:me/managed.git"
+git -C "$managed" remote add samepath "$(git -C "$managed" remote get-url origin)"
+git -C "$managed" remote add dblslash https://github.com//Owner/managed
+git -C "$managed" remote add trailslash https://github.com/owner/managed//
+git -C "$managed" remote add scpslash git@github.com:/owner/managed.git
+git -C "$managed" remote add dblbob https://github.com//bob/managed
+git -C "$managed" remote add scpabs git@git.example:/srv/git/managed.git
+git -C "$managed" remote add twinbase "$tgt/fetchonly.git"
+git -C "$managed" remote set-url --push twinbase "$tgt/pushonly.git"
+git -C "$managed" remote add pushtwin "$tgt/pushonly.git/"
+git -C "$managed" remote add fetchtwin "$tgt//fetchonly.git"
 printf 'repo=owner/managed\ndir=%s\npush_remote=ghfork\n' "$managed" > "$tgt/derived.target"
 pass 'target with a fork owner in its URL' env DOCKET_TARGET_FILE="$tgt/derived.target" bash "$tshow"
 expect 'the fork owner was not taken from its URL' 'push: ghfork, the fork owned by Me'
@@ -1434,6 +1444,14 @@ bad 'push_owner not an account name' "bad.target:3: push_owner must be a forge a
 bad 'fork owner not in the URL' "cannot tell the fork owner from push_remote 'bare' (managed-only); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=bare\n"
 bad 'push remote that is the managed repository' "push_remote 'same' (git@github.com:Owner/managed.git) is owner/managed itself, not a fork" "repo=owner/managed\ndir=$managed\npush_remote=same\n"
 bad 'managed repository as push remote with push_owner' "push_remote 'same' (git@github.com:Owner/managed.git) is owner/managed itself, not a fork" "repo=owner/managed\ndir=$managed\npush_remote=same\npush_owner=alice\n"
+bad 'push remote sharing the managed remote URL' "has the URL of remote 'origin', not a fork's" "repo=owner/managed\ndir=$managed\npush_remote=samepath\npush_owner=me\n"
+bad 'push remote sharing the managed remote push URL' "push_remote 'pushtwin' ($tgt/pushonly.git/) has the URL of remote 'twinbase'" "repo=owner/managed\ndir=$managed\nremote=twinbase\npush_remote=pushtwin\npush_owner=me\n"
+bad 'push remote sharing the managed remote fetch URL' "push_remote 'fetchtwin' ($tgt//fetchonly.git) has the URL of remote 'twinbase'" "repo=owner/managed\ndir=$managed\nremote=twinbase\npush_remote=fetchtwin\npush_owner=me\n"
+bad 'managed repository with a doubled slash' "push_remote 'dblslash' (https://github.com//Owner/managed) is owner/managed itself, not a fork" "repo=owner/managed\ndir=$managed\npush_remote=dblslash\npush_owner=me\n"
+bad 'managed repository with trailing slashes' "push_remote 'trailslash' (https://github.com/owner/managed//) is owner/managed itself, not a fork" "repo=owner/managed\ndir=$managed\npush_remote=trailslash\npush_owner=me\n"
+bad 'managed repository as a leading-slash scp path' "push_remote 'scpslash' (git@github.com:/owner/managed.git) is owner/managed itself, not a fork" "repo=owner/managed\ndir=$managed\npush_remote=scpslash\npush_owner=me\n"
+bad 'push_owner differing from a doubled-slash URL' "push_owner 'alice' differs from the owner 'bob' in push_remote 'dblbob'" "repo=owner/managed\ndir=$managed\nremote=same\npush_remote=dblbob\npush_owner=alice\n"
+bad 'fork owner from an absolute scp path' "cannot tell the fork owner from push_remote 'scpabs' (git@git.example:/srv/git/managed.git); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=scpabs\n"
 bad 'push_owner differing from the URL on the same forge' "push_owner 'alice' differs from the owner 'bob' in push_remote 'bob' (https://github.com/bob/managed.git)" "repo=owner/managed\ndir=$managed\nremote=same\npush_remote=bob\npush_owner=alice\n"
 bad 'fork owner from a local path' "cannot tell the fork owner from push_remote 'fork' ($tgt/me/managed.git); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=fork\n"
 bad 'fork owner from a file URL' "cannot tell the fork owner from push_remote 'fileurl'" "repo=owner/managed\ndir=$managed\npush_remote=fileurl\n"
@@ -1443,7 +1461,7 @@ bad 'fork owner from an scp host-like path' "cannot tell the fork owner from pus
 bad 'fork owner from a host-only URL' "cannot tell the fork owner from push_remote 'hostonly' (https://github.com/managed); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=hostonly\n"
 bad 'fork owner from a port' "cannot tell the fork owner from push_remote 'port' (https://github.com:443/managed); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=port\n"
 bad 'fork owner from a nested group' "cannot tell the fork owner from push_remote 'nested' (https://gitlab.com/grp/sub/managed); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=nested\n"
-for r in bare same ghfork bob mirror hostonly port nested fileurl scpport scphost colonpath; do git -C "$managed" remote remove "$r"; done
+for r in bare same ghfork bob mirror hostonly port nested fileurl scpport scphost colonpath samepath dblslash trailslash scpslash dblbob scpabs pushtwin twinbase fetchtwin; do git -C "$managed" remote remove "$r"; done
 bad 'missing dir path' 'does not exist' "repo=owner/managed\ndir=$tgt/nowhere\n"
 bad 'dir not a repository' 'is not a git working tree' "repo=owner/managed\ndir=$tgt/bin\n"
 bad 'dir is the sidecar' 'is the sidecar repository itself' "repo=owner/managed\ndir=$sidecar\n"

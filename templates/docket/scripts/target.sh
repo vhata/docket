@@ -27,7 +27,8 @@
 #                         for contributing through a fork; default: remote
 #   push_owner=           the fork's owner on the forge; default: the owner
 #                         in push_remote's push URL when that is a forge URL
-#                         whose path is exactly owner/name and whose owner
+#                         whose path (repeated and leading slashes dropped,
+#                         as forges do) is exactly owner/name and whose owner
 #                         is an account name (no dot, not all digits);
 #                         required otherwise (a local path, a file:// URL,
 #                         a nested group path). Only with a push_remote
@@ -39,8 +40,12 @@
 #   land_comment=         a comment that asks the managed repository's merge
 #                         process to land a PR; empty: the user merges
 # An unknown key, a repeated key, a malformed line or a missing required key
-# is an error naming the file and line. A push_remote whose push URL names
-# repo itself is refused, with or without push_owner.
+# is an error naming the file and line. A push_remote is refused, with or
+# without push_owner, when its push URL is remote's fetch or push URL
+# (ignoring repeated and trailing slashes and a trailing .git), or is a
+# forge URL whose owner/name path is repo. A URL that names the managed
+# repository some other way (another spelling of a local path, a redirect)
+# is not detected.
 #
 # Functions (bash 3.2; git only):
 #   docket_target_init <script_dir> [--no-target]
@@ -129,7 +134,7 @@ docket_target_load() {
   from="$(git -C "$root" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p' || true)"
   if [ -n "$from" ] && [ -d "$from" ]; then from="$(cd "$from" && pwd -P)"; else from="$(cd "$root" && pwd -P)"; fi
   n=0; seen=" "; err=""
-  local repo="" dir="" base="main" remote="origin" prefix="" wtdir="" land="" push="" powner="" url urlrepo uhost
+  local repo="" dir="" base="main" remote="origin" prefix="" wtdir="" land="" push="" powner="" url urlrepo uhost rurl
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
     line="$(docket_target_trim "$line")"
@@ -206,7 +211,11 @@ docket_target_load() {
           err="$file: the clone at $TARGET_DIR has no remote '$push' (push_remote names the fork's remote there)"
         else
           urlrepo="$(docket_target_url_repo "$url")"
-          if [ -n "$urlrepo" ] && [ "$(docket_target_lower "$urlrepo")" = "$(docket_target_lower "$repo")" ]; then
+          rurl="$(docket_target_url_norm "$(git -C "$TARGET_DIR" remote get-url "$remote")")"
+          if [ "$(docket_target_url_norm "$url")" = "$rurl" ] ||
+             [ "$(docket_target_url_norm "$url")" = "$(docket_target_url_norm "$(git -C "$TARGET_DIR" remote get-url --push "$remote")")" ]; then
+            err="$file: push_remote '$push' ($url) has the URL of remote '$remote', not a fork's; omit push_remote to push there"
+          elif [ -n "$urlrepo" ] && [ "$(docket_target_lower "$urlrepo")" = "$(docket_target_lower "$repo")" ]; then
             err="$file: push_remote '$push' ($url) is $repo itself, not a fork; omit push_remote to push there"
           elif [ -z "$powner" ]; then
             if [ -z "$urlrepo" ]; then
@@ -290,19 +299,28 @@ docket_target_lower() {
 }
 
 # The repository path of a forge remote URL: what follows the host in
-# scheme://[user@]host[:port]/path or scp-style [user@]host:path, or nothing
-# for a local path (a '/' before any ':'), a file:// URL or an scp path
-# that starts with '/'.
+# scheme://[user@]host[:port]/path or scp-style [user@]host:path, with
+# repeated and leading slashes dropped, or nothing for a local path (a '/'
+# before any ':') or a file:// URL.
 docket_target_url_path() {
   local u="$1" p
   case "$u" in
     [Ff][Ii][Ll][Ee]://*) return 0 ;;
     *://*) p="${u#*://}"; case "$p" in */*) p="${p#*/}" ;; *) return 0 ;; esac ;;
-    *:*) case "${u%%:*}" in *[/\\]*) return 0 ;; esac; p="${u#*:}"
-         case "$p" in /*) return 0 ;; esac ;;
+    *:*) case "${u%%:*}" in *[/\\]*) return 0 ;; esac; p="${u#*:}" ;;
     *) return 0 ;;
   esac
+  # Forges ignore repeated and leading slashes in the path.
+  p="$(printf '%s' "$p" | tr -s /)"; p="${p#/}"
   printf '%s\n' "$p"
+}
+
+# A URL with repeated and trailing slashes and a trailing .git dropped, for
+# telling whether two remotes name the same place.
+docket_target_url_norm() {
+  local u
+  u="$(printf '%s' "$1" | sed 's#\([^/:]\)//*#\1/#g; s#/*$##; s#\.git$##; s#/*$##')"
+  printf '%s\n' "$u"
 }
 
 docket_target_url_host() {
@@ -320,7 +338,7 @@ docket_target_url_repo() {
   p="$(docket_target_url_path "$1")"
   p="${p%/}"; p="${p%.git}"
   # Exactly owner/name: a nested group path names no single owner.
-  case "$p" in */*/*|/*) return 0 ;; */*) ;; *) return 0 ;; esac
+  case "$p" in */*/*) return 0 ;; */*) ;; *) return 0 ;; esac
   owner="${p%/*}"; name="${p#*/}"
   [ -n "$owner" ] && [ -n "$name" ] || return 0
   # An account name: no host-like (a dot), port-like (digits only) or
