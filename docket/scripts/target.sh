@@ -13,8 +13,8 @@
 # starts a comment (a whole line, or trailing after whitespace); blank lines
 # are ignored; whitespace around keys and values is trimmed; a leading ~/ in a
 # value expands to $HOME, and a relative dir or worktree_dir is resolved
-# against the sidecar's main worktree (the parent of its git common
-# directory), so every sidecar worktree resolves it to the same place. A
+# against the sidecar's main worktree (the first one git worktree list
+# names), so every sidecar worktree resolves it to the same place. A
 # relative DOCKET_TARGET_FILE is taken from the current directory; set it per
 # command, never globally. Keys:
 #   repo=owner/repo       required: the managed repository on the forge
@@ -94,9 +94,10 @@ docket_target_load() {
     fi
     return 0
   fi
-  # Relative paths resolve against the sidecar's main worktree.
-  from="$(docket_target_common "$root")"
-  if [ -n "$from" ]; then from="$(dirname "$from")"; else from="$(cd "$root" && pwd -P)"; fi
+  # Relative paths resolve against the sidecar's main worktree: the first
+  # entry git lists, which holds for a --separate-git-dir or .git-file layout.
+  from="$(git -C "$root" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p' || true)"
+  if [ -n "$from" ] && [ -d "$from" ]; then from="$(cd "$from" && pwd -P)"; else from="$(cd "$root" && pwd -P)"; fi
   n=0; seen=" "; err=""
   local repo="" dir="" base="main" remote="origin" prefix="" wtdir="" land=""
   while IFS= read -r line || [ -n "$line" ]; do

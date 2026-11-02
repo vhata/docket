@@ -551,6 +551,12 @@ for n in one two; do
   git worktree remove --force "$external/todo-fixture-external-$n"
   git branch --quiet -D "todo/fixture-external-$n"
 done
+# Without a target file a relative --dir is still taken from the root, even
+# when start-work runs from a subdirectory.
+pass 'start-work from a subdirectory with a relative --dir' in_dir "$fixture/review" env PATH="$nogh" bash "$fixture/docket/scripts/start-work.sh" todo fixture-subdir --base main --dir .worktrees
+[ -d "$fixture/.worktrees/todo-fixture-subdir" ] && [ ! -e "$fixture/review/.worktrees" ] || { echo 'scripts-test: a relative --dir without a target was not taken from the root' >&2; exit 1; }
+git worktree remove --force "$fixture/.worktrees/todo-fixture-subdir"
+git branch --quiet -D todo/fixture-subdir
 git -C "$wt" commit --quiet --allow-empty -m 'Own fixture work'
 own_sha="$(git -C "$wt" rev-parse HEAD)"
 foreign_sha="$(git commit-tree -p main -m 'Another worker' "$(git rev-parse 'main^{tree}')")"
@@ -1301,6 +1307,14 @@ git worktree add --quiet --detach "$sidecar/.worktrees/side" main
 pass 'target from a sidecar worktree' in_dir "$sidecar/.worktrees/side" bash "$sidecar/.worktrees/side/docket/scripts/target.sh"
 expect 'a sidecar worktree resolved dir against itself' "dir: $managed"
 git worktree remove --force "$sidecar/.worktrees/side"
+# A sidecar whose git directory lives elsewhere (--separate-git-dir, or a
+# .git file as in a submodule) still resolves against its main worktree.
+git init --quiet --separate-git-dir "$tgt/sep.git" "$tgt/sepside"
+mkdir -p "$tgt/sepside/docket/scripts"
+cp "$scripts"/*.sh "$tgt/sepside/docket/scripts/"
+printf 'repo=owner/managed\ndir=../managed\n' > "$tgt/sepside/.docket-target"
+pass 'target from a separate-git-dir sidecar' in_dir "$tgt/sepside" bash "$tgt/sepside/docket/scripts/target.sh"
+expect 'a separate-git-dir sidecar resolved dir against its git directory' "dir: $managed"
 bad() {
   label="$1"; expected="$2"; content="$3"
   printf "$content" > "$tgt/bad.target"

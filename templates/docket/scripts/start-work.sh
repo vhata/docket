@@ -14,21 +14,21 @@
 # branch is marked with "git config branch.<name>.docket true" in the clone;
 # cleanup-landed.sh touches only marked branches there. The sidecar's queue
 # entry is the claim record. --no-target ignores the target.
-# A relative --dir is taken from the current directory.
+# A relative --dir is taken from the repository root, or in target mode from
+# the current directory.
 # Prints the worktree path and the next steps. Does not push anything.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+orig="$(pwd)"
 git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "start-work: not in a git repository" >&2; exit 2; }
-[ $# -ge 2 ] || { sed -n '2,18p' "$0"; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,19p' "$0"; exit 2; }
 queue="$1"; slug="$2"; shift 2
 base=""; dir=""; check=1; local_only=0; no_target=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --base) base="$2"; shift 2 ;;
-    --dir)
-      dir="$2"; shift 2
-      case "$dir" in /*) ;; *) dir="$(pwd)/$dir" ;; esac ;;
+    --dir) dir="$2"; shift 2 ;;
     --local) local_only=1; shift ;;
     --no-check) check=0; shift ;;
     --no-target) no_target=--no-target; shift ;;
@@ -42,6 +42,9 @@ docket_target_init "$here" "$no_target" || exit 2
 root="$DOCKET_SIDECAR_ROOT"
 cd "$root"
 if [ -n "$DOCKET_TARGET" ]; then
+  # In target mode the caller may be anywhere, so a relative --dir is taken
+  # from the current directory; otherwise from the root, as always.
+  case "$dir" in ""|/*) ;; *) dir="$orig/$dir" ;; esac
   [ -n "$base" ] || base="$TARGET_BASE"
   [ -n "$dir" ] || dir="$TARGET_WORKTREE_DIR"
   repo_dir="$TARGET_DIR"; remote="$TARGET_REMOTE"
