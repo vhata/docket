@@ -114,8 +114,9 @@ Triage runs when the user asks, when Needs triage holds more than about a dozen 
    sidecar's `main`, and push it (`start-work.sh` prints the line for
    `todo` and `review` work; roadmap claims are out of scope in a
    sidecar). `claim-check.sh` treats an entry with a `PR:` line as
-   claimed; on the worker's own `--self` recheck only when gh confirms
-   every listed PR is the worker's open PR.
+   claimed, except on the worker's own `--self` recheck, where it is a
+   note when gh confirms every listed PR is the worker's own open PR,
+   or when gh is unavailable.
 6. Abandoned work: close the draft and leave the entry untouched (in a sidecar, drop its `PR:` line). Remove the worktree and branch only when the worktree is clean and the branch has no unmerged work; otherwise ask.
 
 ## Markers

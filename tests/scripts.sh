@@ -1625,6 +1625,10 @@ git -C "$sc_wt" commit --quiet --allow-empty -m 'Later own work'
 printf '43\tOPEN\ttodo/sc-self\t%s\tfalse\n' "$(git -C "$managed" rev-parse origin/main)" >> "$tgt/view.tsv"
 sed -i.bak 's/  - PR: other\/repo#40$/  - PR: owner\/managed#43/' TODO.md
 reject 'unowned tip on --self' 'claimed by PR: owner/managed#43' in_dir "$sc_wt" tgv bash "$tclaim" --self sc-self
+# The worker's own PR that already merged is still a claim: the work landed.
+printf '45\tMERGED\ttodo/sc-self\t%s\tfalse\n' "$sc_tip" >> "$tgt/view.tsv"
+sed -i.bak 's/  - PR: owner\/managed#43$/  - PR: owner\/managed#45/' TODO.md
+reject 'own merged PR on --self' 'claimed by PR: owner/managed#45' in_dir "$sc_wt" tgv bash "$tclaim" --self sc-self
 pass 'PR line on --self without gh' in_dir "$sc_wt" tgv bash "$tclaim" --self --local sc-self
 expect 'local --self recheck did not note the PR line' 'taken to be your own, unverified without gh'
 rm -f TODO.md.bak
