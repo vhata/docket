@@ -305,9 +305,13 @@ while IFS= read -r line; do
       if [ -n "$claimed_backlog" ]; then
         # A claimed entry lives at head; a resolved one lived at base. An entry
         # filed and claimed in the same PR exists only at head, so look in both.
+        # Search a file, not a pipe: under pipefail, grep -q exiting on an
+        # early match would make a producer still writing die of SIGPIPE and
+        # turn the match into a miss.
         found=0
         for b in $claimed_backlog; do
-          { entry_block "$tmp/backlog.base" "$b"; entry_block "$tmp/backlog.head" "$b"; } | grep -q "\`$slug\`" && found=1
+          { entry_block "$tmp/backlog.base" "$b"; entry_block "$tmp/backlog.head" "$b"; } > "$tmp/claimed-entry"
+          grep -q "\`$slug\`" "$tmp/claimed-entry" && found=1
         done
         [ "$found" -eq 1 ] || warn "$verb: $slug is not listed in the Findings of the claimed backlog entries ($claimed_backlog)"
       else

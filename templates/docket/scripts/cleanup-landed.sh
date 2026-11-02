@@ -104,7 +104,7 @@ else
   current=""
 fi
 # The main worktree is listed first; it can never be removed, so a branch checked out there is only reported.
-main_wt="$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')"
+main_wt="$(git worktree list --porcelain | awk '/^worktree / && !p { p = substr($0, 10) } END { print p }')"
 
 wt_for() {
   git worktree list --porcelain | awk -v b="refs/heads/$1" '
@@ -175,7 +175,10 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
       echo "keep $br: cannot inspect worktree $path"
       kept=$((kept + 1)); continue
     fi
-    if printf '%s\n' "$status" | grep -qvE '^(!!|$)'; then
+    # A here-string, not a pipe: under pipefail, grep -q exiting at the first
+    # modified file would make a long status listing die of SIGPIPE and read
+    # as a clean worktree.
+    if grep -qvE '^(!!|$)' <<< "$status"; then
       echo "keep $br: $reason, but worktree $path has modified or untracked files"
       kept=$((kept + 1)); continue
     fi
@@ -191,7 +194,7 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     ignored="$(printf '%s\n' "$status" | non_cache_ignored || true)"
     if [ -n "$ignored" ] && [ "$discard_ignored" -eq 0 ]; then
       echo "keep $br: $reason, but worktree $path holds ignored files that are not known caches and would be lost (pass --discard-ignored to remove anyway):"
-      echo "$ignored" | sed 's/^/    /' | head -10
+      sed -n '1,10s/^/    /p' <<< "$ignored"
       kept=$((kept + 1)); continue
     fi
     echo "remove worktree $path and branch $br ($reason)"
