@@ -20,6 +20,9 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 - [SCRIPTS] `review-due-large-index-sigpipe` — **`review-due.sh` reports on a review index of any length.** `latest="$(echo "$rows" | head -1)"` runs under `pipefail` and `set -e`; once the index rows outgrow a pipe buffer, `head` exits after one line, `echo` dies of SIGPIPE and the script exits 141 with no output (reproduced with a 6000-row index under bash 3.2 and 5).
   - Source: `todo/finding-membership-sigpipe` implementation, 2026-11-02
   - Starting point: `templates/docket/scripts/review-due.sh:79-80`; read the first row with `sed -n 1p` or a here-string rather than a pipe into `head`. An index that long is unlikely in practice.
+- [SCRIPTS] `check-pr-markers-target-file-cwd` — **`check-pr-markers.sh` reads a relative `DOCKET_TARGET_FILE` from the directory it was run in, as the other target-aware scripts do.** It changes to the repository root before `docket_target_init`, so run from a subdirectory with a relative `DOCKET_TARGET_FILE` it looks for the file at the root and exits 2 saying it is not a file.
+  - Source: independent review of `todo/pr-health-target-defaults`, 2026-11-02
+  - Starting point: `templates/docket/scripts/check-pr-markers.sh` lines ~54-55 (`cd "$root"`) vs `docket_target_init` at ~78; move the `cd` after the init as `pr-health.sh` does, and add a fixture that runs from a subdirectory with a relative file.
 
 
 ## Needs proof of concept

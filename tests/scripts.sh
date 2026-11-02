@@ -1789,6 +1789,28 @@ GH
   expect 'target pr-health did not default --land-comment' 'landing: requested 2026-11-01T09:00:00Z, still open'
   pass 'target pr-health explicit --land-comment' tph env DOCKET_TARGET_FILE="$tgt/land.target" bash "$tprh" --pr 33 --land-comment /ship
   grep -q 'landing:' "$fixture/result.log" && { echo 'scripts-test: the target land_comment beat --land-comment' >&2; exit 1; }
+  # A relative DOCKET_TARGET_FILE is taken from the directory the script runs in.
+  mkdir -p "$sidecar/sub"; cp "$tgt/land.target" "$sidecar/sub/t.target"
+  pass 'target pr-health relative target file from a subdirectory' in_dir "$sidecar/sub" tph env DOCKET_TARGET_FILE=t.target bash ../docket/scripts/pr-health.sh --pr 33
+  expect 'target pr-health did not read the relative target file' 'landing: requested 2026-11-01T09:00:00Z, still open'
+  rm -rf "$sidecar/sub"
+  # PR: lines match the whole reference: #3 is not #30 or #31, and
+  # other/managed#33 is not owner/managed#33. Each item of a comma-separated
+  # line counts, not only the last.
+  printf -- '- [CORE] `sc-elsewhere` **Same number, another repository.**\n  - Source: scripts regression fixture\n  - PR: other/managed#33\n' >> TODO.md
+  prh_pr 3 OPEN false task/three '' MERGEABLE CLEAN "[$ok_run]" '[]' ''
+  prh_pr 30 OPEN false todo/sc-claimed '' MERGEABLE CLEAN "[$ok_run]" '[]' ''
+  printf '0\n' > "$prh_data/behind-sha3"; printf '0\n' > "$prh_data/behind-sha30"
+  pass 'target pr-health short PR number' tph bash "$tprh" --pr 3
+  expect 'target pr-health matched #3 to a longer number' "queue: no entry in the sidecar's queues records PR: owner/managed#3"
+  grep -q 'records PR: owner/managed#3[0-9]' "$fixture/result.log" && { echo 'scripts-test: target pr-health matched a PR: line by prefix' >&2; cat "$fixture/result.log" >&2; exit 1; }
+  pass 'target pr-health other repository, same number' tph bash "$tprh" --pr 33
+  expect 'target pr-health matched another repository' "queue: no entry in the sidecar's queues records PR: owner/managed#33"
+  grep -q 'sc-elsewhere' "$fixture/result.log" && { echo 'scripts-test: target pr-health matched a PR: line by number alone' >&2; cat "$fixture/result.log" >&2; exit 1; }
+  pass 'target pr-health first item of a PR line' tph bash "$tprh" --pr 30
+  expect 'target pr-health missed the first item of a PR line' 'queue: TODO.md `sc-mixed` records PR: owner/managed#30'
+  expect 'target pr-health missed a single PR line' 'queue: TODO.md `sc-claimed` records PR: owner/managed#30'
+  git checkout --quiet -- TODO.md
   grep -q VIOLATION "$tgt_log" && { echo 'scripts-test: a target pr-health gh call did not name the target' >&2; grep VIOLATION "$tgt_log" >&2; exit 1; }
   # An explicit --repo beats the target, and its PRs are checked by markers.
   pass 'target pr-health explicit --repo' tgh env PATH="$prh_data/bin:$PATH" PRH_LOG="$prh_log" PRH_DATA="$prh_data" bash "$tprh" --repo other/repo --pr 31

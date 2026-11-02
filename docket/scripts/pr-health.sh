@@ -51,7 +51,6 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-cd "$root"
 
 # Trimmed as comment bodies are, so the comparison is like for like.
 trim() {
@@ -98,6 +97,9 @@ done
 # shellcheck source=target.sh
 . "$here/target.sh"
 docket_target_init "$here" "$no_target" || exit 2
+# After the target loads: a relative DOCKET_TARGET_FILE is taken from the
+# directory the script was run in.
+cd "$root"
 if [ -n "$DOCKET_TARGET" ]; then
   [ "$repo_set" -eq 1 ] || repo="$TARGET_REPO"
   [ "$land_set" -eq 1 ] || land_comment="$(trim "$TARGET_LAND_COMMENT")"
