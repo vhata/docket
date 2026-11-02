@@ -58,9 +58,10 @@ any discovery.
   - Related: `other-slug` (optional)
   - Findings: `finding-slug`, `finding-slug` (review backlog only, required)
   - Remaining from: `original-slug` / Split from: `original-slug` (lineage, when applicable)
+  - PR: owner/repo#N, owner/repo#M (sidecar only: the managed repository's PRs that claim the entry)
 ```
 
-`Source` is required. Slugs are unique across all queues and never change when an entry moves. `Blocked by:` and `Related:` may name an entry in another repository as `` `repo:slug` `` (or `` `owner/repo:slug` ``), which the validator does not resolve; `Depends on:` names only slugs in these queues. One area per entry, from the list in the Docket section of `AGENTS.md`. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
+`Source` is required. Slugs are unique across all queues and never change when an entry moves. `Blocked by:` and `Related:` may name an entry in another repository as `` `repo:slug` `` (or `` `owner/repo:slug` ``), which the validator does not resolve; `Depends on:` names only slugs in these queues. One area per entry, from the list in the Docket section of `AGENTS.md`. A sidecar records claims with one `PR:` line (see [CONTRACT.md](CONTRACT.md#managed-repository)); the validator checks its `owner/repo#N` format, and warns when the repository is not the one in `.docket-target`. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
 
 Review backlog entries additionally carry a `Findings:` line naming every raw review finding they cover, each slug in backticks (``Findings: `finding-slug`, `finding-slug` ``), and `Source` names the review file. Each finding maps to at most one backlog entry.
 
@@ -108,7 +109,15 @@ Triage runs when the user asks, when Needs triage holds more than about a dozen 
    remote use `--local` on claim/start helpers; no remote selects local
    mode automatically. Validate local markers with `--body <file> --base
    main --head HEAD --strict`.
-5. Abandoned work: close the draft and leave the entry untouched. Remove the worktree and branch only when the worktree is clean and the branch has no unmerged work; otherwise ask.
+5. In a sidecar the managed PR carries no marker: once it is open, add
+   `PR: <repo>#<number>` to the entry in a direct commit to the
+   sidecar's `main`, and push it (`start-work.sh` prints the line for
+   `todo` and `review` work; roadmap claims are out of scope in a
+   sidecar). `claim-check.sh` treats an entry with a `PR:` line as
+   claimed, except on the worker's own `--self` recheck, where it is a
+   note when gh confirms every listed PR is the worker's own open PR,
+   or when gh is unavailable.
+6. Abandoned work: close the draft and leave the entry untouched (in a sidecar, drop its `PR:` line). Remove the worktree and branch only when the worktree is clean and the branch has no unmerged work; otherwise ask.
 
 ## Markers
 
@@ -148,6 +157,16 @@ change ready.
 - **Partial:** remove the original; add a remainder with a new slug, reassessed stage, priority and area, and a ``Remaining from: `original-slug` `` line (the validator reads the backticked slug). Use `Partially resolves` plus `Remaining`. For review work the remainder lists only the still-open findings.
 - **Parallel subsets of a batch:** first land a direct commit to `main` that keeps the original slug on one narrowed entry and adds new entries with a ``Split from: `original-slug` `` line. Then each subset is claimed separately. Splitting is not resolution.
 - **Rejected or obsolete:** remove with the reason in the PR.
+- **Sidecar:** the managed PR cannot touch the sidecar's queues. After
+  it merges, remove the entry (or file the remainder) in a direct commit
+  to the sidecar's `main` whose message carries the marker, such as
+  `Resolves TODO: <slug>` or `Resolves review backlog: <slug>`, and the
+  PR reference. If the merged PR leaves a remainder in the same entry,
+  drop that PR from its `PR:` line. `cleanup-landed.sh` lists entries
+  whose PRs have all closed: "resolve" when one merged, "release" when
+  none did. A PR closed without GitHub's merged state may still have
+  landed, since some merge processes close after squashing; confirm it
+  did not before releasing.
 
 Landing a fix removes the backlog entry but does not close a review
 finding; the next incremental review verifies and records closure (see

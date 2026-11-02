@@ -12,6 +12,11 @@
 #   --exclude-branch NAME  the same exclusion for a named local branch
 # A remote ref or PR with the same branch name but commits you do not have (or
 # from a fork) is another worker's claim and is still reported.
+# A queue entry (TODO.md, review/BACKLOG.md, in the working tree or on
+# origin/main when that ref exists) carrying a "PR:" line is claimed by those
+# pull requests, in any mode. With --self or --exclude-branch in target mode
+# it is only a note when every PR it names is an open, same-repository PR
+# headed by the own branch at an owned tip; without gh it is a note.
 # A branch, worktree or PR head branch counts when its last path component is
 # the slug (todo/<slug>, origin/fix/<slug>, <slug>); a longer name that merely
 # contains the slug does not. A PR body counts when a marker line names the slug.
@@ -30,7 +35,7 @@
 # repository itself (forks are not supported). --no-target ignores the file.
 set -euo pipefail
 
-usage() { sed -n '2,30p' "$0"; exit 2; }
+usage() { sed -n '2,35p' "$0"; exit 2; }
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 orig="$(pwd)"
 self=""; self_here=0; local_only=0; no_target=""; queue=""
@@ -141,6 +146,26 @@ drop_own() {
     esac
   done
 }
+# The PR: line of the entry for a slug in the queue file on stdin, if any.
+queue_pr() {
+  awk -v slug="$1" '
+    /^- / { inblock = ($0 ~ "^- \\[[A-Z][A-Z0-9_-]*\\] `" slug "`") ; next }
+    /^#/ { inblock = 0 }
+    inblock && /^  - PR:/ { v = $0; sub(/^  - PR:[ \t]*/, "", v); print v; exit }
+  '
+}
+# Target mode: succeeds when every PR on a PR: line is an open PR in the
+# target, from the target itself, headed by the own branch at an owned tip.
+own_prs() {
+  local ref out st head oid cross
+  for ref in $(printf '%s\n' "$1" | tr ',' ' '); do
+    [ "${ref%%#*}" = "$TARGET_REPO" ] || return 1
+    out="$(gh pr view "${ref##*#}" --repo "$TARGET_REPO" --json state,headRefName,headRefOid,isCrossRepository \
+      --jq '"\(.state)\t\(.headRefName)\t\(.headRefOid)\t\(.isCrossRepository)"' < /dev/null)" || fail_query
+    IFS="$tab" read -r st head oid cross <<< "$out"
+    [ "$st" = OPEN ] && [ "$head" = "$self" ] && [ "$cross" = false ] && owned "$oid" || return 1
+  done
+}
 fail_query() { echo "claim-check: hosted PR query failed; ownership remains unverified" >&2; exit 2; }
 
 # Target mode: the branch names docket would create for the slug.
@@ -173,6 +198,23 @@ for requested in "$@"; do
     echo "$slug" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || { echo "claim-check: slug '$slug' is not lowercase kebab-case" >&2; exit 2; }
     [ "$slug" = "$requested" ] && label="$slug" || label="$slug (finding mapped by $requested)"
     echo "== $label"
+    for qf in TODO.md review/BACKLOG.md; do
+      where="$qf"; recorded=""
+      [ ! -f "$root/$qf" ] || recorded="$(queue_pr "$slug" < "$root/$qf")"
+      if [ -z "$recorded" ] && git -C "$root" rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
+        recorded="$(git -C "$root" show "refs/remotes/origin/main:$qf" 2>/dev/null | queue_pr "$slug" || true)"
+        where="$qf on origin/main"
+      fi
+      [ -n "$recorded" ] || continue
+      if [ -n "$self" ] && [ "$have_gh" -eq 0 ]; then
+        echo "  note: the entry in $where records PR: $recorded; taken to be your own, unverified without gh (confirm it is)"
+      elif [ -n "$self" ] && [ -n "$DOCKET_TARGET" ] && own_prs "$recorded"; then
+        echo "  note: the entry in $where records PR: $recorded, your own open PR"
+      else
+        echo "  queue entry in $where is claimed by PR: $recorded"
+        claims=$((claims + 1))
+      fi
+    done
     if [ "$have_gh" -eq 1 ] && [ -n "$DOCKET_TARGET" ]; then
       prs="$(target_prs "$slug")" || fail_query
       if [ "$me_known" -eq 0 ] && [ -n "$prs" ]; then

@@ -5,17 +5,26 @@
 # that name what they wait on, and the one-finding-one-backlog-entry rule. A
 # `repo:slug` reference names an entry in another repository's queue; Blocked
 # by and Related lines may carry one and it is not resolved here, while
-# Depends on names only this repository's slugs.
+# Depends on names only this repository's slugs. A "PR:" line records the
+# pull requests that claim an entry (a sidecar's claim on work in its managed
+# repository): owner/repo#N, comma-separated, at most one such line per
+# entry. With a .docket-target file (see target.sh), a PR in any other
+# repository than its repo is a warning; only the file's repo line is read.
 #
-# Usage: docket/scripts/check-queues.sh [--todo PATH] [--backlog PATH] [--strict]
+# Usage: docket/scripts/check-queues.sh [--todo PATH] [--backlog PATH] [--strict] [--no-target]
 #   Defaults: TODO.md and review/BACKLOG.md relative to the repo root when
-#   they exist. --strict turns warnings into errors.
+#   they exist. --strict turns warnings into errors. --no-target ignores the
+#   target file.
 #
 # Output is "path:line: level: message". Exit 1 when any error was reported.
 # Portable to bash 3.2 and POSIX awk.
 set -euo pipefail
 
 orig="$PWD"
+# A relative DOCKET_TARGET_FILE is taken from the caller's directory, as
+# target.sh does.
+case "${DOCKET_TARGET_FILE:-}" in ""|/*) ;; *) DOCKET_TARGET_FILE="$orig/$DOCKET_TARGET_FILE" ;; esac
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$root"
 # Make a path given on the command line absolute relative to the caller's directory.
@@ -24,12 +33,14 @@ abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$orig" "$1" 
 todo=""
 backlog=""
 strict=0
+no_target=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --todo) todo="$(abs "$2")"; shift 2 ;;
     --backlog) backlog="$(abs "$2")"; shift 2 ;;
     --strict) strict=1; shift ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    --no-target) no_target=1; shift ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "check-queues: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -40,12 +51,20 @@ if [ -z "$todo" ] && [ -z "$backlog" ]; then
   exit 2
 fi
 
+target_repo=""; target_file=""
+if [ "$no_target" -eq 0 ]; then
+  # shellcheck source=target.sh
+  . "$here/target.sh"
+  target_repo="$(docket_target_repo "$root")"
+  target_file="${DOCKET_TARGET_FILE:-$root/.docket-target}"
+fi
+
 # Pass the queue files as separate arguments so paths with spaces survive.
 set --
 [ -n "$todo" ] && set -- "$@" "$todo"
 [ -n "$backlog" ] && set -- "$@" "$backlog"
 
-awk -v strict="$strict" -v backlog_path="$backlog" '
+awk -v strict="$strict" -v backlog_path="$backlog" -v target_repo="$target_repo" -v target_file="$target_file" '
 function report(level, file, line, msg) {
   if (level == "warning" && strict) level = "error"
   if (level == "error") errors++
@@ -151,6 +170,18 @@ FNR == 1 { finish_entry(); stage = ""; priority = ""; file_is_backlog = (FILENAM
       if (is_ready(cur)) report("error", FILENAME, FNR, "`" cur "` " where(cur) " but is Blocked by: " val "; " (is_backlog[cur] ? "clear the blocker before promoting it (the backlog holds only ready work)" : "move it out of Ready until the blocker clears"))
       n = slugs_in(val, tmp)
       for (i = 1; i <= n; i++) if (!is_foreign(tmp[i])) { nd++; dep_from[nd] = cur; dep_to[nd] = tmp[i]; dep_file[nd] = FILENAME; dep_line[nd] = FNR }
+    }
+  }
+  else if (key == "PR") {
+    if (has_pr[cur]) report("error", FILENAME, FNR, "`" cur "` has a second PR line; list every pull request on one line, comma-separated")
+    has_pr[cur] = 1
+    if (val ~ /^[ \t]*$/) report("error", FILENAME, FNR, "empty PR line for `" cur "`")
+    n = split(val, tmp, /,/)
+    for (i = 1; i <= n; i++) {
+      ref = tmp[i]; gsub(/^[ \t]+|[ \t]+$/, "", ref)
+      if (ref !~ /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[1-9][0-9]*$/) { if (n > 1 || ref != "") report("error", FILENAME, FNR, "PR line for `" cur "` has \"" ref "\"; expected owner/repo#N, comma-separated"); continue }
+      prrepo = ref; sub(/#.*/, "", prrepo)
+      if (target_repo != "" && prrepo != target_repo) report("warning", FILENAME, FNR, "PR line for `" cur "` names " ref ", outside the managed repository " target_repo " in " target_file)
     }
   }
   else if (key == "Related") {

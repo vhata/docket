@@ -32,7 +32,16 @@ branch; `review-due.sh` resolves commits there. From a managed
 worktree, run the sidecar's scripts by absolute path. Pass `--no-target`
 for work on the sidecar itself, and set `DOCKET_TARGET_FILE` only per
 command. The managed repository's template, CI and merge process govern
-its PRs; docket markers stay out of their bodies. Push branches to the
+its PRs. Their descriptions still follow the future `git log` reader
+rules, but markers and the `Type:` line stay out of them, in the
+sidecar's `.docket/state-<slug>.md`; `check-pr-markers.sh` and
+`pr-labels.sh` stand down there. The sidecar entry is the claim: once
+the PR is open, add `PR: owner/repo#N` to it as a direct commit to the
+sidecar's main. When the PR merges, remove the entry the same way, with
+`Resolves TODO: <slug>` (or `Resolves review backlog: <slug>`) and the
+PR in the commit message; a remainder kept in the same entry drops that
+`PR:` line. `cleanup-landed.sh` lists entries ready for this. Roadmap
+claims are out of scope in a sidecar. Push branches to the
 managed repository itself (forks are not supported), never to its base.
 Its configured `land_comment`, when posted, merges, so it stays the
 user's unless delegated; after posting it, leave the branch untouched

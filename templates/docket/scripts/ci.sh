@@ -13,6 +13,11 @@
 #   2. check-links.sh                relative Markdown links and anchors
 #   3. check-pr-markers.sh           only when PR is set (see below)
 #
+# CI checks the PRs of the repository it runs in, so a sidecar's CI checks the
+# sidecar's own PRs: check-pr-markers.sh runs with --no-target, and
+# check-queues.sh reads only the repo line of .docket-target, so neither
+# needs the managed clone.
+#
 # Environment (all optional; set them on pull_request events):
 #   PR           GitHub pull request number. When non-empty the PR body is
 #                validated against the queues.
@@ -77,7 +82,7 @@ if [ -n "${PR:-}" ]; then
     exit 1
   fi
   echo "    (body from $body_from)"
-  if ! "$here/check-pr-markers.sh" --body "$tmp/pr-body.md" --base "origin/$BASE" --head HEAD --branch "$HEAD_BRANCH"; then
+  if ! "$here/check-pr-markers.sh" --no-target --body "$tmp/pr-body.md" --base "origin/$BASE" --head HEAD --branch "$HEAD_BRANCH"; then
     echo "ci: check 'check-pr-markers' failed" >&2
     exit 1
   fi

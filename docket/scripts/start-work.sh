@@ -13,7 +13,9 @@
 # worktree_dir, and --base and --dir override the target's values. The new
 # branch is marked with "git config branch.<name>.docket true" in the clone;
 # cleanup-landed.sh touches only marked branches there. The sidecar's queue
-# entry is the claim record. --no-target ignores the target.
+# entry is the claim record: once the PR is open, a "PR: owner/repo#N" line
+# on the entry, committed directly to the sidecar's main. --no-target ignores
+# the target.
 # A relative --dir is taken from the repository root, or in target mode from
 # the current directory.
 # Prints the worktree path and the next steps. Does not push anything.
@@ -22,7 +24,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 orig="$(pwd)"
 git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "start-work: not in a git repository" >&2; exit 2; }
-[ $# -ge 2 ] || { sed -n '2,19p' "$0"; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,21p' "$0"; exit 2; }
 queue="$1"; slug="$2"; shift 2
 base=""; dir=""; check=1; local_only=0; no_target=""
 while [ $# -gt 0 ]; do
@@ -122,8 +124,16 @@ case "$queue" in
   *) marker="" ;;
 esac
 if [ -n "$DOCKET_TARGET" ]; then
-  echo "managed repository $TARGET_REPO: the sidecar's queue entry is the claim record; the PR body follows $TARGET_REPO's own template and carries no docket markers."
-  echo "next: cd $path; commit early; push to $remote and open a draft PR with 'gh pr create --repo $TARGET_REPO --base $base --draft' after the first meaningful commit; keep the change description and state in the sidecar's .docket/."
+  case "$queue" in
+    todo) entry_file="TODO.md" ;;
+    review) entry_file="review/BACKLOG.md" ;;
+    *) entry_file="" ;;
+  esac
+  echo "managed repository $TARGET_REPO: the sidecar's queue entry is the claim record; the PR body follows $TARGET_REPO's own template and carries no docket markers or Type: line."
+  echo "next: cd $path; commit early; push to $remote and open a draft PR with 'gh pr create --repo $TARGET_REPO --base $base --draft' after the first meaningful commit; keep the change description, the ${marker:+'$marker' marker, the }Type: line and state in the sidecar's .docket/state-$slug.md."
+  if [ -n "$entry_file" ]; then
+    echo "then record the claim: add '  - PR: $TARGET_REPO#<number>' to the '$slug' entry in the sidecar's $entry_file as a direct commit to the sidecar's main, and push it under the session's push authority."
+  fi
 elif [ "$local_only" -eq 1 ]; then
   echo "next: cd $path; run scripts/setup.sh if present; commit early; save the title in .docket/title-$slug.txt and description in .docket/change-$slug.md${marker:+ with '$marker'}; leave the branch and worktree for review and approval."
 else
