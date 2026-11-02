@@ -651,8 +651,11 @@ expect 'old review did not report the day trigger' 'days >= 21)'
 # Days count from local midnight of the review date on BSD date as on GNU
 # date. A date one day ahead of the local one (a review recorded in a zone
 # east of the reader) is less than a day away from midnight, so 0 days; BSD
-# date used to take the time of day from the clock and report -1.
-for offset in '-1:1' '+0:0' '+1:0'; do
+# date used to take the time of day from the clock and report -1. UTC+10
+# midnight is 10:00 UTC; near it the date the fixture writes and the one
+# the script reads can differ, so the check stands aside there.
+case "$(date -u +%H%M)" in 0959|1000) midnight_offsets='' ;; *) midnight_offsets="-1:1 +0:0 +1:0" ;; esac
+for offset in $midnight_offsets; do
   d="$(TZ=UTC+10 date -v"${offset%%:*}"d +%Y-%m-%d 2>/dev/null || TZ=UTC+10 date -d "${offset%%:*} day" +%Y-%m-%d)"
   printf '| Date | Type | Commit |\n| %s | full | `%s` |\n' "$d" "$head" > review-index.md
   pass "review dated ${offset%%:*} day west of UTC" env TZ=UTC+10 bash "$due" --index review-index.md --base "$head"
