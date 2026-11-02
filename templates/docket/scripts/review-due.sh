@@ -149,7 +149,9 @@ changed_since_full="$changed_src"; [ -n "$full_rev" ] && changed_since_full="$(c
 
 days=""
 if [ -n "$date" ]; then
-  if then_s="$(date -j -f %Y-%m-%d "$date" +%s 2>/dev/null || date -d "$date" +%s 2>/dev/null)"; then
+  # Both forms count from local midnight of the review date: BSD date -j
+  # takes any field the format leaves out from the clock, so the time is given.
+  if then_s="$(date -j -f '%Y-%m-%d %H:%M:%S' "$date 00:00:00" +%s 2>/dev/null || date -d "$date" +%s 2>/dev/null)"; then
     days=$(( ( $(date +%s) - then_s ) / 86400 ))
   fi
 fi

@@ -648,6 +648,16 @@ printf '| Date | Type | Commit |\n| 2000-01-01 | full | `%s` |\n' "$head" > revi
 pass 'old review' bash "$due" --index review-index.md --base "$head"
 expect 'old review did not trigger an incremental review' 'verdict: INCREMENTAL review due ('
 expect 'old review did not report the day trigger' 'days >= 21)'
+# Days count from local midnight of the review date on BSD date as on GNU
+# date. A date one day ahead of the local one (a review recorded in a zone
+# east of the reader) is less than a day away from midnight, so 0 days; BSD
+# date used to take the time of day from the clock and report -1.
+for offset in '-1:1' '+0:0' '+1:0'; do
+  d="$(TZ=UTC+10 date -v"${offset%%:*}"d +%Y-%m-%d 2>/dev/null || TZ=UTC+10 date -d "${offset%%:*} day" +%Y-%m-%d)"
+  printf '| Date | Type | Commit |\n| %s | full | `%s` |\n' "$d" "$head" > review-index.md
+  pass "review dated ${offset%%:*} day west of UTC" env TZ=UTC+10 bash "$due" --index review-index.md --base "$head"
+  expect "review dated ${offset%%:*} day did not count from local midnight" ", ${offset#*:} days"
+done
 
 # A tracked source file deleted in the working tree must not abort the report.
 mkdir -p src
