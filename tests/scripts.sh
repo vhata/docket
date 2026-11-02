@@ -1395,13 +1395,32 @@ bad 'repo not owner/repo' "bad.target:1: repo must be owner/repo" "repo=managed\
 bad 'repeated key' "bad.target:3: 'repo' is set twice" "repo=owner/managed\ndir=$managed\nrepo=owner/other\n"
 bad 'prefix without a slash' "bad.target:3: branch_prefix must end in '/'" "repo=owner/managed\ndir=$managed\nbranch_prefix=me\n"
 # Contributing through a fork: push_remote names the fork's remote in the
-# clone, whose URL gives the fork owner unless push_owner names it.
+# clone, whose forge URL gives the fork owner unless push_owner names it. A
+# local path gives none, so the fork target the later fixtures use names it.
 git -C "$managed" remote add fork "$tgt/me/managed.git"
-printf 'repo=owner/managed\ndir=%s\npush_remote=fork\n' "$managed" > "$tgt/fork.target"
+printf 'repo=owner/managed\ndir=%s\npush_remote=fork\npush_owner=me\n' "$managed" > "$tgt/fork.target"
 pass 'target with a fork' env DOCKET_TARGET_FILE="$tgt/fork.target" bash "$tshow"
-expect 'the fork owner was not taken from its URL' 'push: fork, the fork owned by me'
+expect 'push_owner was not used for a local fork' 'push: fork, the fork owned by me'
 git -C "$managed" remote add bare managed-only
 git -C "$managed" remote add same git@github.com:Owner/managed.git
+git -C "$managed" remote add ghfork git@github.com:Me/managed.git
+git -C "$managed" remote add bob https://github.com/bob/managed.git
+git -C "$managed" remote add mirror https://mirror.example/bob/managed
+git -C "$managed" remote add hostonly https://github.com/managed
+git -C "$managed" remote add port https://github.com:443/managed
+git -C "$managed" remote add nested https://gitlab.com/grp/sub/managed
+git -C "$managed" remote add fileurl file:///me/managed.git
+git -C "$managed" remote add scpport git@github.com:443/managed.git
+git -C "$managed" remote add scphost git@github.com:me.example/managed.git
+git -C "$managed" remote add colonpath "$tgt/x:me/managed.git"
+printf 'repo=owner/managed\ndir=%s\npush_remote=ghfork\n' "$managed" > "$tgt/derived.target"
+pass 'target with a fork owner in its URL' env DOCKET_TARGET_FILE="$tgt/derived.target" bash "$tshow"
+expect 'the fork owner was not taken from its URL' 'push: ghfork, the fork owned by Me'
+printf 'repo=owner/managed\ndir=%s\nremote=same\npush_remote=ghfork\npush_owner=me\n' "$managed" > "$tgt/derived.target"
+pass 'push_owner matching the URL in another case' env DOCKET_TARGET_FILE="$tgt/derived.target" bash "$tshow"
+printf 'repo=owner/managed\ndir=%s\nremote=same\npush_remote=mirror\npush_owner=alice\n' "$managed" > "$tgt/derived.target"
+pass 'push_owner over a URL on another host' env DOCKET_TARGET_FILE="$tgt/derived.target" bash "$tshow"
+expect 'push_owner did not win over a mirror URL' 'push: mirror, the fork owned by alice'
 printf 'repo=owner/managed\ndir=%s\npush_remote=bare\npush_owner=alice\n' "$managed" > "$tgt/owner.target"
 pass 'target with an explicit fork owner' env DOCKET_TARGET_FILE="$tgt/owner.target" bash "$tshow"
 expect 'push_owner was not used' 'push: bare, the fork owned by alice'
@@ -1414,8 +1433,17 @@ bad 'push_owner with the managed remote' "push_owner needs a push_remote other t
 bad 'push_owner not an account name' "bad.target:3: push_owner must be a forge account name" "repo=owner/managed\ndir=$managed\npush_owner=a b\n"
 bad 'fork owner not in the URL' "cannot tell the fork owner from push_remote 'bare' (managed-only); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=bare\n"
 bad 'push remote that is the managed repository' "push_remote 'same' (git@github.com:Owner/managed.git) is owner/managed itself, not a fork" "repo=owner/managed\ndir=$managed\npush_remote=same\n"
-git -C "$managed" remote remove bare
-git -C "$managed" remote remove same
+bad 'managed repository as push remote with push_owner' "push_remote 'same' (git@github.com:Owner/managed.git) is owner/managed itself, not a fork" "repo=owner/managed\ndir=$managed\npush_remote=same\npush_owner=alice\n"
+bad 'push_owner differing from the URL on the same forge' "push_owner 'alice' differs from the owner 'bob' in push_remote 'bob' (https://github.com/bob/managed.git)" "repo=owner/managed\ndir=$managed\nremote=same\npush_remote=bob\npush_owner=alice\n"
+bad 'fork owner from a local path' "cannot tell the fork owner from push_remote 'fork' ($tgt/me/managed.git); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=fork\n"
+bad 'fork owner from a file URL' "cannot tell the fork owner from push_remote 'fileurl'" "repo=owner/managed\ndir=$managed\npush_remote=fileurl\n"
+bad 'fork owner from a local path with a colon' "cannot tell the fork owner from push_remote 'colonpath'" "repo=owner/managed\ndir=$managed\npush_remote=colonpath\n"
+bad 'fork owner from an scp port-like path' "cannot tell the fork owner from push_remote 'scpport' (git@github.com:443/managed.git); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=scpport\n"
+bad 'fork owner from an scp host-like path' "cannot tell the fork owner from push_remote 'scphost' (git@github.com:me.example/managed.git); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=scphost\n"
+bad 'fork owner from a host-only URL' "cannot tell the fork owner from push_remote 'hostonly' (https://github.com/managed); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=hostonly\n"
+bad 'fork owner from a port' "cannot tell the fork owner from push_remote 'port' (https://github.com:443/managed); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=port\n"
+bad 'fork owner from a nested group' "cannot tell the fork owner from push_remote 'nested' (https://gitlab.com/grp/sub/managed); set push_owner=" "repo=owner/managed\ndir=$managed\npush_remote=nested\n"
+for r in bare same ghfork bob mirror hostonly port nested fileurl scpport scphost colonpath; do git -C "$managed" remote remove "$r"; done
 bad 'missing dir path' 'does not exist' "repo=owner/managed\ndir=$tgt/nowhere\n"
 bad 'dir not a repository' 'is not a git working tree' "repo=owner/managed\ndir=$tgt/bin\n"
 bad 'dir is the sidecar' 'is the sidecar repository itself' "repo=owner/managed\ndir=$sidecar\n"
