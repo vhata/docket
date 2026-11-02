@@ -23,13 +23,29 @@
 #   dir=~/src/repo        required: its local clone (an existing git repository)
 #   base=main             its base branch
 #   remote=origin         the clone's remote for the managed repository
+#   push_remote=          the clone's remote that branches are pushed to,
+#                         for contributing through a fork; default: remote
+#   push_owner=           the fork's owner on the forge; default: the owner
+#                         in push_remote's push URL when that is a forge URL
+#                         whose path (repeated and leading slashes dropped,
+#                         as forges do) is exactly owner/name and whose owner
+#                         is an account name (no dot, not all digits);
+#                         required otherwise (a local path, a file:// URL,
+#                         a nested group path). Only with a push_remote
+#                         other than remote; refused when that URL is on
+#                         the same host as remote's and shows another owner
 #   branch_prefix=        empty: docket's <queue>/<slug> branch names; set
 #                         (ending in '/', e.g. me/): <branch_prefix><slug>
 #   worktree_dir=         default <dir>-worktrees, outside the clone
 #   land_comment=         a comment that asks the managed repository's merge
 #                         process to land a PR; empty: the user merges
 # An unknown key, a repeated key, a malformed line or a missing required key
-# is an error naming the file and line.
+# is an error naming the file and line. A push_remote is refused, with or
+# without push_owner, when its push URL is remote's fetch or push URL
+# (ignoring repeated and trailing slashes and a trailing .git), or is a
+# forge URL whose owner/name path is repo. A URL that names the managed
+# repository some other way (another spelling of a local path, a redirect)
+# is not detected.
 #
 # Functions (bash 3.2; git only):
 #   docket_target_init <script_dir> [--no-target]
@@ -44,8 +60,11 @@
 #     see the same file) or <sidecar-root>/.docket-target. Sets
 #     DOCKET_TARGET (1, or empty without a file) and TARGET_REPO, TARGET_DIR
 #     (the clone's absolute toplevel), TARGET_BASE, TARGET_REMOTE,
-#     TARGET_BRANCH_PREFIX, TARGET_WORKTREE_DIR (absolute) and
-#     TARGET_LAND_COMMENT. Returns 2 after printing an error.
+#     TARGET_BRANCH_PREFIX, TARGET_WORKTREE_DIR (absolute),
+#     TARGET_LAND_COMMENT, TARGET_PUSH_REMOTE (remote unless push_remote
+#     names another) and TARGET_PUSH_OWNER (the fork owner, or empty when
+#     branches are pushed to the managed repository itself). Returns 2 after
+#     printing an error.
 #   docket_target_repo <sidecar-root>
 #     Prints the repo value of DOCKET_TARGET_FILE or
 #     <sidecar-root>/.docket-target, or nothing without a file or a repo
@@ -54,6 +73,15 @@
 #     Prints the branch name for a unit of work in target mode.
 #   docket_target_contains <path>
 #     Succeeds when <path> is inside a worktree of the managed clone.
+#   docket_target_url_repo <url>
+#     Prints owner/name from a forge remote URL (scp-style or scheme://),
+#     or nothing when the path is not exactly owner/name with an account
+#     name as owner, or the URL is a local path or file:// URL.
+#   docket_target_url_host <url>
+#     Prints the lowercased host of a forge remote URL, or nothing.
+#   docket_target_own_head <cross-repository> <head-owner>
+#     Succeeds when a PR head in the target with these fields is in the
+#     managed repository itself, or in the configured fork.
 
 # The variables are consumed by the scripts that source this file.
 # shellcheck disable=SC2034
@@ -62,6 +90,7 @@ docket_target_reset() {
   DOCKET_TARGET=""; DOCKET_TARGET_SOURCE=""
   TARGET_REPO=""; TARGET_DIR=""; TARGET_BASE=""; TARGET_REMOTE=""
   TARGET_BRANCH_PREFIX=""; TARGET_WORKTREE_DIR=""; TARGET_LAND_COMMENT=""
+  TARGET_PUSH_REMOTE=""; TARGET_PUSH_OWNER=""
 }
 
 docket_target_trim() {
@@ -105,7 +134,7 @@ docket_target_load() {
   from="$(git -C "$root" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p' || true)"
   if [ -n "$from" ] && [ -d "$from" ]; then from="$(cd "$from" && pwd -P)"; else from="$(cd "$root" && pwd -P)"; fi
   n=0; seen=" "; err=""
-  local repo="" dir="" base="main" remote="origin" prefix="" wtdir="" land=""
+  local repo="" dir="" base="main" remote="origin" prefix="" wtdir="" land="" push="" powner="" url urlrepo uhost rurl
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
     line="$(docket_target_trim "$line")"
@@ -134,6 +163,14 @@ docket_target_load() {
         [ -n "$value" ] && git check-ref-format "refs/remotes/$value/x" ||
           { err="$file:$n: remote '$value' is not a valid remote name"; break; }
         remote="$value" ;;
+      push_remote)
+        [ -n "$value" ] && git check-ref-format "refs/remotes/$value/x" ||
+          { err="$file:$n: push_remote '$value' is not a valid remote name"; break; }
+        push="$value" ;;
+      push_owner)
+        printf '%s\n' "$value" | grep -Eq '^[A-Za-z0-9_.-]+$' ||
+          { err="$file:$n: push_owner must be a forge account name, got '$value'"; break; }
+        powner="$value" ;;
       branch_prefix)
         if [ -n "$value" ]; then
           case "$value" in
@@ -145,12 +182,14 @@ docket_target_load() {
         prefix="$value" ;;
       worktree_dir) [ -n "$value" ] || { err="$file:$n: worktree_dir is empty (omit it for the default)"; break; }; wtdir="$value" ;;
       land_comment) land="$value" ;;
-      *) err="$file:$n: unknown key '$key' (known: repo, dir, base, remote, branch_prefix, worktree_dir, land_comment)"; break ;;
+      *) err="$file:$n: unknown key '$key' (known: repo, dir, base, remote, push_remote, push_owner, branch_prefix, worktree_dir, land_comment)"; break ;;
     esac
   done < "$file"
   if [ -z "$err" ]; then
     if [ -z "$repo" ]; then err="$file: required key 'repo' is missing"
     elif [ -z "$dir" ]; then err="$file: required key 'dir' is missing"
+    elif [ -n "$powner" ] && { [ -z "$push" ] || [ "$push" = "$remote" ]; }; then
+      err="$file: push_owner needs a push_remote other than the remote '$remote'"
     fi
   fi
   if [ -z "$err" ]; then
@@ -166,6 +205,35 @@ docket_target_load() {
         err="$file: dir $dir is the sidecar repository itself; it must be a clone of the managed repository"
       elif ! git -C "$TARGET_DIR" remote get-url "$remote" >/dev/null 2>&1; then
         err="$file: the clone at $TARGET_DIR has no remote '$remote' (set remote= to the one for $repo)"
+      elif [ -n "$push" ] && [ "$push" != "$remote" ]; then
+        # A fork: its owner names the PR heads that are the worker's own.
+        if ! url="$(git -C "$TARGET_DIR" remote get-url --push "$push" 2>/dev/null)"; then
+          err="$file: the clone at $TARGET_DIR has no remote '$push' (push_remote names the fork's remote there)"
+        else
+          urlrepo="$(docket_target_url_repo "$url")"
+          rurl="$(docket_target_url_norm "$(git -C "$TARGET_DIR" remote get-url "$remote")")"
+          if [ "$(docket_target_url_norm "$url")" = "$rurl" ] ||
+             [ "$(docket_target_url_norm "$url")" = "$(docket_target_url_norm "$(git -C "$TARGET_DIR" remote get-url --push "$remote")")" ]; then
+            err="$file: push_remote '$push' ($url) has the URL of remote '$remote', not a fork's; omit push_remote to push there"
+          elif [ -n "$urlrepo" ] && [ "$(docket_target_lower "$urlrepo")" = "$(docket_target_lower "$repo")" ]; then
+            err="$file: push_remote '$push' ($url) is $repo itself, not a fork; omit push_remote to push there"
+          elif [ -z "$powner" ]; then
+            if [ -z "$urlrepo" ]; then
+              err="$file: cannot tell the fork owner from push_remote '$push' ($url); set push_owner="
+            else
+              powner="${urlrepo%%/*}"
+            fi
+          elif [ -n "$urlrepo" ] && [ "$(docket_target_lower "${urlrepo%%/*}")" != "$(docket_target_lower "$powner")" ]; then
+            # On the managed repository's own forge the URL's owner is the
+            # fork's; elsewhere (a mirror or proxy) push_owner is the word.
+            uhost="$(docket_target_url_host "$url")"
+            if [ -n "$uhost" ] && [ "$uhost" = "$(docket_target_url_host "$(git -C "$TARGET_DIR" remote get-url "$remote")")" ]; then
+              err="$file: push_owner '$powner' differs from the owner '${urlrepo%%/*}' in push_remote '$push' ($url); fix one of them"
+            fi
+          fi
+        fi
+      else
+        push=""
       fi
     fi
   fi
@@ -178,6 +246,7 @@ docket_target_load() {
   DOCKET_TARGET=1; DOCKET_TARGET_SOURCE="$file"
   TARGET_REPO="$repo"; TARGET_BASE="$base"; TARGET_REMOTE="$remote"
   TARGET_BRANCH_PREFIX="$prefix"; TARGET_WORKTREE_DIR="$wtdir"; TARGET_LAND_COMMENT="$land"
+  TARGET_PUSH_REMOTE="${push:-$remote}"; TARGET_PUSH_OWNER="$powner"
   return 0
 }
 
@@ -225,6 +294,66 @@ docket_target_common() {
   (cd "$1" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P) || true
 }
 
+docket_target_lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+# The repository path of a forge remote URL: what follows the host in
+# scheme://[user@]host[:port]/path or scp-style [user@]host:path, with
+# repeated and leading slashes dropped, or nothing for a local path (a '/'
+# before any ':') or a file:// URL.
+docket_target_url_path() {
+  local u="$1" p
+  case "$u" in
+    [Ff][Ii][Ll][Ee]://*) return 0 ;;
+    *://*) p="${u#*://}"; case "$p" in */*) p="${p#*/}" ;; *) return 0 ;; esac ;;
+    *:*) case "${u%%:*}" in *[/\\]*) return 0 ;; esac; p="${u#*:}" ;;
+    *) return 0 ;;
+  esac
+  # Forges ignore repeated and leading slashes in the path.
+  p="$(printf '%s' "$p" | tr -s /)"; p="${p#/}"
+  printf '%s\n' "$p"
+}
+
+# A URL with repeated and trailing slashes and a trailing .git dropped, for
+# telling whether two remotes name the same place.
+docket_target_url_norm() {
+  local u
+  u="$(printf '%s' "$1" | sed 's#\([^/:]\)//*#\1/#g; s#/*$##; s#\.git$##; s#/*$##')"
+  printf '%s\n' "$u"
+}
+
+docket_target_url_host() {
+  local u="$1" h
+  [ -n "$(docket_target_url_path "$u")" ] || return 0
+  case "$u" in
+    *://*) h="${u#*://}"; h="${h%%/*}"; h="${h##*@}"; h="${h%:*}" ;;
+    *) h="${u%%:*}"; h="${h##*@}" ;;
+  esac
+  docket_target_lower "$h"
+}
+
+docket_target_url_repo() {
+  local p owner name
+  p="$(docket_target_url_path "$1")"
+  p="${p%/}"; p="${p%.git}"
+  # Exactly owner/name: a nested group path names no single owner.
+  case "$p" in */*/*) return 0 ;; */*) ;; *) return 0 ;; esac
+  owner="${p%/*}"; name="${p#*/}"
+  [ -n "$owner" ] && [ -n "$name" ] || return 0
+  # An account name: no host-like (a dot), port-like (digits only) or
+  # otherwise unusual owner, which would more likely be a misparse.
+  printf '%s\n' "$owner" | grep -Eq '^[A-Za-z0-9_-]+$' || return 0
+  printf '%s\n' "$owner" | grep -Eq '^[0-9]+$' && return 0
+  printf '%s/%s\n' "$owner" "$name"
+}
+
+docket_target_own_head() {
+  [ "$1" = false ] && return 0
+  [ "$1" = true ] && [ -n "$TARGET_PUSH_OWNER" ] || return 1
+  [ "$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$TARGET_PUSH_OWNER" | tr '[:upper:]' '[:lower:]')" ]
+}
+
 docket_target_contains() {
   local a
   [ -n "$TARGET_DIR" ] || return 1
@@ -253,4 +382,9 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   echo "branches: $(docket_target_branch '<queue>' '<slug>')"
   echo "worktrees: $TARGET_WORKTREE_DIR/<queue>-<slug>"
   echo "land_comment: ${TARGET_LAND_COMMENT:-(none; the user merges)}"
+  if [ -n "$TARGET_PUSH_OWNER" ]; then
+    echo "push: $TARGET_PUSH_REMOTE, the fork owned by $TARGET_PUSH_OWNER"
+  else
+    echo "push: $TARGET_PUSH_REMOTE, the managed repository itself"
+  fi
 fi

@@ -23,7 +23,9 @@
 #   in the managed clone: only branches start-work.sh marked as docket's
 #   (git config branch.<name>.docket true) are considered, on both the merged
 #   and the --empty paths, so the user's own branches are never touched;
-#   landing is proved by a merged PR in the target repository; --empty measures
+#   landing is proved by a merged PR in the target repository (with
+#   push_remote set, one headed in the managed repository itself or in that
+#   fork, never in another fork under the same name); --empty measures
 #   against <remote>/<base>; the base defaults to the target's and is never
 #   deleted; deleting a branch also removes its marker; and --apply fetches and
 #   prunes the target's remote. It also reads the "PR:" lines in the
@@ -60,7 +62,7 @@ while [ $# -gt 0 ]; do
     --base) base="$2"; shift 2 ;;
     --empty) empty=1; shift ;;
     --discard-ignored) discard_ignored=1; shift ;;
-    -h|--help) sed -n '2,34p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
     *) echo "cleanup-landed: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -141,7 +143,14 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     fi
   fi
   if [ -z "$reason" ] && [ "$have_gh" -eq 1 ]; then
-    merged="$(gh pr list ${repo_args[@]+"${repo_args[@]}"} --head "$br" --state merged --json number,headRefOid --jq '.[0] | select(. != null) | "\(.number) \(.headRefOid)"' 2>/dev/null || true)"
+    # gh matches --head by branch name alone. With a fork configured, a
+    # merged PR from another fork under the same name is skipped: only one
+    # headed in the managed repository or that fork can prove landing.
+    pick='.[0]'
+    if [ -n "$DOCKET_TARGET" ] && [ -n "$TARGET_PUSH_OWNER" ]; then
+      pick="[.[] | select((.isCrossRepository | not) or ((.headRepositoryOwner.login // \"\") | ascii_downcase) == (\"$TARGET_PUSH_OWNER\" | ascii_downcase))] | .[0]"
+    fi
+    merged="$(gh pr list ${repo_args[@]+"${repo_args[@]}"} --head "$br" --state merged --json number,headRefOid,isCrossRepository,headRepositoryOwner --jq "$pick"' | select(. != null) | "\(.number) \(.headRefOid)"' 2>/dev/null || true)"
     if [ -n "$merged" ]; then
       num="${merged%% *}"; oid="${merged##* }"
       if [ "$oid" = "$tip" ]; then

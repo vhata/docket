@@ -11,12 +11,14 @@
 #                          whose tip is already in its local history
 #   --exclude-branch NAME  the same exclusion for a named local branch
 # A remote ref or PR with the same branch name but commits you do not have (or
-# from a fork) is another worker's claim and is still reported.
+# from a fork other than the target's push_remote) is another worker's claim
+# and is still reported.
 # A queue entry (TODO.md, review/BACKLOG.md, in the working tree or on
 # origin/main when that ref exists) carrying a "PR:" line is claimed by those
 # pull requests, in any mode. With --self or --exclude-branch in target mode
-# it is only a note when every PR it names is an open, same-repository PR
-# headed by the own branch at an owned tip; without gh it is a note.
+# it is only a note when every PR it names is an open PR headed by the own
+# branch at an owned tip, from the managed repository or the configured fork;
+# without gh it is a note.
 # A branch, worktree or PR head branch counts when its last path component is
 # the slug (todo/<slug>, origin/fix/<slug>, <slug>); a longer name that merely
 # contains the slug does not. A PR body counts when a marker line names the slug.
@@ -31,11 +33,13 @@
 # worktrees are checked in the managed clone; PRs in the target repository by
 # that head name only (its PR bodies carry no markers). An open PR is a claim;
 # a merged one is a claim when you authored it and a note otherwise. --self
-# must run from a managed worktree, on a branch pushed to the managed
-# repository itself (forks are not supported). --no-target ignores the file.
+# must run from a managed worktree; an open PR headed by the own branch at an
+# owned tip is the worker's own when it comes from the managed repository
+# itself or, with push_remote set, from the fork that remote names
+# (<push_owner>:<branch>). --no-target ignores the file.
 set -euo pipefail
 
-usage() { sed -n '2,35p' "$0"; exit 2; }
+usage() { sed -n '2,39p' "$0"; exit 2; }
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 orig="$(pwd)"
 self=""; self_here=0; local_only=0; no_target=""; queue=""
@@ -155,15 +159,16 @@ queue_pr() {
   '
 }
 # Target mode: succeeds when every PR on a PR: line is an open PR in the
-# target, from the target itself, headed by the own branch at an owned tip.
+# target, from the target itself or the configured fork, headed by the own
+# branch at an owned tip.
 own_prs() {
-  local ref out st head oid cross
+  local ref out st head oid cross owner
   for ref in $(printf '%s\n' "$1" | tr ',' ' '); do
     [ "${ref%%#*}" = "$TARGET_REPO" ] || return 1
-    out="$(gh pr view "${ref##*#}" --repo "$TARGET_REPO" --json state,headRefName,headRefOid,isCrossRepository \
-      --jq '"\(.state)\t\(.headRefName)\t\(.headRefOid)\t\(.isCrossRepository)"' < /dev/null)" || fail_query
-    IFS="$tab" read -r st head oid cross <<< "$out"
-    [ "$st" = OPEN ] && [ "$head" = "$self" ] && [ "$cross" = false ] && owned "$oid" || return 1
+    out="$(gh pr view "${ref##*#}" --repo "$TARGET_REPO" --json state,headRefName,headRefOid,isCrossRepository,headRepositoryOwner \
+      --jq '"\(.state)\t\(.headRefName)\t\(.headRefOid)\t\(.isCrossRepository)\t\(.headRepositoryOwner.login // "-")"' < /dev/null)" || fail_query
+    IFS="$tab" read -r st head oid cross owner <<< "$out"
+    [ "$st" = OPEN ] && [ "$head" = "$self" ] && docket_target_own_head "$cross" "$owner" && owned "$oid" || return 1
   done
 }
 fail_query() { echo "claim-check: hosted PR query failed; ownership remains unverified" >&2; exit 2; }
@@ -177,15 +182,15 @@ target_names() {
   fi
 }
 # PRs in the managed repository headed by one of those names. Each line is
-# state, number, draft, cross-repository, head sha, head branch, merge date,
-# author (- when absent; no field may be empty, since read collapses tabs),
-# title.
+# state, number, draft, cross-repository, head repository owner, head sha,
+# head branch, merge date, author (- when absent; no field may be empty, since
+# read collapses tabs), title.
 target_prs() {
   local cand
   for cand in $(target_names "$1"); do
     gh pr list --repo "$TARGET_REPO" --head "$cand" --state all --limit 100 \
-      --json number,state,isDraft,isCrossRepository,headRefOid,headRefName,title,mergedAt,author \
-      --jq '.[] | "\(.state)\t\(.number)\t\(.isDraft)\t\(.isCrossRepository)\t\(.headRefOid)\t\(.headRefName)\t\((.mergedAt // "-")[0:10])\t\(.author.login // "-")\t\(.title)"' || return 1
+      --json number,state,isDraft,isCrossRepository,headRepositoryOwner,headRefOid,headRefName,title,mergedAt,author \
+      --jq '.[] | "\(.state)\t\(.number)\t\(.isDraft)\t\(.isCrossRepository)\t\(.headRepositoryOwner.login // "-")\t\(.headRefOid)\t\(.headRefName)\t\((.mergedAt // "-")[0:10])\t\(.author.login // "-")\t\(.title)"' || return 1
   done
 }
 me=""; me_known=0
@@ -220,11 +225,12 @@ for requested in "$@"; do
       if [ "$me_known" -eq 0 ] && [ -n "$prs" ]; then
         me="$(gh api user --jq .login 2>/dev/null || true)"; me_known=1
       fi
-      while IFS="$tab" read -r state num draft cross oid head merged author title; do
+      while IFS="$tab" read -r state num draft cross howner oid head merged author title; do
         case "$state" in
           OPEN)
-            if [ -n "$self" ] && [ "$head" = "$self" ] && [ "$cross" = false ] && owned "$oid"; then continue; fi
+            if [ -n "$self" ] && [ "$head" = "$self" ] && docket_target_own_head "$cross" "$howner" && owned "$oid"; then continue; fi
             [ "$draft" = true ] && draft=draft || draft=ready
+            [ "$cross" = true ] && head="$howner:$head"
             echo "  open PR $TARGET_REPO#$num [$draft] $head: $title"; claims=$((claims + 1)) ;;
           MERGED|CLOSED)
             # Without a known login every merged PR counts, the safe side.
