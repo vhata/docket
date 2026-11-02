@@ -13,7 +13,10 @@
 # starts a comment (a whole line, or trailing after whitespace); blank lines
 # are ignored; whitespace around keys and values is trimmed; a leading ~/ in a
 # value expands to $HOME, and a relative dir or worktree_dir is resolved
-# against the directory holding the file. Keys:
+# against the sidecar's main worktree (the parent of its git common
+# directory), so every sidecar worktree resolves it to the same place. A
+# relative DOCKET_TARGET_FILE is taken from the current directory; set it per
+# command, never globally. Keys:
 #   repo=owner/repo       required: the managed repository on the forge
 #   dir=~/src/repo        required: its local clone (an existing git repository)
 #   base=main             its base branch
@@ -28,13 +31,15 @@
 #
 # Functions (bash 3.2; git only):
 #   docket_target_init <script_dir> [--no-target]
-#     Finds the sidecar and its target file from the current directory: the
-#     current toplevel's .docket-target, else the one in the repository that
-#     holds <script_dir>, so a script run from a managed worktree still finds
-#     its sidecar. Sets DOCKET_SIDECAR_ROOT, then loads as below. Returns 2
-#     after printing an error.
+#     Settles the sidecar root, then loads as below. The root is the current
+#     toplevel, unless that has no .docket-target (or DOCKET_TARGET_FILE is
+#     set) and the repository holding <script_dir> is a different one with a
+#     target in play: then the scripts' own repository is the sidecar, so a
+#     script run by absolute path from a managed worktree still finds it.
+#     Sets DOCKET_SIDECAR_ROOT. Returns 2 after printing an error.
 #   docket_target_load <sidecar-root>
-#     Loads DOCKET_TARGET_FILE or <sidecar-root>/.docket-target. Sets
+#     Loads DOCKET_TARGET_FILE (made absolute and exported, so child scripts
+#     see the same file) or <sidecar-root>/.docket-target. Sets
 #     DOCKET_TARGET (1, or empty without a file) and TARGET_REPO, TARGET_DIR
 #     (the clone's absolute toplevel), TARGET_BASE, TARGET_REMOTE,
 #     TARGET_BRANCH_PREFIX, TARGET_WORKTREE_DIR (absolute) and
@@ -77,6 +82,10 @@ docket_target_path() {
 docket_target_load() {
   local root="$1" file line n key value seen from err common side
   docket_target_reset
+  if [ -n "${DOCKET_TARGET_FILE:-}" ]; then
+    case "$DOCKET_TARGET_FILE" in /*) ;; *) DOCKET_TARGET_FILE="$(pwd)/$DOCKET_TARGET_FILE" ;; esac
+    export DOCKET_TARGET_FILE
+  fi
   file="${DOCKET_TARGET_FILE:-$root/.docket-target}"
   if [ ! -f "$file" ]; then
     if [ -n "${DOCKET_TARGET_FILE:-}" ]; then
@@ -85,7 +94,9 @@ docket_target_load() {
     fi
     return 0
   fi
-  from="$(cd "$(dirname "$file")" && pwd -P)"
+  # Relative paths resolve against the sidecar's main worktree.
+  from="$(docket_target_common "$root")"
+  if [ -n "$from" ]; then from="$(dirname "$from")"; else from="$(cd "$root" && pwd -P)"; fi
   n=0; seen=" "; err=""
   local repo="" dir="" base="main" remote="origin" prefix="" wtdir="" land=""
   while IFS= read -r line || [ -n "$line" ]; do
@@ -169,23 +180,16 @@ docket_target_init() {
   here_top="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   DOCKET_SIDECAR_ROOT="$here_top"
   [ "$no_target" = --no-target ] && return 0
-  if [ -z "${DOCKET_TARGET_FILE:-}" ] && [ ! -f "$here_top/.docket-target" ]; then
+  # Settle the root before loading: the load checks that the clone is not the
+  # sidecar, which must already be the right repository.
+  if [ -n "${DOCKET_TARGET_FILE:-}" ] || [ ! -f "$here_top/.docket-target" ]; then
     script_top="$(git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null || true)"
-    if [ -n "$script_top" ] && [ -f "$script_top/.docket-target" ]; then
+    if [ -n "$script_top" ] && [ "$(docket_target_common "$script_top")" != "$(docket_target_common "$here_top")" ] &&
+       { [ -n "${DOCKET_TARGET_FILE:-}" ] || [ -f "$script_top/.docket-target" ]; }; then
       DOCKET_SIDECAR_ROOT="$script_top"
     fi
   fi
   docket_target_load "$DOCKET_SIDECAR_ROOT" || return 2
-  # Run from a managed worktree with DOCKET_TARGET_FILE set: the sidecar is
-  # still the repository holding the scripts.
-  if [ -n "$DOCKET_TARGET" ] && docket_target_contains "$DOCKET_SIDECAR_ROOT"; then
-    script_top="$(git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null || true)"
-    if [ -z "$script_top" ] || docket_target_contains "$script_top"; then
-      echo "docket target: cannot find the sidecar repository: run from the sidecar, or use the scripts installed in it" >&2
-      docket_target_reset; return 2
-    fi
-    DOCKET_SIDECAR_ROOT="$script_top"
-  fi
   return 0
 }
 

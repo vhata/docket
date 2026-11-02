@@ -7,7 +7,8 @@
 #   the tree CI or a reviewer is looking at; pass --base main to measure the
 #   landed history instead.
 #   --repo-dir resolves commits, diffs and --paths in another repository while
-#   the index is still read from this one. With a managed-repository target
+#   the index is still read from this one; a relative path is taken from the
+#   current directory. With a managed-repository target
 #   (.docket-target; see target.sh) it defaults to the managed clone, and
 #   --base to <remote>/<base> there when that ref exists. --no-target ignores
 #   the target file.
@@ -36,9 +37,11 @@ while [ $# -gt 0 ]; do
     --index) index="$2"; shift 2 ;;
     --paths) paths="$2"; shift 2 ;;
     --base) base="$2"; shift 2 ;;
-    --repo-dir) repo_dir="$2"; shift 2 ;;
+    --repo-dir)
+      repo_dir="$2"; shift 2
+      case "$repo_dir" in /*) ;; *) repo_dir="$(pwd)/$repo_dir" ;; esac ;;
     --no-target) no_target=--no-target; shift ;;
-    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "review-due: unknown argument $1" >&2; exit 2 ;;
   esac
 done

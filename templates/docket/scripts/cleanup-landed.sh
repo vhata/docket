@@ -20,11 +20,13 @@
 #   build output (build, out, dist, coverage, test-results).
 #   Nothing is pushed; remote branches are untouched.
 #   With a managed-repository target (.docket-target; see target.sh) it works
-#   in the managed clone: only docket's branches there (<branch_prefix>*, or
-#   todo/ review/ roadmap/ fix/ task/ without a prefix) are considered, landing
-#   is proved by a merged PR in the target repository, the base defaults to the
-#   target's and is never deleted, and --apply fetches and prunes the target's
-#   remote. --no-target ignores the target file.
+#   in the managed clone: only branches start-work.sh marked as docket's
+#   (git config branch.<name>.docket true) are considered, on both the merged
+#   and the --empty paths, so the user's own branches are never touched;
+#   landing is proved by a merged PR in the target repository; --empty measures
+#   against <remote>/<base>; the base defaults to the target's and is never
+#   deleted; deleting a branch also removes its marker; and --apply fetches and
+#   prunes the target's remote. --no-target ignores the target file.
 set -euo pipefail
 
 # Ignored paths whose last component matches this are reproducible build or
@@ -53,7 +55,7 @@ while [ $# -gt 0 ]; do
     --base) base="$2"; shift 2 ;;
     --empty) empty=1; shift ;;
     --discard-ignored) discard_ignored=1; shift ;;
-    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
     *) echo "cleanup-landed: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -73,15 +75,11 @@ else
   unset GH_REPO
   cd "$DOCKET_SIDECAR_ROOT"
 fi
-# In target mode, only branch names docket creates there are candidates.
+# In target mode, only branches start-work.sh marked as docket's are
+# candidates; a name alone proves nothing in someone else's clone.
 docket_branch() {
   [ -n "$DOCKET_TARGET" ] || return 0
-  if [ -n "$TARGET_BRANCH_PREFIX" ]; then
-    case "$1" in "$TARGET_BRANCH_PREFIX"?*) return 0 ;; esac
-  else
-    case "$1" in todo/?*|review/?*|roadmap/?*|fix/?*|task/?*) return 0 ;; esac
-  fi
-  return 1
+  [ "$(git config --get "branch.$1.docket" 2>/dev/null || true)" = true ]
 }
 [ -n "$(git remote)" ] || local_only=1
 common="$(git rev-parse --git-common-dir)"
@@ -157,7 +155,7 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     upto="$base"
     if [ -n "$DOCKET_TARGET" ] && git rev-parse --verify --quiet "refs/remotes/$remote/$base" >/dev/null; then upto="$remote/$base"; fi
     ahead="$(git rev-list --count "$upto..$br" 2>/dev/null || echo 1)"
-    openpr=""; [ "$have_gh" -eq 1 ] && openpr="$(gh pr list ${repo_args[@]+"${repo_args[@]}"} --head "$br" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+    openpr=""; [ "$have_gh" -eq 1 ] && openpr="$(gh pr list ${repo_args[@]+"${repo_args[@]}"} --head "$br" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
     if [ "$ahead" -eq 0 ] && [ -z "$openpr" ] && [ -z "$(wt_for "$br")" ]; then reason="no commits beyond $base, no PR, no worktree"; fi
   fi
   [ -n "$reason" ] || continue
@@ -209,6 +207,8 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
       echo "keep $br: branch moved during cleanup or ref deletion failed"
       kept=$((kept + 1)); continue
     fi
+    # The docket marker goes with the branch it marked.
+    [ -z "$DOCKET_TARGET" ] || git config --unset-all "branch.$br.docket" 2>/dev/null || true
   fi
   removed=$((removed + 1))
 done

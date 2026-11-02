@@ -10,20 +10,25 @@
 # With a managed-repository target (.docket-target; see target.sh) the branch
 # and worktree are created in the managed clone from <remote>/<base>: the
 # branch is "<branch_prefix><slug>" when a prefix is set, the worktree goes in
-# worktree_dir, and --base and --dir override the target's values. The
-# sidecar's queue entry is the claim record. --no-target ignores the target.
+# worktree_dir, and --base and --dir override the target's values. The new
+# branch is marked with "git config branch.<name>.docket true" in the clone;
+# cleanup-landed.sh touches only marked branches there. The sidecar's queue
+# entry is the claim record. --no-target ignores the target.
+# A relative --dir is taken from the current directory.
 # Prints the worktree path and the next steps. Does not push anything.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "start-work: not in a git repository" >&2; exit 2; }
-[ $# -ge 2 ] || { sed -n '2,15p' "$0"; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,18p' "$0"; exit 2; }
 queue="$1"; slug="$2"; shift 2
 base=""; dir=""; check=1; local_only=0; no_target=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --base) base="$2"; shift 2 ;;
-    --dir) dir="$2"; shift 2 ;;
+    --dir)
+      dir="$2"; shift 2
+      case "$dir" in /*) ;; *) dir="$(pwd)/$dir" ;; esac ;;
     --local) local_only=1; shift ;;
     --no-check) check=0; shift ;;
     --no-target) no_target=--no-target; shift ;;
@@ -52,8 +57,15 @@ fi
 claim_args=()
 [ "$local_only" -eq 0 ] || claim_args=(--local)
 [ -z "$no_target" ] || claim_args+=(--no-target)
+[ -z "$DOCKET_TARGET" ] || claim_args+=(--queue "$queue")
 if [ "$check" -eq 1 ]; then
-  "$here/claim-check.sh" ${claim_args[@]+"${claim_args[@]}"} "$slug" || { echo "start-work: resolve the existing claim first (or pass --no-check if the overlap is already coordinated)"; exit 1; }
+  rc=0
+  "$here/claim-check.sh" ${claim_args[@]+"${claim_args[@]}"} "$slug" || rc=$?
+  case "$rc" in
+    0) ;;
+    1) echo "start-work: resolve the existing claim first (or pass --no-check if the overlap is already coordinated)"; exit 1 ;;
+    *) echo "start-work: the claim check failed (exit $rc), so ownership is unverified; fix the error above before starting" >&2; exit 2 ;;
+  esac
 fi
 
 path="$dir/$queue-$slug"
@@ -96,6 +108,9 @@ for setting in remote merge; do
     git config --unset-all "branch.$branch.$setting"
   fi
 done
+# Mark the branch as docket's, so cleanup in the managed clone never touches
+# the user's own branches there.
+[ -z "$DOCKET_TARGET" ] || git config "branch.$branch.docket" true
 echo "created branch $branch at $path (from $start)"
 case "$queue" in
   todo) marker="Claims TODO: $slug" ;;
