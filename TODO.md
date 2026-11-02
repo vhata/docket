@@ -21,6 +21,9 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 - [SCRIPTS] `managed-repo-forks` — **Managed-repository mode works for contributors who push branches to a fork rather than to the managed repository.** Target mode expects branches on the managed repository itself; `claim-check.sh --self` reports the user's own fork PR as a competing claim, and `start-work.sh` names the managed remote for the push.
   - Source: independent review of PR #30, 2026-11-01
   - Starting point: an optional `push_remote` (or fork owner) key in `.docket-target`; accept a cross-repository head whose owner matches it in `claim-check.sh`, and name that remote in `start-work.sh`'s next steps.
+- [TOOLING] `suite-bash-on-path` — **The regression suites exercise the vendored scripts under bash 3.2, not only the suite itself.** `scripts/test.sh` runs each suite with `/bin/bash`, but the suites invoke the scripts as `bash <script>` (and through `#!/usr/bin/env bash` shebangs), which resolves through PATH, so on a machine with a newer bash first on PATH the scripts never run under 3.2 locally.
+  - Source: `todo/sidecar-claims` implementation, 2026-11-01
+  - Starting point: `scripts/test.sh` could run each suite with a PATH whose first `bash` is `/bin/bash` (e.g. a temporary bin directory with a `bash` symlink), or the suites could call `$BASH`; check what the macOS CI runner's PATH resolves `bash` to.
 
 ## Needs proof of concept
 
