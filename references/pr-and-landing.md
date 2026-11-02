@@ -214,6 +214,17 @@ ignores an inherited `GH_REPO`; with it, every query names that
 repository. Reading the health does not change who lands: merging, and
 posting a landing comment, stay the user's unless delegated.
 
+In a sidecar, `--repo` defaults to the managed repository and
+`--land-comment` to the target's `land_comment`, so a bare
+`bash docket/scripts/pr-health.sh` reports on your open PRs there.
+Explicit options win, and `--no-target` reports on the sidecar's own
+PRs instead. Managed PRs carry no docket markers, so their bodies are
+not cross-checked: each open one lists the sidecar's `TODO.md` and
+`review/BACKLOG.md` entries whose `PR:` line names it, or says that no
+entry does, which is expected for directly requested work and otherwise
+means the claim was never recorded. Entries whose PRs have all closed
+are `cleanup-landed.sh`'s report.
+
 ## Keeping branches current
 
 Rebase, never merge main into a branch. In local mode use `git rebase
@@ -251,7 +262,7 @@ Stack when step N+1 cannot start until step N's code exists and waiting for N to
 A sidecar's `.docket-target` names a managed repository whose own policies govern its PRs (see [setup](setup.md#7-a-sidecar-for-a-managed-repository)). The unit of work is the same (branch, worktree, change description, independent review), and the managed repository decides how it lands.
 
 - Push the branch to the managed repository itself and open the PR as a draft there: `gh pr create --repo <repo> --base <base> --draft` from the worktree `start-work.sh` made. Contributing through a fork is not yet supported in target mode. The body follows the managed repository's own PR template when it has one. The rules about writing for a future `git log` reader still hold, because squash-merging repositories make the description the commit body. Docket markers and the `Type:` line stay out of the body; record them in the sidecar's `.docket/state-<slug>.md`. `check-pr-markers.sh` and `pr-labels.sh` therefore stand down in a sidecar: they print one line and exit 0, and create no labels in the managed repository. Pass `--no-target` to check or label a PR of the sidecar itself; `ci.sh` and `land-local.sh` always do.
-- Record the claim in the sidecar once the PR is open: a `PR: <repo>#<number>` line on the queue entry, committed directly to the sidecar's main (see [queues](queues.md#claiming)).
+- Record the claim in the sidecar once the PR is open: a `PR: <repo>#<number>` line on the queue entry, committed directly to the sidecar's main (see [queues](queues.md#claiming)). `bash docket/scripts/pr-health.sh` from the sidecar then reports on the managed PRs, with each one's recorded entries and any landing comment (see [Checking PR health](#checking-pr-health)).
 - Never push to the managed repository's base, and never use `land-local.sh` there. The merge is the managed repository's process: its required reviews, its CI and its merge button or merge bot.
 - Without a `land_comment`, the user merges through that process. With one, posting the comment is the landing action, so it is the user's unless delegated in the turn or the sidecar's `AGENTS.md`, like any hosted merge. Merge bots of this kind commonly rebase the PR onto the current base and run CI there before squashing, which covers docket's current-base landing requirement without a manual rebase. Many abandon the merge when the branch changes after the comment, so the branch is frozen from the comment until the PR merges or the bot reports a failure: no pushes, rebases or force-pushes in that window.
 - After it merges, run `bash docket/scripts/cleanup-landed.sh` from the sidecar, then again with `--apply`. Landing is proved by the merged PR in the managed repository at the branch's exact tip, as in hosted mode; only branches `start-work.sh` marked as docket's in the managed clone are touched, and its base never is. The same run lists queue entries whose `PR:` pull requests have all closed; resolve each with a direct commit to the sidecar's main that removes the entry and carries `Resolves TODO: <slug>` and the PR reference (see [queues](queues.md#resolving)).

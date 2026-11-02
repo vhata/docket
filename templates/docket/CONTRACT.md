@@ -28,7 +28,8 @@ tracked `.docket-target` file (format in `docket/scripts/target.sh`)
 names the managed repository and its local clone. `claim-check.sh`,
 `start-work.sh` and `cleanup-landed.sh` then work on branches and
 worktrees in that clone and PRs in that repository, matched by head
-branch; `review-due.sh` resolves commits there. From a managed
+branch; `review-due.sh` resolves commits there, and `pr-health.sh`
+reports on its PRs against the sidecar's `PR:` lines. From a managed
 worktree, run the sidecar's scripts by absolute path. Pass `--no-target`
 for work on the sidecar itself, and set `DOCKET_TARGET_FILE` only per
 command. The managed repository's template, CI and merge process govern

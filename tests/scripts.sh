@@ -1745,6 +1745,88 @@ pass 'cleanup --no-target ignores PR lines' tgv bash "$tclean" --no-target
 grep -q 'resolve sc-claimed' "$fixture/result.log" && { echo 'scripts-test: cleanup --no-target reported target claims' >&2; exit 1; }
 git checkout --quiet -- TODO.md
 
+# pr-health.sh in a sidecar: the target supplies --repo and --land-comment,
+# and a managed PR's queue entries are the sidecar's PR: lines, not its body
+# markers. A wrapper over pr-health's fake forge fails any call that does
+# not name the target, by --repo (or the api path) and by GH_REPO.
+if command -v jq >/dev/null 2>&1; then
+  mkdir -p "$tgt/prhbin"
+  cat > "$tgt/prhbin/gh" <<'GH'
+#!/usr/bin/env bash
+printf 'pr-health %s | GH_REPO=%s\n' "$*" "${GH_REPO:-}" >> "$FIXTURE_GH_LOG"
+violation() { printf 'VIOLATION pr-health %s\n' "$1" >> "$FIXTURE_GH_LOG"; exit 3; }
+[ "${GH_REPO:-}" = owner/managed ] || violation "GH_REPO is '${GH_REPO:-}', not the target"
+case "$1" in
+  pr) case " $* " in *' --repo owner/managed '*) ;; *) violation "pr call without --repo owner/managed" ;; esac ;;
+  api) case "$2" in repos/owner/managed/*) ;; *) violation "api call outside the target: $2" ;; esac ;;
+  *) violation "unexpected call: $*" ;;
+esac
+exec "$PRH_GH" "$@"
+GH
+  chmod +x "$tgt/prhbin/gh"
+  # 31 is recorded by two entries (sc-open, sc-mixed) and carries a marker
+  # for an entry the sidecar does not have; 33 is recorded by none.
+  prh_pr 31 OPEN false todo/sc-open APPROVED MERGEABLE CLEAN "[$ok_run]" '[]' '## Why\n\nText.\n\nResolves TODO: gone-task'
+  prh_pr 33 OPEN false task/sc-direct '' MERGEABLE CLEAN "[$ok_run]" '[{"body":"/merge now","createdAt":"2026-11-01T09:00:00Z"}]' ''
+  printf '0\n' > "$prh_data/behind-sha31"; printf '0\n' > "$prh_data/behind-sha33"
+  tprh="$sidecar/docket/scripts/pr-health.sh"
+  tph() { : > "$prh_log"; tgh env PATH="$tgt/prhbin:$PATH" PRH_GH="$prh_data/bin/gh" PRH_LOG="$prh_log" PRH_DATA="$prh_data" PRH_LIST="${PRH_LIST:-[]}" "$@"; }
+  PRH_LIST='[{"number":31},{"number":33}]'
+  pass 'target pr-health default selection' tph bash "$tprh"
+  expect 'target pr-health did not default --repo' 'summary: 2 PR(s) in owner/managed; 0 need attention'
+  expect 'target pr-health missed a PR line' 'queue: TODO.md `sc-open` records PR: owner/managed#31'
+  expect 'target pr-health missed a second PR line' 'queue: TODO.md `sc-mixed` records PR: owner/managed#31'
+  expect 'target pr-health did not note an unrecorded PR' "queue: no entry in the sidecar's queues records PR: owner/managed#33"
+  grep -q 'warning:\|landing:' "$fixture/result.log" && { echo 'scripts-test: target pr-health read body markers or a land comment it was not given' >&2; cat "$fixture/result.log" >&2; exit 1; }
+  grep -q 'pr list --author @me .*--repo owner/managed' "$prh_log" || { echo 'scripts-test: target pr-health did not list the target PRs' >&2; cat "$prh_log" >&2; exit 1; }
+  grep -q ' api repos/owner/managed/compare/main...sha31 ' "$prh_log" || { echo 'scripts-test: target pr-health compared outside the target' >&2; cat "$prh_log" >&2; exit 1; }
+  # From a managed worktree, by absolute path, the sidecar's queues are read.
+  pass 'target pr-health from a managed worktree' in_dir "$managed/.wt/todo-tgt-two" tph bash "$tprh" --pr 31
+  expect 'target pr-health from a managed worktree missed the PR line' 'queue: TODO.md `sc-open` records PR: owner/managed#31'
+  # land_comment from the target, and an explicit --land-comment over it.
+  printf 'repo=owner/managed\ndir=%s\nland_comment = /merge now\n' "$managed" > "$tgt/land.target"
+  pass 'target pr-health land_comment' tph env DOCKET_TARGET_FILE="$tgt/land.target" bash "$tprh" --pr 33
+  expect 'target pr-health did not default --land-comment' 'landing: requested 2026-11-01T09:00:00Z, still open'
+  pass 'target pr-health explicit --land-comment' tph env DOCKET_TARGET_FILE="$tgt/land.target" bash "$tprh" --pr 33 --land-comment /ship
+  grep -q 'landing:' "$fixture/result.log" && { echo 'scripts-test: the target land_comment beat --land-comment' >&2; exit 1; }
+  # A relative DOCKET_TARGET_FILE is taken from the directory the script runs in.
+  mkdir -p "$sidecar/sub"; cp "$tgt/land.target" "$sidecar/sub/t.target"
+  pass 'target pr-health relative target file from a subdirectory' in_dir "$sidecar/sub" tph env DOCKET_TARGET_FILE=t.target bash ../docket/scripts/pr-health.sh --pr 33
+  expect 'target pr-health did not read the relative target file' 'landing: requested 2026-11-01T09:00:00Z, still open'
+  rm -rf "$sidecar/sub"
+  # PR: lines match the whole reference: #3 is not #30 or #31, and
+  # other/managed#33 is not owner/managed#33. Each item of a comma-separated
+  # line counts, not only the last.
+  printf -- '- [CORE] `sc-elsewhere` **Same number, another repository.**\n  - Source: scripts regression fixture\n  - PR: other/managed#33\n' >> TODO.md
+  prh_pr 3 OPEN false task/three '' MERGEABLE CLEAN "[$ok_run]" '[]' ''
+  prh_pr 30 OPEN false todo/sc-claimed '' MERGEABLE CLEAN "[$ok_run]" '[]' ''
+  printf '0\n' > "$prh_data/behind-sha3"; printf '0\n' > "$prh_data/behind-sha30"
+  pass 'target pr-health short PR number' tph bash "$tprh" --pr 3
+  expect 'target pr-health matched #3 to a longer number' "queue: no entry in the sidecar's queues records PR: owner/managed#3"
+  grep -q 'records PR: owner/managed#3[0-9]' "$fixture/result.log" && { echo 'scripts-test: target pr-health matched a PR: line by prefix' >&2; cat "$fixture/result.log" >&2; exit 1; }
+  pass 'target pr-health other repository, same number' tph bash "$tprh" --pr 33
+  expect 'target pr-health matched another repository' "queue: no entry in the sidecar's queues records PR: owner/managed#33"
+  grep -q 'sc-elsewhere' "$fixture/result.log" && { echo 'scripts-test: target pr-health matched a PR: line by number alone' >&2; cat "$fixture/result.log" >&2; exit 1; }
+  pass 'target pr-health first item of a PR line' tph bash "$tprh" --pr 30
+  expect 'target pr-health missed the first item of a PR line' 'queue: TODO.md `sc-mixed` records PR: owner/managed#30'
+  expect 'target pr-health missed a single PR line' 'queue: TODO.md `sc-claimed` records PR: owner/managed#30'
+  git checkout --quiet -- TODO.md
+  grep -q VIOLATION "$tgt_log" && { echo 'scripts-test: a target pr-health gh call did not name the target' >&2; grep VIOLATION "$tgt_log" >&2; exit 1; }
+  # An explicit --repo beats the target, and its PRs are checked by markers.
+  pass 'target pr-health explicit --repo' tgh env PATH="$prh_data/bin:$PATH" PRH_LOG="$prh_log" PRH_DATA="$prh_data" bash "$tprh" --repo other/repo --pr 31
+  expect 'target pr-health --repo did not win' 'summary: 1 PR(s) in other/repo'
+  expect 'target pr-health --repo skipped the markers' 'warning: Resolves TODO: gone-task, but TODO.md here has no entry `gone-task`'
+  grep -q ' pr view 31 --json .* --repo other/repo$' "$prh_log" || { echo 'scripts-test: target pr-health did not pass the explicit --repo' >&2; cat "$prh_log" >&2; exit 1; }
+  # --no-target: this repository, markers checked, no GH_REPO.
+  : > "$prh_log"
+  pass 'target pr-health --no-target' tgh env PATH="$prh_data/bin:$PATH" PRH_LOG="$prh_log" PRH_DATA="$prh_data" bash "$tprh" --no-target --pr 31
+  expect 'target pr-health --no-target used the target' 'summary: 1 PR(s) in this repository'
+  expect 'target pr-health --no-target skipped the markers' 'warning: Resolves TODO: gone-task'
+  ! grep -q -- '--repo\|^GH_REPO=[^u]' "$prh_log" || { echo 'scripts-test: target pr-health --no-target named a repository' >&2; cat "$prh_log" >&2; exit 1; }
+  reject 'target pr-health with a bad target' "bad.target:3: unknown key 'shade'" tgh env DOCKET_TARGET_FILE="$tgt/bad.target" bash "$tprh" --pr 31
+  unset PRH_LIST
+fi
+
 # check-pr-markers.sh and pr-labels.sh stand down in a sidecar, from the
 # sidecar or a managed worktree, without a forge call; --no-target checks the
 # sidecar's own PR.
