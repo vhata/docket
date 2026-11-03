@@ -94,16 +94,14 @@ Why the pair is mandatory: in one repository a single post-merge pass over 25 se
 
 The coordinator integrates after each writer reports. Passing checks on isolated branches does not establish that their combination works; two gates that each passed alone contradicted each other once they met on main. Before marking a set of related PRs ready, either rebase each onto the others in merge order and run the check entrypoint on the result, or build a disposable integration worktree that combines them and run the checks there. Record the integration check in the coordinator's report.
 
-When workers contribute to one shared PR or local change, record each
-worker branch and its full integrated head in that report before
-cherry-picking or squashing. Keep the record with the parent's review
-artifacts until landing. The coordinator owns cleanup of these workers
-as well as the parent: a worker has no merged PR under its own name, so
-ordinary merged-PR discovery will not find it. After the parent lands,
-use the recorded worker heads and the parent's landing commit with
-`cleanup-landed.sh --integrated`, first as a dry run and then with
-`--apply`. Preserve review artifacts first. The exact proof, commands
-and cases that require inspection are in
+The coordinator owns cleanup of workers folded into a shared parent as
+well as the parent branch. After landing, run `cleanup-landed.sh`: it
+discovers incorporated workers from merged PRs or retained local landing
+receipts and reports the historical landing that proves each result.
+Preserve their review artifacts, inspect the dry run, then run it with
+`--apply`. The user does not need to recover worker commit IDs or trace
+cherry-picks. Keep any worker whose proof remains uncertain and explain
+why in the handoff. The proof, commands and limits are in
 [cleanup](pr-and-landing.md#after-landing-cleanup).
 
 Keep linear history: rebase, never merge main into a branch. The squash-then-rebase flow, the force-with-lease rule and the expected queue-file conflicts are in [pr-and-landing](pr-and-landing.md#keeping-branches-current).

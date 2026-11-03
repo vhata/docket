@@ -101,9 +101,8 @@ until the PR merges or the merge fails.
   with disjoint file ownership. Shared interfaces land or are explicitly
   stacked before dependents start. The coordinator integrates,
   serialises queue edits and holds push, landing and release gates. The
-  heavy-run concurrency cap is in `AGENTS.md`. When workers feed a shared
-  branch, record their branch names and exact integrated head commits
-  in the integration report; retain this mapping through landing.
+  heavy-run concurrency cap is in `AGENTS.md`. The coordinator also owns
+  cleanup of workers folded into a shared parent after it lands.
 - Every code-writing agent, including the coordinator, gets a separate
   reviewer before work is ready. The reviewer verifies the change's
   claims and reports findings; the author fixes and the reviewer
@@ -156,13 +155,12 @@ until the PR merges or the merge fails.
   cleanup does not archive them or check that records were preserved.
   Run `cleanup-landed.sh` as a dry run, then with `--apply`; local landing
   receipts and retained audit refs let it verify the exact landed tip
-  without a forge. Include workers folded into the landed parent: pass
-  `--integrated BRANCH EXPECTED_HEAD LANDED_COMMIT` for each, using the
-  recorded full worker head and the parent's full landing commit. This
-  selects only those workers and verifies their changed paths at that
-  landing, which must be in base history. All mappings must validate
-  before any removal; the normal worktree safety checks still apply.
-  If integration changed a worker's result, retain it for inspection.
+  without a forge. Ordinary cleanup also discovers workers folded into
+  a parent by comparing their changed paths with reachable merged-PR
+  landings or verified local receipts. It reports the matching landing
+  and retains open PRs, later work and uncertain proof. Review that dry
+  run, preserve worker records, then apply cleanup; supplying commit IDs
+  or reconstructing integration history is not a normal cleanup step.
   Rebase stacked children onto main and retarget hosted PRs. Never
   remove dirty worktrees, discard unique ignored evidence or delete
   unlanded commits without the user's word.

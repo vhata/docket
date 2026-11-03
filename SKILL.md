@@ -106,8 +106,8 @@ Script paths below are the installed paths (`docket/scripts/`), the only ones an
     Preserve local artifacts under the retained main checkout's
     `.docket/landed-<slug>/`, then dry-run and apply
     `cleanup-landed.sh`. Local receipts prove the exact tip landed.
-    Include workers folded into a shared parent with `--integrated`,
-    using the recorded worker heads and the parent's landing commit.
+    Ordinary cleanup also discovers workers folded into a shared parent
+    and explains the historical landing that proves their contents.
     Rebase stacked children and retarget hosted PRs. Details and commands
     are in [pr-and-landing](references/pr-and-landing.md).
 
@@ -149,7 +149,7 @@ All scripts are portable shell (bash 3.2) and need only git, plus `gh` where PRs
 | `pr-health.sh [--repo OWNER/REPO] [--pr N]... [--land-comment TEXT] [--strict] [--no-target]` | Read-only report on open PRs (your own by default): CI rollup with failing check names, review decision, merge state and conflicts, commits behind base, a landing comment still waiting, and queue markers whose entry this checkout no longer has. `--strict` exits 1 on failing checks, changes requested or conflicts. In a sidecar it reports on the managed repository with the target's `land_comment`, and matches PRs to entries by their `PR:` lines. See [pr-and-landing](references/pr-and-landing.md#checking-pr-health). |
 | `review-due.sh [--paths ...] [--repo-dir PATH]` | Reads the review index, measures drift since the reviewed commit, says whether an incremental or full review is due. `--repo-dir` (the managed clone by default in a sidecar) resolves commits in another repository. |
 | `land-local.sh BRANCH --title TEXT --body FILE --approved-head SHA` | After user approval, squash-lands a reviewed local branch from the clean base checkout, preserving its title and full description and recording an exact-tip landing receipt. |
-| `cleanup-landed.sh [--local] [--no-target] [--apply] [--empty] [--discard-ignored] [--integrated BRANCH EXPECTED_HEAD LANDED_COMMIT]...` | Removes worktrees and branches proved landed by a merged PR or local receipt, and empty harness placeholder branches. `--integrated` selects only named workers and verifies their exact changed paths in a specified landing. Known caches (build and tool output, by name) and ignored `.docket/` directories never hold a worktree back; preserve their records first. Other ignored files do unless `--discard-ignored` is passed. Dry run by default. In a sidecar ordinary discovery also lists entries whose `PR:` pull requests have closed. |
+| `cleanup-landed.sh [--local] [--no-target] [--apply] [--empty] [--discard-ignored]` | Removes branches and worktrees proved landed by merged PRs or local receipts, automatically including workers whose exact changed paths match a historical landing. Reports the proof or why a worker is retained. Known caches and ignored `.docket/` directories never hold a worktree back; preserve their records first. Other ignored files do unless `--discard-ignored` is passed. Dry run by default. In a sidecar it also lists entries whose `PR:` pull requests have closed. Advanced explicit selection is documented in [cleanup](references/pr-and-landing.md#after-landing-cleanup). |
 | `check-links.sh` | Relative Markdown links resolve. Cheap drift catcher for hooks or CI. |
 
 ## Red flags

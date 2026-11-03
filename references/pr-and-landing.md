@@ -278,9 +278,9 @@ bash docket/scripts/cleanup-landed.sh --apply          # removes clean worktrees
 bash docket/scripts/cleanup-landed.sh --apply --empty  # also deletes placeholder branches with no commits, no PR, no worktree
 ```
 
-Ordinary discovery deletes a branch only when a merged PR or a verified
-local landing receipt proves its exact tip landed; later commits are
-kept and reported. Deletion succeeds only if the branch still points to
+For a branch with its own merged PR or local receipt, cleanup requires
+the exact recorded tip; later commits are kept and reported. Deletion
+succeeds only if the branch still points to
 the verified tip, so a concurrently advanced branch is retained. Cleanup
 leaves branch-specific Git configuration in place to avoid deleting
 settings another worker may be using. When creating a branch,
@@ -308,10 +308,43 @@ main as part of the same cleanup. In hosted mode check the push CI run
 on main (`gh run list --branch main --limit 3`); in local mode run
 main's local gates. Apply the red-main policy if needed.
 
-Workers cherry-picked or squashed into a shared parent need explicit
-integration proof because they have no merged PR of their own. Use the
-worker branch and full head recorded in the integration report, and
-the parent's full landing commit from its merged PR or local receipt:
+The same commands automatically inspect workers cherry-picked or
+squashed into another branch. No commit IDs or separate registration
+are needed. Cleanup queries up to 1000 merged PRs once and examines
+their reachable landing snapshots; in local mode it uses fully verified
+retained landing receipts without contacting a forge. The dry run names
+the PR or local landing whose contents match, for example
+`changes present in PR #42 landing abc123...`. This proves historical
+content inclusion, not the original authorship or integration route.
+
+Automatic proof requires one common ancestor, a nonempty net change,
+and an exact match at the landing for every path the worker changed
+from that ancestor. It includes deleted and renamed paths, file modes,
+binary files, symlinks and submodule commits. Later edits on main do not
+invalidate a historical match. The landing must be in the selected base
+history and outside the worker's ancestry, so a new branch restoring an
+older state is retained. Workers with merge commits or repeated whole
+trees are retained too: these can contain empty or reverted later work
+that a final-content comparison would miss.
+
+Open PR branches, a changed tip after an own-name PR or local receipt,
+and failed forge queries prevent automatic worker cleanup. In hosted
+mode an unavailable forge cannot establish that no PR is open; use
+local mode only under the repository's review policy. Missing local
+objects, altered integration results or candidates outside the queried
+PR history leave a worker for inspection. A branch name, reflog or
+matching patch alone is insufficient. Retained branches are explained
+in the output. The ordinary worktree guards apply, and both the exact
+worker tip and landing ancestry are rechecked before removal.
+
+In target mode only Docket-marked branches are considered. Candidate
+PRs obey the configured fork-owner rule, and the base is the configured
+remote-tracking base; `--local` uses the local base instead. Fetch the
+base beforehand when needed. Cleanup does not scan arbitrary historical
+base commits for coincidental matches.
+
+For a specifically identified landing outside automatic discovery, an
+advanced explicit mode remains available. Supply full commit IDs:
 
 ```bash
 bash docket/scripts/cleanup-landed.sh \
@@ -325,23 +358,15 @@ those branches, makes no forge calls or fetches, and does not prune
 unrelated worktree registrations. It cannot be combined with `--empty`.
 Before any removal, every branch must still point to its supplied full
 head, and every landing must be reachable from the selected local base.
-In target mode, branches must be marked as Docket's and the base is the
-configured remote-tracking base; `--local` uses the local base instead.
-Fetch the base beforehand when needed. An invalid mapping stops the
-whole run without deleting anything.
+The target ownership and base rules above still apply. An invalid
+mapping stops the whole run without deleting anything.
 
-For a worker already in the landing's ancestry, that ancestry is proof.
-Otherwise the script requires one common ancestor, a nonempty net
-change, and an exact match at the landing for every path the worker
-changed from that ancestor. This includes deleted and renamed paths,
-file modes, binary files, symlinks and submodule commits. It compares
-against the historical landing, so subsequent edits on main do not
-invalidate the proof. A title, branch name, reflog or matching patch
-alone is insufficient. If integration edited the worker's result or
-its history has multiple common ancestors, cleanup refuses the mapping;
-inspect it rather than supplying a guessed replacement commit. Keep
-the branch and explain unresolved proof in the handoff. The ordinary
-dirty, active, locked and ignored-evidence safeguards still apply.
+Explicit proof accepts a worker already in the landing's ancestry.
+Otherwise it checks the same common ancestor and exact changed paths.
+It does not infer whether a matching result includes later empty or
+reverted work: selecting that exact head is the caller's decision.
+Inspect an unsuccessful proof rather than guessing a replacement
+commit. The ordinary worktree safeguards still apply.
 
 ## Releases
 

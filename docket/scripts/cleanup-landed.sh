@@ -5,10 +5,11 @@
 #
 # Usage: docket/scripts/cleanup-landed.sh [--apply] [--base main] [--empty] [--discard-ignored] [--local] [--no-target]
 #        [--integrated BRANCH EXPECTED_HEAD LANDED_COMMIT]...
-#   A branch is "landed" only when gh finds a merged PR whose head was this
-#   branch AND the branch's current tip is the commit that PR merged. A branch
-#   with commits after the merged head is kept and reported. A verified local
-#   squash receipt from land-local.sh also proves landing without a forge.
+#   Own-name merged PRs and local receipts prove exact landed tips. Workers
+#   folded into another branch are discovered from up to 1000
+#   merged PRs or retained local receipts: every changed path must match a
+#   reachable historical landing. Open PRs, later work and uncertain proof
+#   are retained and reported. Local receipts need no forge.
 #   --integrated selects only the named workers. Both commits must be full
 #   object IDs. The landing must be in base history and contain the worker's
 #   exact changed files (or its history). All mappings are checked before
@@ -105,19 +106,76 @@ docket_branch() {
 [ -n "$(git remote)" ] || local_only=1
 common="$(git rev-parse --git-common-dir)"
 common="$(cd "$common" && pwd -P)"
-# A worker may have been cherry-picked into a parent PR and then squashed.
-# An explicit mapping supplies that provenance; neither branch names nor
-# patch similarity can safely discover it. Compare the complete result on
-# each worker-changed path at the identified landing, not at today's base.
+integrated_base="refs/heads/$base"
+if [ -n "$DOCKET_TARGET" ] && [ "$local_only" -eq 0 ]; then
+  integrated_base="refs/remotes/$remote/$base"
+fi
+proof_dir=""
+trap '[ -z "$proof_dir" ] || rm -rf "$proof_dir"' EXIT
+prepare_proof() {
+  [ -n "$proof_dir" ] || proof_dir="$(mktemp -d)" || die 'cannot create proof scratch directory'
+}
+# Compare the complete result on every worker-changed path at a historical
+# landing, not at today's base. Automatic discovery also rejects histories
+# that could be new work restoring an older result or include net-zero work.
+prove_integration() {
+  local head="$1" landing="$2" automatic="$3" ancestor changed merges
+  proof_error=""
+  git merge-base --is-ancestor "$landing" "$integrated_base" 2>/dev/null || { proof_error="landing $landing is not in $integrated_base history"; return 1; }
+  if [ "$automatic" -eq 1 ]; then
+    if git merge-base --is-ancestor "$landing" "$head" 2>/dev/null; then
+      proof_error='worker already descends from this landing'; return 1
+    else
+      [ "$?" -eq 1 ] || { proof_error='cannot inspect landing ancestry'; return 1; }
+    fi
+  fi
+  ancestor="$(git merge-base --all "$head" "$landing" 2>/dev/null)" || { proof_error='cannot find common ancestor'; return 1; }
+  case "$ancestor" in ''|*$'\n'*) proof_error='worker and landing need one common ancestor'; return 1 ;; esac
+  if [ "$ancestor" = "$head" ]; then
+    [ "$automatic" -eq 0 ] && return 0
+    proof_error='no branch-exclusive changes'; return 1
+  fi
+  prepare_proof
+  if [ "$automatic" -eq 1 ]; then
+    merges="$(git rev-list --merges "$ancestor..$head" 2>/dev/null)" || { proof_error='cannot inspect worker history'; return 1; }
+    [ -z "$merges" ] || { proof_error='worker history contains merge commits'; return 1; }
+    git log --format=%T "$ancestor..$head" > "$proof_dir/trees" 2>/dev/null || { proof_error='cannot inspect worker trees'; return 1; }
+    git rev-parse "$ancestor^{tree}" >> "$proof_dir/trees" 2>/dev/null || { proof_error='cannot inspect common base tree'; return 1; }
+    awk 'seen[$0]++ { repeated = 1 } END { exit repeated }' "$proof_dir/trees" || { proof_error='worker history repeats a tree (empty or reverted work)'; return 1; }
+  fi
+  git --literal-pathspecs diff --no-ext-diff --no-textconv --ignore-submodules=none --no-renames --name-only -z "$ancestor" "$head" -- > "$proof_dir/paths" 2>/dev/null || { proof_error='cannot list changed paths'; return 1; }
+  [ -s "$proof_dir/paths" ] || { proof_error='worker has no net changes to prove'; return 1; }
+  while IFS= read -r -d '' changed; do
+    if ! git --literal-pathspecs diff --quiet --no-ext-diff --no-textconv --ignore-submodules=none "$head" "$landing" -- "$changed" 2>/dev/null; then
+      printf -v proof_error 'worker differs from landing %s at %q (or comparison failed)' "$landing" "$changed"
+      return 1
+    fi
+  done < "$proof_dir/paths"
+  return 0
+}
+
+# Receipts remain useful after the parent branch is removed. The retained
+# proof ref, parent, approved tree and current base history must still agree.
+verify_receipt() {
+  local file="$1" branch="$2" recorded_base old_base
+  [ -f "$file" ] || return 1
+  recorded_base="$(sed -n '1p' "$file")" || return 1
+  old_base="$(sed -n '2p' "$file")" || return 1
+  receipt_approved="$(sed -n '3p' "$file")" || return 1
+  receipt_landed="$(sed -n '4p' "$file")" || return 1
+  [ "$recorded_base" = "$base" ] &&
+    [ "$(git rev-parse --verify "refs/docket/landed/$branch" 2>/dev/null)" = "$receipt_approved" ] &&
+    [ "$(wc -l < "$file" | tr -d ' ')" = 4 ] &&
+    git cat-file -e "$receipt_landed^{commit}" 2>/dev/null &&
+    [ "$(git show -s --format=%P "$receipt_landed")" = "$old_base" ] &&
+    git merge-base --is-ancestor "$old_base" "$receipt_approved" &&
+    git merge-base --is-ancestor "$receipt_landed" "$integrated_base" &&
+    [ "$(git rev-parse "$receipt_landed^{tree}")" = "$(git rev-parse "$receipt_approved^{tree}")" ]
+}
+
 if [ "$integrated_count" -gt 0 ]; then
   [ "$empty" -eq 0 ] || die '--integrated cannot be combined with --empty'
-  integrated_base="refs/heads/$base"
-  if [ -n "$DOCKET_TARGET" ] && [ "$local_only" -eq 0 ]; then
-    integrated_base="refs/remotes/$remote/$base"
-  fi
   git rev-parse --verify "$integrated_base^{commit}" >/dev/null 2>&1 || die "cannot read base $integrated_base"
-  proof_paths="$(mktemp)"
-  trap 'rm -f "$proof_paths"' EXIT
   i=0
   while [ "$i" -lt "$integrated_count" ]; do
     worker="${integrated_branches[$i]}"
@@ -140,19 +198,7 @@ if [ "$integrated_count" -gt 0 ]; then
       [ "$(git rev-parse --verify "$oid^{commit}" 2>/dev/null)" = "$oid" ] || die "cannot read commit $oid"
     done
     [ "$actual" = "$expected" ] || die "worker $worker moved from expected head $expected (now $actual)"
-    git merge-base --is-ancestor "$landing" "$integrated_base" || die "landing $landing is not in $integrated_base history"
-    ancestor="$(git merge-base --all "$expected" "$landing")" || die "cannot find common ancestor for $worker and $landing"
-    case "$ancestor" in ''|*$'\n'*) die "worker $worker and $landing need one common ancestor" ;; esac
-    if [ "$ancestor" != "$expected" ]; then
-      git --literal-pathspecs diff --no-ext-diff --no-textconv --ignore-submodules=none --no-renames --name-only -z "$ancestor" "$expected" -- > "$proof_paths" || die "cannot list changed paths for $worker"
-      [ -s "$proof_paths" ] || die "worker $worker has no net changes to prove"
-      while IFS= read -r -d '' changed; do
-        if ! git --literal-pathspecs diff --quiet --no-ext-diff --no-textconv --ignore-submodules=none "$expected" "$landing" -- "$changed"; then
-          printf 'cleanup-landed: worker %s differs from landing %s at %q (or comparison failed)\n' "$worker" "$landing" "$changed" >&2
-          exit 2
-        fi
-      done < "$proof_paths"
-    fi
+    prove_integration "$expected" "$landing" 0 || die "$worker: $proof_error"
     i=$((i + 1))
   done
 fi
@@ -165,6 +211,29 @@ if [ "$integrated_count" -gt 0 ]; then
 elif [ "$have_gh" -eq 0 ]; then
   echo "cleanup-landed: merged-PR detection is OFF; checking verified local landing receipts"
 fi
+candidate_rows=""; candidates_loaded=0; candidates_ok=1
+load_candidates() {
+  if [ "$candidates_loaded" -eq 1 ]; then return $((1 - candidates_ok)); fi
+  candidates_loaded=1
+  local filter='.' rows branch
+  if [ "$have_gh" -eq 1 ]; then
+    if [ -n "$DOCKET_TARGET" ] && [ -n "$TARGET_PUSH_OWNER" ]; then
+      filter="[.[] | select((.isCrossRepository | not) or ((.headRepositoryOwner.login // \"\") | ascii_downcase) == (\"$TARGET_PUSH_OWNER\" | ascii_downcase))]"
+    fi
+    if ! rows="$(gh pr list ${repo_args[@]+"${repo_args[@]}"} --state merged --limit 1000 --json number,mergeCommit,isCrossRepository,headRepositoryOwner --jq "$filter"' | .[] | select(.mergeCommit.oid != null) | ["pr", (.number | tostring), .mergeCommit.oid] | @tsv' 2>/dev/null)"; then
+      candidates_ok=0; return 1
+    fi
+    candidate_rows="$rows"
+  fi
+  prepare_proof
+  git for-each-ref --format='%(refname:strip=3)' refs/docket/landed/ > "$proof_dir/receipts" || { candidates_ok=0; return 1; }
+  while IFS= read -r branch; do
+    if verify_receipt "$common/docket/landed/$branch" "$branch" 2>/dev/null; then
+      candidate_rows="$candidate_rows"$'\n'"local"$'\t'"$branch"$'\t'"$receipt_landed"
+    fi
+  done < "$proof_dir/receipts"
+  return 0
+}
 if [ -z "$DOCKET_TARGET" ]; then
   current="$(git branch --show-current || true)"
 elif docket_target_contains "$orig"; then
@@ -179,6 +248,16 @@ wt_for() {
   git worktree list --porcelain | awk -v b="refs/heads/$1" '
     /^worktree / { p = substr($0, 10) }
     /^branch / { if ($2 == b) print p }'
+}
+
+integration_current() {
+  [ "$integrated_proof" -eq 1 ] || return 0
+  if git symbolic-ref --quiet "refs/heads/$br" >/dev/null 2>&1 || [ "$(git rev-parse --verify "refs/heads/$br" 2>/dev/null)" != "$tip" ]; then
+    echo "keep $br: branch moved since integration proof"; return 1
+  fi
+  if ! git merge-base --is-ancestor "$proved_landing" "$integrated_base" 2>/dev/null; then
+    echo "keep $br: base no longer contains the proved landing"; return 1
+  fi
 }
 
 removed=0; kept=0
@@ -197,29 +276,20 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   docket_branch "$br" || continue
   [ "$br" = "$current" ] && { echo "skip $br (checked out here)"; continue; }
   tip="$(git rev-parse "$br")"
-  reason=""
+  reason=""; integrated_proof=0; proved_landing=""
   if [ "$selected" -ge 0 ]; then
     if [ "$tip" != "${integrated_heads[$selected]}" ]; then
       echo "keep $br: branch moved since integration proof"
       kept=$((kept + 1)); continue
     fi
     reason="integrated at ${integrated_landings[$selected]} from exact worker tip $tip"
+    integrated_proof=1
+    proved_landing="${integrated_landings[$selected]}"
   fi
   receipt="$common/docket/landed/$br"
   if [ -z "$reason" ] && [ -f "$receipt" ]; then
-    recorded_base="$(sed -n '1p' "$receipt")"
-    old_base="$(sed -n '2p' "$receipt")"
-    approved="$(sed -n '3p' "$receipt")"
-    landed="$(sed -n '4p' "$receipt")"
-    if [ "$recorded_base" = "$base" ] && [ "$approved" = "$tip" ] &&
-       [ "$(git rev-parse --verify "refs/docket/landed/$br" 2>/dev/null || true)" = "$approved" ] &&
-       [ "$(wc -l < "$receipt" | tr -d ' ')" = 4 ] &&
-       git cat-file -e "$landed^{commit}" 2>/dev/null &&
-       [ "$(git show -s --format=%P "$landed")" = "$old_base" ] &&
-       git merge-base --is-ancestor "$old_base" "$approved" &&
-       git merge-base --is-ancestor "$landed" "refs/heads/$base" &&
-       [ "$(git rev-parse "$landed^{tree}")" = "$(git rev-parse "$approved^{tree}")" ]; then
-      reason="locally squash-landed at $landed from this exact tip"
+    if verify_receipt "$receipt" "$br" && [ "$receipt_approved" = "$tip" ]; then
+      reason="locally squash-landed at $receipt_landed from this exact tip"
     else
       echo "keep $br: local landing receipt does not verify this tip on $base; inspect before deleting"
       kept=$((kept + 1)); continue
@@ -233,7 +303,10 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     if [ -n "$DOCKET_TARGET" ] && [ -n "$TARGET_PUSH_OWNER" ]; then
       pick="[.[] | select((.isCrossRepository | not) or ((.headRepositoryOwner.login // \"\") | ascii_downcase) == (\"$TARGET_PUSH_OWNER\" | ascii_downcase))] | .[0]"
     fi
-    merged="$(gh pr list ${repo_args[@]+"${repo_args[@]}"} --head "$br" --state merged --json number,headRefOid,isCrossRepository,headRepositoryOwner --jq "$pick"' | select(. != null) | "\(.number) \(.headRefOid)"' 2>/dev/null || true)"
+    if ! merged="$(gh pr list ${repo_args[@]+"${repo_args[@]}"} --head "$br" --state merged --json number,headRefOid,isCrossRepository,headRepositoryOwner --jq "$pick"' | select(. != null) | "\(.number) \(.headRefOid)"' 2>/dev/null)"; then
+      echo "keep $br: cannot check its merged PR history"
+      kept=$((kept + 1)); continue
+    fi
     if [ -n "$merged" ]; then
       num="${merged%% *}"; oid="${merged##* }"
       if [ "$oid" = "$tip" ]; then
@@ -254,6 +327,52 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     ahead="$(git rev-list --count "$upto..$br" 2>/dev/null || echo 1)"
     openpr=""; [ "$have_gh" -eq 1 ] && openpr="$(gh pr list ${repo_args[@]+"${repo_args[@]}"} --head "$br" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
     if [ "$ahead" -eq 0 ] && [ -z "$openpr" ] && [ -z "$(wt_for "$br")" ]; then reason="no commits beyond $base, no PR, no worktree"; fi
+  fi
+  if [ -z "$reason" ] && [ "$integrated_count" -eq 0 ]; then
+    if ! load_candidates; then
+      echo "keep $br: cannot read integration landing candidates"
+      kept=$((kept + 1)); continue
+    fi
+    # An empty candidate set adds no new cleanup authority. Do not infer
+    # historical incorporation from arbitrary commits on the base branch.
+    if [ -n "$candidate_rows" ]; then
+      if git symbolic-ref --quiet "refs/heads/$br" >/dev/null 2>&1; then
+        echo "keep $br: symbolic refs are not worker candidates"
+        kept=$((kept + 1)); continue
+      fi
+      if [ "$have_gh" -eq 1 ]; then
+        if ! openpr="$(gh pr list ${repo_args[@]+"${repo_args[@]}"} --head "$br" --state open --limit 1 --json number --jq '.[0].number // empty' 2>/dev/null)"; then
+          echo "keep $br: cannot check for an open PR"
+          kept=$((kept + 1)); continue
+        fi
+        if [ -n "$openpr" ]; then
+          echo "keep $br: open PR #$openpr"
+          kept=$((kept + 1)); continue
+        fi
+      elif [ "$local_only" -eq 0 ]; then
+        echo "keep $br: forge unavailable; cannot check for an open PR"
+        kept=$((kept + 1)); continue
+      fi
+      proof_error='no readable landing candidate'
+      while IFS=$'\t' read -r kind label candidate_landing extra; do
+        [ -z "$extra" ] || continue
+        case "$kind" in pr|local) ;; *) continue ;; esac
+        case "$candidate_landing" in ''|*[!0-9a-f]*) continue ;; esac
+        [ "${#candidate_landing}" -eq 40 ] || [ "${#candidate_landing}" -eq 64 ] || continue
+        if prove_integration "$tip" "$candidate_landing" 1; then
+          if [ "$kind" = pr ]; then
+            reason="changes present in PR #$label landing ${candidate_landing:0:12}"
+          else
+            reason="changes present in verified local landing ${candidate_landing:0:12} ($label)"
+          fi
+          integrated_proof=1; proved_landing="$candidate_landing"; break
+        fi
+      done <<< "$candidate_rows"
+      if [ -z "$reason" ]; then
+        echo "keep $br: no complete integration proof in available landings ($proof_error)"
+        kept=$((kept + 1)); continue
+      fi
+    fi
   fi
   [ -n "$reason" ] || continue
 
@@ -291,8 +410,7 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     fi
     echo "remove worktree $path and branch $br ($reason)"
     if [ "$apply" -eq 1 ]; then
-      if [ "$selected" -ge 0 ] && { git symbolic-ref --quiet "refs/heads/$br" >/dev/null 2>&1 || [ "$(git rev-parse --verify "refs/heads/$br" 2>/dev/null)" != "$tip" ]; }; then
-        echo "keep $br: branch moved since integration proof"
+      if ! integration_current; then
         kept=$((kept + 1)); continue
       fi
       if ! git worktree remove --force "$path"; then
@@ -304,6 +422,7 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     echo "delete branch $br ($reason)"
   fi
   if [ "$apply" -eq 1 ]; then
+    if ! integration_current; then kept=$((kept + 1)); continue; fi
     # Delete only the tip whose landing was proved, atomically. Keep branch
     # config: deleting it afterwards could erase a concurrent recreation's
     # settings. Git's branch -D has no expected-old-value guard.

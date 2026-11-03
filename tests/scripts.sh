@@ -993,6 +993,183 @@ grep -q '^prunable' worktrees.txt || { echo 'scripts-test: explicit integration 
 pass 'direct ancestor worker is already included' bash "$cleanup" --apply --integrated empty-worker "$integrated_base" "$integrated_landing"
 ! git show-ref --verify --quiet refs/heads/empty-worker || { echo 'scripts-test: integrated ancestor worker was kept' >&2; exit 1; }
 
+# Ordinary cleanup discovers folded workers without supplied IDs. Forge
+# records are independent of branch tips, and main has evolved since landing.
+auto_repo="$external/auto-workers"
+git clone --quiet "$integrated_repo" "$auto_repo"
+cd "$auto_repo"
+git config user.name 'Automatic fixture'
+git config user.email 'automatic-fixture@example.invalid'
+git config core.hooksPath /dev/null
+mkdir bin
+printf 'bin/\n.worktrees/\n' >> .git/info/exclude
+auto_tree="$(git rev-parse "$worker_head^{tree}")"
+auto_squashed="$(git commit-tree -p "$integrated_base" -m 'Rewritten worker' "$auto_tree")"
+auto_later="$(git commit-tree -p "$worker_head" -m 'Unlanded empty commit' "$auto_tree")"
+auto_revert="$(git commit-tree -p main -m 'New work restoring old content' "$auto_tree")"
+auto_partial="$(git commit-tree -p "$integrated_base" -m 'Partial worker' "$(git rev-parse "$incomplete^{tree}")")"
+auto_undo="$(git commit-tree -p "$worker_head" -m 'Undo worker' "$(git rev-parse "$integrated_base^{tree}")")"
+auto_cycle="$(git commit-tree -p "$auto_undo" -m 'Restore worker again' "$auto_tree")"
+git branch auto-worker "$worker_head"
+git branch auto-squashed "$auto_squashed"
+git branch auto-empty-later "$auto_later"
+git branch auto-cycle "$auto_cycle"
+git branch auto-revert "$auto_revert"
+git branch auto-partial "$auto_partial"
+git branch auto-open "$worker_head"
+git branch auto-own-later "$auto_later"
+git branch auto-failed-own "$worker_head"
+git branch auto-failed-open "$worker_head"
+git worktree add --quiet .worktrees/auto-worker auto-worker
+cat > bin/gh <<'GH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$AUTO_GH_LOG"
+case "$1 $2" in
+  'auth status') [ "${AUTO_AUTH_FAIL:-0}" -eq 0 ]; exit ;;
+  'repo view') exit 0 ;;
+  'pr list') ;;
+  *) exit 2 ;;
+esac
+shift 2
+head=""; state=""; jqx=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --head) head="$2"; shift 2 ;;
+    --state) state="$2"; shift 2 ;;
+    --jq) jqx="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+if [ "$state" = open ]; then
+  [ "$head" != auto-failed-open ] || exit 1
+  [ "$head" != auto-open ] || echo 88
+  exit 0
+fi
+if [ -n "$head" ]; then
+  [ "$head" != auto-failed-own ] || exit 1
+  [ "$head" != auto-own-later ] || echo "55 $AUTO_WORKER_HEAD"
+  exit 0
+fi
+[ "${AUTO_FAIL_LIST:-0}" -eq 0 ] || exit 1
+if command -v jq >/dev/null 2>&1; then
+  printf '[{"number":27,"mergeCommit":{"oid":"%s"},"isCrossRepository":%s,"headRepositoryOwner":{"login":"%s"}}]' "$AUTO_LANDING" "${AUTO_CROSS:-false}" "${AUTO_OWNER:-owner}" | jq -r "$jqx"
+else
+  printf 'pr\t27\t%s\n' "$AUTO_LANDING"
+fi
+GH
+chmod +x bin/gh
+auto_log="$external/auto-gh.log"
+: > "$auto_log"
+auto_cleanup() { env PATH="$auto_repo/bin:$PATH" AUTO_GH_LOG="$auto_log" AUTO_LANDING="$integrated_landing" AUTO_WORKER_HEAD="$worker_head" "$@"; }
+pass 'automatic worker discovery dry run' auto_cleanup bash "$cleanup"
+expect 'automatic worker was not discovered' "and branch auto-worker (changes present in PR #27 landing ${integrated_landing:0:12})"
+expect 'rewritten worker was not discovered' "delete branch auto-squashed (changes present in PR #27 landing ${integrated_landing:0:12})"
+expect 'open worker PR was not protected' 'keep auto-open: open PR #88'
+expect 'later same-tree commit was not protected' 'worker history repeats a tree'
+expect 'new revert work was not protected' 'worker already descends from this landing'
+expect 'own-name later work bypassed its guard' 'keep auto-own-later: PR #55 merged'
+expect 'failed own-name lookup was not protected' 'keep auto-failed-own: cannot check its merged PR history'
+expect 'failed open lookup was not protected' 'keep auto-failed-open: cannot check for an open PR'
+[ "$(grep -c -- '--limit 1000' "$auto_log")" -eq 1 ] || { echo 'scripts-test: automatic cleanup did not cache the candidate query' >&2; exit 1; }
+[ -d .worktrees/auto-worker ] && git show-ref --verify --quiet refs/heads/auto-squashed || { echo 'scripts-test: automatic dry run removed a worker' >&2; exit 1; }
+pass 'unknown automatic candidate query retains workers' auto_cleanup env AUTO_FAIL_LIST=1 bash "$cleanup" --apply
+expect 'candidate query failure was not reported' 'cannot read integration landing candidates'
+[ -d .worktrees/auto-worker ] && git show-ref --verify --quiet refs/heads/auto-squashed || { echo 'scripts-test: failed candidate query removed a worker' >&2; exit 1; }
+# The default path retains dirty, ignored, active and locked worktrees too.
+printf 'dirty\n' >> .worktrees/auto-worker/change.txt
+pass 'automatic proof retains dirty worktree' auto_cleanup bash "$cleanup"
+expect 'automatic dirty worktree was not kept' 'has modified or untracked files'
+git -C .worktrees/auto-worker checkout --quiet -- change.txt
+printf '.docket-records/\n' >> .git/info/exclude
+mkdir .worktrees/auto-worker/.docket-records
+printf 'records\n' > .worktrees/auto-worker/.docket-records/record
+pass 'automatic proof retains ignored records' auto_cleanup bash "$cleanup"
+expect 'automatic ignored record was not kept' 'not known caches and would be lost'
+rm .worktrees/auto-worker/.docket-records/record
+rmdir .worktrees/auto-worker/.docket-records
+auto_git="$(git -C .worktrees/auto-worker rev-parse --absolute-git-dir)"
+mkdir "$auto_git/rebase-merge"
+pass 'automatic proof retains active operation' auto_cleanup bash "$cleanup"
+expect 'automatic operation was not kept' 'in-progress Git operation'
+rmdir "$auto_git/rebase-merge"
+git worktree lock .worktrees/auto-worker
+pass 'automatic proof retains locked worktree' auto_cleanup bash "$cleanup" --apply
+expect 'automatic locked worktree was not kept' 'worktree removal failed'
+git worktree unlock .worktrees/auto-worker
+# Rewind the base after proof while inspecting the worker: neither the
+# worker branch nor its worktree may be removed using that stale proof.
+auto_main="$(git rev-parse main)"
+real_git="$(command -v git)"
+cat > bin/git <<'GIT'
+#!/usr/bin/env bash
+if [ "$1" = -C ] && [ "${3:-}" = status ]; then
+  if [ "${AUTO_RACE_KIND:-base}" = worker ]; then
+    "$REAL_GIT" update-ref refs/heads/auto-worker "$AUTO_RACE_HEAD" "$AUTO_WORKER_HEAD" || exit 2
+  else
+    "$REAL_GIT" update-ref refs/heads/main "$AUTO_OLD_BASE" "$AUTO_MAIN" || exit 2
+  fi
+fi
+exec "$REAL_GIT" "$@"
+GIT
+chmod +x bin/git
+pass 'automatic proof protects concurrent worker head' auto_cleanup env REAL_GIT="$real_git" AUTO_RACE_KIND=worker AUTO_RACE_HEAD="$auto_later" bash "$cleanup" --apply
+expect 'automatic worker advance was not reported' 'branch moved since integration proof'
+[ -d .worktrees/auto-worker ] && [ "$(git rev-parse auto-worker)" = "$auto_later" ] || { echo 'scripts-test: automatic proof removed concurrent worker work' >&2; exit 1; }
+git update-ref refs/heads/auto-worker "$worker_head" "$auto_later"
+pass 'automatic proof protects against base rewind' auto_cleanup env REAL_GIT="$real_git" AUTO_OLD_BASE="$integrated_base" AUTO_MAIN="$auto_main" bash "$cleanup" --apply
+expect 'base rewind was not reported' 'base no longer contains the proved landing'
+[ -d .worktrees/auto-worker ] && [ "$(git rev-parse auto-worker)" = "$worker_head" ] || { echo 'scripts-test: stale base proof removed the worker' >&2; exit 1; }
+git update-ref refs/heads/main "$auto_main" "$integrated_base"
+rm bin/git
+# A verified retained local receipt discovers workers without a forge, even
+# after its parent branch has gone. A broken proof ref grants no authority.
+parent_head="$(git rev-parse refs/remotes/origin/parent)"
+mkdir -p .git/docket/landed
+printf 'main\n%s\n%s\n%s\n' "$integrated_base" "$parent_head" "$integrated_landing" > .git/docket/landed/parent
+git update-ref refs/docket/landed/parent "$parent_head"
+pass 'automatic local receipt discovery' auto_cleanup bash "$cleanup" --local
+expect 'local receipt did not discover worker' "and branch auto-worker (changes present in verified local landing ${integrated_landing:0:12} (parent))"
+git update-ref refs/docket/landed/parent "$integrated_base"
+pass 'invalid receipt does not prove automatic workers' auto_cleanup bash "$cleanup" --local
+grep -q 'changes present in verified local landing' "$fixture/result.log" && { echo 'scripts-test: automatic proof trusted a broken receipt' >&2; exit 1; }
+git update-ref refs/docket/landed/parent "$parent_head"
+pass 'hosted automatic cleanup retains without forge' auto_cleanup env AUTO_AUTH_FAIL=1 bash "$cleanup" --apply
+expect 'unavailable forge was not reported' 'forge unavailable; cannot check for an open PR'
+[ -d .worktrees/auto-worker ] || { echo 'scripts-test: hosted cleanup skipped open-PR protection' >&2; exit 1; }
+pass 'automatic workers apply without IDs' auto_cleanup bash "$cleanup" --apply
+[ ! -d .worktrees/auto-worker ] && ! git show-ref --verify --quiet refs/heads/auto-worker && ! git show-ref --verify --quiet refs/heads/auto-squashed || { echo 'scripts-test: default cleanup kept incorporated workers' >&2; exit 1; }
+for retained in auto-cycle auto-empty-later auto-revert auto-partial auto-open auto-own-later auto-failed-own auto-failed-open; do
+  git show-ref --verify --quiet "refs/heads/$retained" || { echo "scripts-test: automatic cleanup removed protected $retained" >&2; exit 1; }
+done
+# Automatic discovery in a managed clone retains ownership, the allowed
+# fork source and the remote-tracking base (even when local main is ahead).
+rm .git/docket/landed/parent
+git branch auto-target "$worker_head"
+git branch auto-unowned "$worker_head"
+git config branch.auto-target.docket true
+git remote add fork git@github.com:allowed/project.git
+auto_sidecar="$external/auto-sidecar"
+git init --quiet "$auto_sidecar"
+printf 'repo=owner/project\ndir=%s\npush_remote=fork\n' "$auto_repo" > "$auto_sidecar/.docket-target"
+pass 'automatic target worker discovery' in_dir "$auto_sidecar" auto_cleanup bash "$cleanup"
+expect 'target worker was not discovered automatically' "delete branch auto-target (changes present in PR #27 landing ${integrated_landing:0:12})"
+grep -q 'auto-unowned' "$fixture/result.log" && { echo 'scripts-test: automatic target considered an unowned branch' >&2; exit 1; }
+if command -v jq >/dev/null 2>&1; then
+  pass 'automatic target rejects another fork' in_dir "$auto_sidecar" auto_cleanup env AUTO_CROSS=true AUTO_OWNER=stranger bash "$cleanup"
+  grep -q 'delete branch auto-target' "$fixture/result.log" && { echo 'scripts-test: automatic target accepted another fork' >&2; exit 1; }
+  pass 'automatic target accepts configured fork' in_dir "$auto_sidecar" auto_cleanup env AUTO_CROSS=true AUTO_OWNER=allowed bash "$cleanup"
+  expect 'automatic target did not accept configured fork' 'delete branch auto-target'
+else
+  echo 'scripts-test: note: jq not installed; automatic target fork filtering not checked'
+fi
+auto_remote_base="$(git rev-parse refs/remotes/origin/main)"
+git update-ref refs/remotes/origin/main "$integrated_base"
+pass 'automatic target uses remote history' in_dir "$auto_sidecar" auto_cleanup bash "$cleanup"
+expect 'automatic target used local main instead of remote base' 'is not in refs/remotes/origin/main history'
+git update-ref refs/remotes/origin/main "$auto_remote_base"
+pass 'automatic target apply' in_dir "$auto_sidecar" auto_cleanup bash "$cleanup" --apply
+! git show-ref --verify --quiet refs/heads/auto-target && git show-ref --verify --quiet refs/heads/auto-unowned || { echo 'scripts-test: automatic target ownership was not preserved' >&2; exit 1; }
+
 # Remote-less lifecycle: even an installed gh and inherited GH_REPO must not
 # cause any forge calls. Keep these fixtures isolated from hosted test state.
 local_repo="$external/local-repo"
