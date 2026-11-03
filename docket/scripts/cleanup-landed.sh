@@ -12,12 +12,12 @@
 #   --empty also removes branches with no commits beyond the base, no PR and no
 #   worktree (harness placeholders such as worktree-agent-*).
 #   Worktrees with modified or untracked files are never removed. Ignored files
-#   that are known caches (node_modules, target, .venv, __pycache__, .pytest_cache
-#   and the like, at any depth; see cache_re below) never hold a worktree back.
-#   Any other ignored file (evidence, logs, .docket/, an audit log) does, unless
-#   --discard-ignored is given, because it may be the only copy of a record.
-#   The allowlist goes by name, so keep records out of directories named like
-#   build output (build, out, dist, coverage, test-results).
+#   in known caches or .docket/ (at any depth; see cache_re below) never hold
+#   a worktree back. Preserve .docket/ records elsewhere before cleanup;
+#   the script does not archive them. Other ignored files (evidence, logs)
+#   hold it back unless --discard-ignored is given.
+#   The allowlist goes by name, so also keep records out of directories named
+#   like build output (build, out, dist, coverage, test-results).
 #   Nothing is pushed; remote branches are untouched.
 #   With a managed-repository target (.docket-target; see target.sh) it works
 #   in the managed clone: only branches start-work.sh marked as docket's
@@ -36,8 +36,8 @@
 #   --no-target ignores the target file.
 set -euo pipefail
 
-# Ignored paths whose last component matches this are reproducible build or
-# tool output and are discarded with the worktree without asking.
+# Ignored paths whose last component matches this are discarded with the
+# worktree: reproducible build/tool output and .docket working files.
 cache_re='^(node_modules|target|dist|build|out|coverage|\.docket|\.venv|venv|\.tox|\.nox|__pycache__|\.pytest_cache|\.hypothesis|\.mypy_cache|\.ruff_cache|\.cache|\.parcel-cache|\.turbo|\.next|\.nuxt|\.svelte-kit|\.wrangler|\.gradle|\.eslintcache|[^/]*\.tsbuildinfo|test-results|playwright-report|\.nyc_output|\.DS_Store|[^/]*\.pyc)$'
 # Reads a successful status snapshot and prints ignored non-cache entries.
 # --ignored=matching reports the path that matched an ignore rule (for example

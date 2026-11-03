@@ -148,8 +148,11 @@ until the PR merges or the merge fails.
   local review evidence in the retained main checkout's
   `.docket/landed-<slug>/` before removing the task worktree. After
   verifying preservation, remove only those source artifacts and use
-  `rmdir` for now-empty directories, including `.docket/`; other content
-  stays for inspection. Run `cleanup-landed.sh` as a dry run, then with `--apply`; local landing
+  `rmdir` for now-empty directories, including `.docket/`; inspect and
+  preserve other unique content before cleanup. Ignored `.docket/`
+  directories are allowed to be discarded with a landed worktree;
+  cleanup does not archive them or check that records were preserved.
+  Run `cleanup-landed.sh` as a dry run, then with `--apply`; local landing
   receipts and retained audit refs let it verify the exact landed tip
   without a forge. Rebase stacked children onto main and retarget hosted
   PRs. Never remove dirty worktrees, discard unique ignored evidence or

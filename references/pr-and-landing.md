@@ -68,9 +68,10 @@ After the user explicitly approves landing that reviewed head:
    evidence in `.docket/landed-<slug>/` under the retained main
    checkout. Verify the copies, then remove only those preserved source
    artifacts from the task worktree. Use `rmdir` for now-empty directories,
-   including `.docket/`; an empty ignored directory can still hold cleanup
-   back. If other content remains, preserve and inspect it. Do not use
-   blanket `--discard-ignored` to make cleanup pass.
+   including `.docket/`. Inspect and preserve any remaining unique
+   content: ignored `.docket/` directories do not hold cleanup back, and
+   cleanup does not archive them. Do not use blanket `--discard-ignored`
+   to make cleanup pass.
 3. From a clean checkout of `main`, run the helper below with the title,
    preserved description and full approved commit ID. Both task and main
    worktrees must be clean, with no operation in progress; the task must
@@ -290,11 +291,14 @@ remote, use local mode and run local main gates instead of forge CI.
 Preserve `.docket/` review artifacts in the retained main checkout
 before removal. Dirty worktrees are never removed. Ignored files that
 are known caches (`node_modules`, `target`, `.venv`, `__pycache__`,
-`.pytest_cache` and similar, at any depth) never hold a worktree back;
-any other ignored file (evidence, logs, `.docket/`, an audit log) does,
-unless `--discard-ignored` is passed, because it may be the only copy of
-a record. The allowlist goes by name, so a directory of records should
-not be called `build`, `out`, `dist`, `coverage` or `test-results`. Look
+`.pytest_cache` and similar, at any depth) and ignored `.docket/`
+directories never hold a worktree back. Cleanup does not archive
+`.docket/` or check that its records were preserved; that is the caller's
+responsibility. Any other ignored file (evidence, logs, an audit log)
+holds the worktree back unless `--discard-ignored` is passed, because it
+may be the only copy of a record. The allowlist goes by name, so a
+directory of records should not be called `build`, `out`, `dist`,
+`coverage` or `test-results`. Look
 at what is in them (`git -C <path> status --porcelain
 --ignored=matching`) and either commit, move or, with the user's word,
 discard. Branches with unmerged, unpushed commits are reported, not
