@@ -838,6 +838,338 @@ git branch --quiet -D landed-busy
 git worktree remove --force "$fixture/.worktrees/runner"
 git branch --quiet -D landed-dirty landed-main runner
 
+# Integrated workers have no PR of their own. Prove their changed paths at
+# the parent's landing, even after main has changed those paths again.
+integrated_repo="$external/integrated-repo"
+mkdir -p "$integrated_repo"
+cd "$integrated_repo"
+git init --quiet
+git symbolic-ref HEAD refs/heads/main
+git config user.name 'Integrated fixture'
+git config user.email 'integrated-fixture@example.invalid'
+git config core.hooksPath /dev/null
+printf 'base\n' > change.txt
+printf 'rename\n' > old-name.txt
+printf 'delete\n' > deleted.txt
+printf 'base\000bytes\n' > binary.dat
+printf 'mode\n' > executable
+ln -s change.txt link
+printf 'base\n' > ':(glob)*.txt'
+printf 'base\n' > $'line\nbreak.txt'
+git add .
+git commit --quiet -m 'Worker base'
+module_base="$(git rev-parse HEAD)"
+git update-index --add --cacheinfo "160000,$module_base,module"
+git commit --quiet -m 'Base submodule pointer'
+integrated_base="$(git rev-parse HEAD)"
+git checkout --quiet -b worker
+printf 'worker\n' > change.txt
+git mv old-name.txt 'new name.txt'
+git rm --quiet deleted.txt
+printf 'worker\000bytes\n' > binary.dat
+chmod +x executable
+rm link
+ln -s 'new name.txt' link
+printf 'worker\n' > ':(glob)*.txt'
+printf 'worker\n' > $'line\nbreak.txt'
+git add .
+git update-index --add --cacheinfo "160000,$integrated_base,module"
+git commit --quiet -m 'Worker changes with unusual paths and modes'
+worker_head="$(git rev-parse HEAD)"
+git checkout --quiet -b parent "$integrated_base"
+git cherry-pick --quiet "$worker_head"
+printf 'other worker\n' > sibling.txt
+git add sibling.txt
+git commit --quiet -m 'Other worker changes'
+git checkout --quiet main
+git merge --squash --quiet parent
+git commit --quiet -m 'Land combined parent'
+integrated_landing="$(git rev-parse HEAD)"
+printf 'later main\n' > change.txt
+git add change.txt
+git commit --quiet -m 'Main evolves after landing'
+main_after="$(git rev-parse HEAD)"
+git branch worker-copy "$worker_head"
+git branch empty-worker "$integrated_base"
+git commit --quiet --allow-empty -m 'Later main metadata'
+empty_head="$(git commit-tree -p "$integrated_base" -m 'Net empty worker' "$(git rev-parse "$integrated_base^{tree}")")"
+git branch net-empty "$empty_head"
+git worktree add --quiet "$integrated_repo/worker-wt" worker
+git worktree add --quiet --detach "$integrated_repo/stale-wt" main
+rm -rf "$integrated_repo/stale-wt"
+printf 'worker-wt/\n.docket-records/\n' >> .git/info/exclude
+# Repository ignore settings must not hide submodule object changes.
+git config diff.ignoreSubmodules all
+git config submodule.module.ignore all
+pass 'integrated worker dry run after main evolves' bash "$cleanup" --integrated worker "$worker_head" "$integrated_landing"
+expect 'integrated worker was not recognized' "integrated at $integrated_landing from exact worker tip $worker_head"
+[ -d worker-wt ] && [ "$(git rev-parse worker)" = "$worker_head" ] || { echo 'scripts-test: integrated dry run changed the worker' >&2; exit 1; }
+git diff --quiet worker main && { echo 'scripts-test: integrated fixture lacks later changes' >&2; exit 1; }
+reject 'incomplete integrated arguments' 'requires BRANCH EXPECTED_HEAD LANDED_COMMIT' bash "$cleanup" --integrated worker "$worker_head"
+reject 'abbreviated integration ID' 'full commit object IDs' bash "$cleanup" --integrated worker "${worker_head:0:8}" "$integrated_landing"
+reject 'integrated worker missing' 'does not exist' bash "$cleanup" --integrated missing-worker "$worker_head" "$integrated_landing"
+reject 'integrated worker advanced' 'moved from expected head' bash "$cleanup" --integrated worker "$integrated_base" "$integrated_landing"
+reject 'landing outside selected base' 'is not in refs/heads/main history' bash "$cleanup" --integrated worker "$worker_head" "$worker_head"
+reject 'partial incorporation' 'differs from landing' bash "$cleanup" --integrated worker "$worker_head" "$main_after"
+reject 'net empty worker' 'has no net changes to prove' bash "$cleanup" --integrated net-empty "$empty_head" "$integrated_landing"
+reject 'explicit integration and empty discovery' 'cannot be combined with --empty' bash "$cleanup" --empty --integrated worker "$worker_head" "$integrated_landing"
+reject 'duplicate integrated mapping' 'duplicate worker branch' bash "$cleanup" --integrated worker "$worker_head" "$integrated_landing" --integrated worker "$worker_head" "$integrated_landing"
+git symbolic-ref refs/heads/worker-alias refs/heads/worker
+reject 'symbolic worker alias' 'is a symbolic ref' bash "$cleanup" --integrated worker-alias "$worker_head" "$integrated_landing"
+git symbolic-ref --delete refs/heads/worker-alias
+# An invalid later mapping cannot follow a destructive first mapping.
+reject 'all integrated mappings validate before apply' 'does not exist' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing" --integrated missing-worker "$worker_head" "$integrated_landing"
+[ -d worker-wt ] && git show-ref --verify --quiet refs/heads/worker || { echo 'scripts-test: integrated preflight partially removed workers' >&2; exit 1; }
+printf 'uncommitted\n' >> worker-wt/change.txt
+pass 'integrated worker retains dirty worktree' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing"
+expect 'integrated dirty worktree was not kept' 'has modified or untracked files'
+git -C worker-wt checkout --quiet -- change.txt
+mkdir worker-wt/.docket-records
+printf 'evidence\n' > worker-wt/.docket-records/review.txt
+pass 'integrated worker retains ignored evidence' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing"
+expect 'integrated ignored evidence was not kept' 'not known caches and would be lost'
+rm worker-wt/.docket-records/review.txt
+rmdir worker-wt/.docket-records
+worker_git="$(git -C worker-wt rev-parse --absolute-git-dir)"
+mkdir "$worker_git/rebase-merge"
+pass 'integrated worker retains active operation' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing"
+expect 'integrated active worktree was not kept' 'in-progress Git operation'
+rmdir "$worker_git/rebase-merge"
+git worktree lock worker-wt
+pass 'integrated worker retains locked worktree' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing"
+expect 'integrated locked worktree was not kept' 'worktree removal failed'
+git worktree unlock worker-wt
+# Each omitted kind must fail even when all other worker paths match.
+for omitted in mode rename-source deletion binary symlink module magic-path newline-path; do
+  git checkout --quiet -B incomplete "$integrated_landing"
+  case "$omitted" in
+    mode) chmod -x executable; git add executable ;;
+    rename-source) git show "$integrated_base:old-name.txt" > old-name.txt; git add old-name.txt ;;
+    deletion) git show "$integrated_base:deleted.txt" > deleted.txt; git add deleted.txt ;;
+    binary) printf 'different\000bytes\n' > binary.dat; git add binary.dat ;;
+    symlink) rm link; ln -s change.txt link; git add link ;;
+    module) git update-index --cacheinfo "160000,$module_base,module" ;;
+    magic-path) printf 'different\n' > ':(glob)*.txt'; git --literal-pathspecs add ':(glob)*.txt' ;;
+    newline-path) printf 'different\n' > $'line\nbreak.txt'; git add $'line\nbreak.txt' ;;
+  esac
+  git commit --quiet -m "Worker $omitted missing"
+  incomplete="$(git rev-parse HEAD)"
+  git checkout --quiet main
+  reject "missing worker $omitted" 'differs from landing' bash "$cleanup" --base incomplete --integrated worker "$worker_head" "$incomplete"
+done
+# A criss-cross history has no unambiguous common base for path proof.
+base_tree="$(git rev-parse "$integrated_base^{tree}")"
+left="$(git commit-tree -p "$integrated_base" -m 'Left' "$base_tree")"
+right="$(git commit-tree -p "$integrated_base" -m 'Right' "$base_tree")"
+cross_worker="$(git commit-tree -p "$left" -p "$right" -m 'Worker merge' "$(git rev-parse "$worker_head^{tree}")")"
+cross_landing="$(git commit-tree -p "$right" -p "$left" -m 'Landing merge' "$(git rev-parse "$integrated_landing^{tree}")")"
+git branch cross-worker "$cross_worker"
+git branch cross-base "$cross_landing"
+reject 'ambiguous integrated common ancestor' 'need one common ancestor' bash "$cleanup" --base cross-base --integrated cross-worker "$cross_worker" "$cross_landing"
+# Advance the worker after proof and after the loop snapshots its tip, while
+# inspecting its worktree. Identical trees ensure only the tip guard saves it.
+mkdir bin
+real_git="$(command -v git)"
+race_head="$(git commit-tree -p "$worker_head" -m 'Concurrent worker commit' "$(git rev-parse "$worker_head^{tree}")")"
+cat > bin/git <<'GIT'
+#!/usr/bin/env bash
+if [ "$1" = -C ] && [ "${3:-}" = status ]; then
+  "$REAL_GIT" update-ref refs/heads/worker "$RACE_HEAD" "$RACE_OLD" || exit 2
+fi
+exec "$REAL_GIT" "$@"
+GIT
+chmod +x bin/git
+pass 'integrated worker moves before worktree removal' env PATH="$integrated_repo/bin:$PATH" REAL_GIT="$real_git" RACE_HEAD="$race_head" RACE_OLD="$worker_head" bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing"
+expect 'concurrent integrated worker change was not reported' 'branch moved since integration proof'
+[ -d worker-wt ] && [ "$(git rev-parse worker)" = "$race_head" ] || { echo 'scripts-test: integrated cleanup discarded concurrent work' >&2; exit 1; }
+git update-ref refs/heads/worker "$worker_head" "$race_head"
+rm bin/git
+rmdir bin
+pass 'multiple integrated workers apply' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing" --integrated worker-copy "$worker_head" "$integrated_landing"
+[ ! -d worker-wt ] && ! git show-ref --verify --quiet refs/heads/worker && ! git show-ref --verify --quiet refs/heads/worker-copy || { echo 'scripts-test: integrated workers were not removed' >&2; exit 1; }
+git show-ref --verify --quiet refs/heads/parent && git show-ref --verify --quiet refs/heads/net-empty || { echo 'scripts-test: explicit integrated cleanup removed an unselected branch' >&2; exit 1; }
+git worktree list --porcelain > worktrees.txt
+grep -q '^prunable' worktrees.txt || { echo 'scripts-test: explicit integration cleanup pruned an unrelated registration' >&2; exit 1; }
+pass 'direct ancestor worker is already included' bash "$cleanup" --apply --integrated empty-worker "$integrated_base" "$integrated_landing"
+! git show-ref --verify --quiet refs/heads/empty-worker || { echo 'scripts-test: integrated ancestor worker was kept' >&2; exit 1; }
+
+# Ordinary cleanup discovers folded workers without supplied IDs. Forge
+# records are independent of branch tips, and main has evolved since landing.
+auto_repo="$external/auto-workers"
+git clone --quiet "$integrated_repo" "$auto_repo"
+cd "$auto_repo"
+git config user.name 'Automatic fixture'
+git config user.email 'automatic-fixture@example.invalid'
+git config core.hooksPath /dev/null
+mkdir bin
+printf 'bin/\n.worktrees/\n' >> .git/info/exclude
+auto_tree="$(git rev-parse "$worker_head^{tree}")"
+auto_squashed="$(git commit-tree -p "$integrated_base" -m 'Rewritten worker' "$auto_tree")"
+auto_later="$(git commit-tree -p "$worker_head" -m 'Unlanded empty commit' "$auto_tree")"
+auto_revert="$(git commit-tree -p main -m 'New work restoring old content' "$auto_tree")"
+auto_partial="$(git commit-tree -p "$integrated_base" -m 'Partial worker' "$(git rev-parse "$incomplete^{tree}")")"
+auto_undo="$(git commit-tree -p "$worker_head" -m 'Undo worker' "$(git rev-parse "$integrated_base^{tree}")")"
+auto_cycle="$(git commit-tree -p "$auto_undo" -m 'Restore worker again' "$auto_tree")"
+git branch auto-worker "$worker_head"
+git branch auto-squashed "$auto_squashed"
+git branch auto-empty-later "$auto_later"
+git branch auto-cycle "$auto_cycle"
+git branch auto-revert "$auto_revert"
+git branch auto-partial "$auto_partial"
+git branch auto-open "$worker_head"
+git branch auto-own-later "$auto_later"
+git branch auto-failed-own "$worker_head"
+git branch auto-failed-open "$worker_head"
+git worktree add --quiet .worktrees/auto-worker auto-worker
+cat > bin/gh <<'GH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$AUTO_GH_LOG"
+case "$1 $2" in
+  'auth status') [ "${AUTO_AUTH_FAIL:-0}" -eq 0 ]; exit ;;
+  'repo view') exit 0 ;;
+  'pr list') ;;
+  *) exit 2 ;;
+esac
+shift 2
+head=""; state=""; jqx=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --head) head="$2"; shift 2 ;;
+    --state) state="$2"; shift 2 ;;
+    --jq) jqx="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+if [ "$state" = open ]; then
+  [ "$head" != auto-failed-open ] || exit 1
+  [ "$head" != auto-open ] || echo 88
+  exit 0
+fi
+if [ -n "$head" ]; then
+  [ "$head" != auto-failed-own ] || exit 1
+  [ "$head" != auto-own-later ] || echo "55 $AUTO_WORKER_HEAD"
+  exit 0
+fi
+[ "${AUTO_FAIL_LIST:-0}" -eq 0 ] || exit 1
+if command -v jq >/dev/null 2>&1; then
+  printf '[{"number":27,"mergeCommit":{"oid":"%s"},"isCrossRepository":%s,"headRepositoryOwner":{"login":"%s"}}]' "$AUTO_LANDING" "${AUTO_CROSS:-false}" "${AUTO_OWNER:-owner}" | jq -r "$jqx"
+else
+  printf 'pr\t27\t%s\n' "$AUTO_LANDING"
+fi
+GH
+chmod +x bin/gh
+auto_log="$external/auto-gh.log"
+: > "$auto_log"
+auto_cleanup() { env PATH="$auto_repo/bin:$PATH" AUTO_GH_LOG="$auto_log" AUTO_LANDING="$integrated_landing" AUTO_WORKER_HEAD="$worker_head" "$@"; }
+pass 'automatic worker discovery dry run' auto_cleanup bash "$cleanup"
+expect 'automatic worker was not discovered' "and branch auto-worker (changes present in PR #27 landing ${integrated_landing:0:12})"
+expect 'rewritten worker was not discovered' "delete branch auto-squashed (changes present in PR #27 landing ${integrated_landing:0:12})"
+expect 'open worker PR was not protected' 'keep auto-open: open PR #88'
+expect 'later same-tree commit was not protected' 'worker history repeats a tree'
+expect 'new revert work was not protected' 'worker already descends from this landing'
+expect 'own-name later work bypassed its guard' 'keep auto-own-later: PR #55 merged'
+expect 'failed own-name lookup was not protected' 'keep auto-failed-own: cannot check its merged PR history'
+expect 'failed open lookup was not protected' 'keep auto-failed-open: cannot check for an open PR'
+[ "$(grep -c -- '--limit 1000' "$auto_log")" -eq 1 ] || { echo 'scripts-test: automatic cleanup did not cache the candidate query' >&2; exit 1; }
+[ -d .worktrees/auto-worker ] && git show-ref --verify --quiet refs/heads/auto-squashed || { echo 'scripts-test: automatic dry run removed a worker' >&2; exit 1; }
+pass 'unknown automatic candidate query retains workers' auto_cleanup env AUTO_FAIL_LIST=1 bash "$cleanup" --apply
+expect 'candidate query failure was not reported' 'cannot read integration landing candidates'
+[ -d .worktrees/auto-worker ] && git show-ref --verify --quiet refs/heads/auto-squashed || { echo 'scripts-test: failed candidate query removed a worker' >&2; exit 1; }
+# The default path retains dirty, ignored, active and locked worktrees too.
+printf 'dirty\n' >> .worktrees/auto-worker/change.txt
+pass 'automatic proof retains dirty worktree' auto_cleanup bash "$cleanup"
+expect 'automatic dirty worktree was not kept' 'has modified or untracked files'
+git -C .worktrees/auto-worker checkout --quiet -- change.txt
+printf '.docket-records/\n' >> .git/info/exclude
+mkdir .worktrees/auto-worker/.docket-records
+printf 'records\n' > .worktrees/auto-worker/.docket-records/record
+pass 'automatic proof retains ignored records' auto_cleanup bash "$cleanup"
+expect 'automatic ignored record was not kept' 'not known caches and would be lost'
+rm .worktrees/auto-worker/.docket-records/record
+rmdir .worktrees/auto-worker/.docket-records
+auto_git="$(git -C .worktrees/auto-worker rev-parse --absolute-git-dir)"
+mkdir "$auto_git/rebase-merge"
+pass 'automatic proof retains active operation' auto_cleanup bash "$cleanup"
+expect 'automatic operation was not kept' 'in-progress Git operation'
+rmdir "$auto_git/rebase-merge"
+git worktree lock .worktrees/auto-worker
+pass 'automatic proof retains locked worktree' auto_cleanup bash "$cleanup" --apply
+expect 'automatic locked worktree was not kept' 'worktree removal failed'
+git worktree unlock .worktrees/auto-worker
+# Rewind the base after proof while inspecting the worker: neither the
+# worker branch nor its worktree may be removed using that stale proof.
+auto_main="$(git rev-parse main)"
+real_git="$(command -v git)"
+cat > bin/git <<'GIT'
+#!/usr/bin/env bash
+if [ "$1" = -C ] && [ "${3:-}" = status ]; then
+  if [ "${AUTO_RACE_KIND:-base}" = worker ]; then
+    "$REAL_GIT" update-ref refs/heads/auto-worker "$AUTO_RACE_HEAD" "$AUTO_WORKER_HEAD" || exit 2
+  else
+    "$REAL_GIT" update-ref refs/heads/main "$AUTO_OLD_BASE" "$AUTO_MAIN" || exit 2
+  fi
+fi
+exec "$REAL_GIT" "$@"
+GIT
+chmod +x bin/git
+pass 'automatic proof protects concurrent worker head' auto_cleanup env REAL_GIT="$real_git" AUTO_RACE_KIND=worker AUTO_RACE_HEAD="$auto_later" bash "$cleanup" --apply
+expect 'automatic worker advance was not reported' 'branch moved since integration proof'
+[ -d .worktrees/auto-worker ] && [ "$(git rev-parse auto-worker)" = "$auto_later" ] || { echo 'scripts-test: automatic proof removed concurrent worker work' >&2; exit 1; }
+git update-ref refs/heads/auto-worker "$worker_head" "$auto_later"
+pass 'automatic proof protects against base rewind' auto_cleanup env REAL_GIT="$real_git" AUTO_OLD_BASE="$integrated_base" AUTO_MAIN="$auto_main" bash "$cleanup" --apply
+expect 'base rewind was not reported' 'base no longer contains the proved landing'
+[ -d .worktrees/auto-worker ] && [ "$(git rev-parse auto-worker)" = "$worker_head" ] || { echo 'scripts-test: stale base proof removed the worker' >&2; exit 1; }
+git update-ref refs/heads/main "$auto_main" "$integrated_base"
+rm bin/git
+# A verified retained local receipt discovers workers without a forge, even
+# after its parent branch has gone. A broken proof ref grants no authority.
+parent_head="$(git rev-parse refs/remotes/origin/parent)"
+mkdir -p .git/docket/landed
+printf 'main\n%s\n%s\n%s\n' "$integrated_base" "$parent_head" "$integrated_landing" > .git/docket/landed/parent
+git update-ref refs/docket/landed/parent "$parent_head"
+pass 'automatic local receipt discovery' auto_cleanup bash "$cleanup" --local
+expect 'local receipt did not discover worker' "and branch auto-worker (changes present in verified local landing ${integrated_landing:0:12} (parent))"
+git update-ref refs/docket/landed/parent "$integrated_base"
+pass 'invalid receipt does not prove automatic workers' auto_cleanup bash "$cleanup" --local
+grep -q 'changes present in verified local landing' "$fixture/result.log" && { echo 'scripts-test: automatic proof trusted a broken receipt' >&2; exit 1; }
+git update-ref refs/docket/landed/parent "$parent_head"
+pass 'hosted automatic cleanup retains without forge' auto_cleanup env AUTO_AUTH_FAIL=1 bash "$cleanup" --apply
+expect 'unavailable forge was not reported' 'forge unavailable; cannot check for an open PR'
+[ -d .worktrees/auto-worker ] || { echo 'scripts-test: hosted cleanup skipped open-PR protection' >&2; exit 1; }
+pass 'automatic workers apply without IDs' auto_cleanup bash "$cleanup" --apply
+[ ! -d .worktrees/auto-worker ] && ! git show-ref --verify --quiet refs/heads/auto-worker && ! git show-ref --verify --quiet refs/heads/auto-squashed || { echo 'scripts-test: default cleanup kept incorporated workers' >&2; exit 1; }
+for retained in auto-cycle auto-empty-later auto-revert auto-partial auto-open auto-own-later auto-failed-own auto-failed-open; do
+  git show-ref --verify --quiet "refs/heads/$retained" || { echo "scripts-test: automatic cleanup removed protected $retained" >&2; exit 1; }
+done
+# Automatic discovery in a managed clone retains ownership, the allowed
+# fork source and the remote-tracking base (even when local main is ahead).
+rm .git/docket/landed/parent
+git branch auto-target "$worker_head"
+git branch auto-unowned "$worker_head"
+git config branch.auto-target.docket true
+git remote add fork git@github.com:allowed/project.git
+auto_sidecar="$external/auto-sidecar"
+git init --quiet "$auto_sidecar"
+printf 'repo=owner/project\ndir=%s\npush_remote=fork\n' "$auto_repo" > "$auto_sidecar/.docket-target"
+pass 'automatic target worker discovery' in_dir "$auto_sidecar" auto_cleanup bash "$cleanup"
+expect 'target worker was not discovered automatically' "delete branch auto-target (changes present in PR #27 landing ${integrated_landing:0:12})"
+grep -q 'auto-unowned' "$fixture/result.log" && { echo 'scripts-test: automatic target considered an unowned branch' >&2; exit 1; }
+if command -v jq >/dev/null 2>&1; then
+  pass 'automatic target rejects another fork' in_dir "$auto_sidecar" auto_cleanup env AUTO_CROSS=true AUTO_OWNER=stranger bash "$cleanup"
+  grep -q 'delete branch auto-target' "$fixture/result.log" && { echo 'scripts-test: automatic target accepted another fork' >&2; exit 1; }
+  pass 'automatic target accepts configured fork' in_dir "$auto_sidecar" auto_cleanup env AUTO_CROSS=true AUTO_OWNER=allowed bash "$cleanup"
+  expect 'automatic target did not accept configured fork' 'delete branch auto-target'
+else
+  echo 'scripts-test: note: jq not installed; automatic target fork filtering not checked'
+fi
+auto_remote_base="$(git rev-parse refs/remotes/origin/main)"
+git update-ref refs/remotes/origin/main "$integrated_base"
+pass 'automatic target uses remote history' in_dir "$auto_sidecar" auto_cleanup bash "$cleanup"
+expect 'automatic target used local main instead of remote base' 'is not in refs/remotes/origin/main history'
+git update-ref refs/remotes/origin/main "$auto_remote_base"
+pass 'automatic target apply' in_dir "$auto_sidecar" auto_cleanup bash "$cleanup" --apply
+! git show-ref --verify --quiet refs/heads/auto-target && git show-ref --verify --quiet refs/heads/auto-unowned || { echo 'scripts-test: automatic target ownership was not preserved' >&2; exit 1; }
+
 # Remote-less lifecycle: even an installed gh and inherited GH_REPO must not
 # cause any forge calls. Keep these fixtures isolated from hosted test state.
 local_repo="$external/local-repo"
@@ -1647,6 +1979,17 @@ git -C "$managed" rev-parse --verify --quiet refs/heads/todo/tgt-one >/dev/null 
 git -C "$managed" rev-parse --verify --quiet refs/heads/main >/dev/null && git -C "$managed" rev-parse --verify --quiet refs/heads/personal >/dev/null || { echo 'scripts-test: target cleanup deleted the base or a personal branch' >&2; exit 1; }
 git -C "$managed" rev-parse --verify --quiet refs/remotes/origin/todo/tgt-stale >/dev/null && { echo 'scripts-test: target cleanup did not prune the remote' >&2; exit 1; }
 git -C "$managed" rev-parse --verify --quiet refs/heads/me/tgt-two >/dev/null || { echo 'scripts-test: target cleanup removed an unlanded branch' >&2; exit 1; }
+# Explicit integration proof retains target ownership and measures against
+# the remote base; --local deliberately uses the lagging local base instead.
+target_landing="$(git -C "$managed" rev-parse refs/remotes/origin/main)"
+git -C "$managed" branch todo/tgt-integrated "$target_landing"
+reject 'unmarked integrated target branch' "not marked as docket's" tgh bash "$tclean" --integrated todo/tgt-integrated "$target_landing" "$target_landing"
+git -C "$managed" config branch.todo/tgt-integrated.docket true
+reject 'local integrated target base lags' 'is not in refs/heads/main history' tgh bash "$tclean" --local --integrated todo/tgt-integrated "$target_landing" "$target_landing"
+cp "$tgt_log" "$tgt/integrated-gh.before"
+pass 'integrated target uses remote base' tgh bash "$tclean" --apply --integrated todo/tgt-integrated "$target_landing" "$target_landing"
+! git -C "$managed" show-ref --verify --quiet refs/heads/todo/tgt-integrated || { echo 'scripts-test: integrated target branch was not removed' >&2; exit 1; }
+cmp -s "$tgt_log" "$tgt/integrated-gh.before" || { echo 'scripts-test: explicit integrated cleanup queried the forge' >&2; exit 1; }
 pass 'target cleanup --no-target' tgh bash "$tclean" --no-target
 grep -q 'managed-repository target' "$fixture/result.log" && { echo 'scripts-test: cleanup --no-target used the target' >&2; exit 1; }
 

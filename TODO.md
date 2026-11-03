@@ -14,6 +14,14 @@ Ordinary follow-ups and bugs found during other work live here. Whole-codebase r
 
 ### Unprioritized
 
+- [SCRIPTS] `pr-health-superseded-check-runs` — **Use latest checks.**
+  An older cancelled check in `statusCheckRollup` can make
+  `pr-health.sh` report failure after a newer run of that check passes.
+  - Source: PR #40 validation, 2026-11-03
+  - Starting point: `templates/docket/scripts/pr-health.sh`; select the
+    latest run per check identity; distinguish a superseded cancellation
+    from a current failure. PR #40 reproduced this after a body edit.
+
 - [SCRIPTS] `review-due-gnu-dst-midnight` — **`review-due.sh` reports the day count on GNU date for a review dated on a day that starts with a DST jump.** In zones where DST begins at midnight, local midnight does not exist on that day, so `date -d "$date"` fails and the days figure is silently left out of the report; the BSD path gives 01:00 and counts correctly.
   - Source: independent review of `todo/review-due-local-midnight`, 2026-11-02
   - Starting point: the GNU branch of the day count in `templates/docket/scripts/review-due.sh`; parse `"$date 12:00"` and round, or fall back to `"$date 01:00"` on failure. Reproduce with GNU date and `TZ=America/Santiago` for 2026-09-06.
