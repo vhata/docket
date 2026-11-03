@@ -772,33 +772,45 @@ git rev-parse --verify --quiet landed-dirty >/dev/null || { echo 'scripts-test: 
 git rev-parse --verify --quiet landed-main >/dev/null || { echo 'scripts-test: cleanup-landed deleted the main worktree branch' >&2; exit 1; }
 git checkout --quiet main
 git worktree remove --force "$fixture/.worktrees/landed-dirty"
-# Ignored files: known caches at any depth never hold a worktree back; any
-# other ignored file does until --discard-ignored is passed.
-printf 'node_modules/\n__pycache__/\n.pytest_cache/\n.docket/\n' >> "$fixture/.git/info/exclude"
+# Ignored caches and .docket directories at any depth never hold a worktree
+# back; other ignored records do until --discard-ignored is passed.
+printf 'node_modules/\n__pycache__/\n.pytest_cache/\n.docket/\n.docket-records/\n' >> "$fixture/.git/info/exclude"
 git worktree add --quiet -b landed-caches "$fixture/.worktrees/landed-caches" main
 git -C "$fixture/.worktrees/landed-caches" commit --quiet --allow-empty -m 'Landed, caches only'
 mkdir -p "$fixture/.worktrees/landed-caches/node_modules/pkg" "$fixture/.worktrees/landed-caches/src/pkg/__pycache__" "$fixture/.worktrees/landed-caches/.pytest_cache/v"
 echo x > "$fixture/.worktrees/landed-caches/node_modules/pkg/index.js"; echo x > "$fixture/.worktrees/landed-caches/src/pkg/__pycache__/a.pyc"; echo x > "$fixture/.worktrees/landed-caches/.pytest_cache/v/data"
+git worktree add --quiet -b landed-docket "$fixture/.worktrees/landed-docket" main
+git -C "$fixture/.worktrees/landed-docket" commit --quiet --allow-empty -m 'Landed, docket working files only'
+mkdir -p "$fixture/.worktrees/landed-docket/.docket" "$fixture/.worktrees/landed-docket/pkg/.docket"
+echo body > "$fixture/.worktrees/landed-docket/.docket/pr-landed-docket.md"
+echo scratch > "$fixture/.worktrees/landed-docket/pkg/.docket/scratch.md"
+docket_tip="$(git rev-parse landed-docket)"
 git worktree add --quiet -b landed-record "$fixture/.worktrees/landed-record" main
 git -C "$fixture/.worktrees/landed-record" commit --quiet --allow-empty -m 'Landed, holds a record'
-mkdir -p "$fixture/.worktrees/landed-record/.docket" "$fixture/.worktrees/landed-record/node_modules"
-echo body > "$fixture/.worktrees/landed-record/.docket/pr-landed-record.md"; echo x > "$fixture/.worktrees/landed-record/node_modules/x"
+mkdir -p "$fixture/.worktrees/landed-record/.docket-records" "$fixture/.worktrees/landed-record/node_modules"
+echo body > "$fixture/.worktrees/landed-record/.docket-records/review.md"; echo x > "$fixture/.worktrees/landed-record/node_modules/x"
 printf '*.log\n' >> "$fixture/.git/info/exclude"
 git worktree add --quiet -b landed-log "$fixture/.worktrees/landed-log" main
 git -C "$fixture/.worktrees/landed-log" commit --quiet --allow-empty -m 'Landed, holds a log'
 mkdir -p "$fixture/.worktrees/landed-log/results"; echo run > "$fixture/.worktrees/landed-log/results/audit.log"
-merged='landed-caches landed-record landed-log'
+merged='landed-caches landed-docket landed-record landed-log'
 pass 'cleanup-landed dry run with caches and records' in_dir "$fixture/.worktrees/runner" env PATH="$fixture/bin:$PATH" FIXTURE_MERGED="$merged" bash "$cleanup"
 expect 'dry run did not plan to remove the caches-only worktree' 'and branch landed-caches (merged'
+expect 'dry run did not plan to remove the docket-only worktree' 'and branch landed-docket (merged'
 expect 'dry run did not keep the record-holding worktree' 'keep landed-record'
 expect 'dry run did not keep the log-holding worktree' 'keep landed-log'
 [ -d "$fixture/.worktrees/landed-caches" ] || { echo 'scripts-test: cleanup-landed dry run removed the caches-only worktree' >&2; exit 1; }
+[ "$(cat "$fixture/.worktrees/landed-docket/.docket/pr-landed-docket.md")" = body ] || { echo 'scripts-test: dry run changed docket working files' >&2; exit 1; }
+[ "$(cat "$fixture/.worktrees/landed-docket/pkg/.docket/scratch.md")" = scratch ] || { echo 'scripts-test: dry run changed nested docket working files' >&2; exit 1; }
+[ "$(git rev-parse landed-docket)" = "$docket_tip" ] || { echo 'scripts-test: dry run changed the docket-only branch' >&2; exit 1; }
 pass 'cleanup-landed --apply with caches and a record' in_dir "$fixture/.worktrees/runner" env PATH="$fixture/bin:$PATH" FIXTURE_MERGED="$merged" bash "$cleanup" --apply
 [ ! -d "$fixture/.worktrees/landed-caches" ] || { echo 'scripts-test: cleanup-landed kept a worktree holding only caches' >&2; exit 1; }
+[ ! -d "$fixture/.worktrees/landed-docket" ] || { echo 'scripts-test: cleanup-landed kept a worktree holding only docket working files' >&2; exit 1; }
+! git show-ref --verify --quiet refs/heads/landed-docket || { echo 'scripts-test: cleanup-landed kept the docket-only branch' >&2; exit 1; }
 expect 'record-holding worktree was not reported as kept' 'not known caches and would be lost'
-expect 'the record was not named' '.docket/'
+expect 'the record was not named' '.docket-records/'
 grep -q 'node_modules' "$fixture/result.log" && grep 'node_modules' "$fixture/result.log" | grep -vq 'landed-caches' && { echo 'scripts-test: cleanup-landed listed a cache as a reason to keep' >&2; exit 1; }
-[ -f "$fixture/.worktrees/landed-record/.docket/pr-landed-record.md" ] || { echo 'scripts-test: cleanup-landed removed the record-holding worktree' >&2; exit 1; }
+[ -f "$fixture/.worktrees/landed-record/.docket-records/review.md" ] || { echo 'scripts-test: cleanup-landed removed the record-holding worktree' >&2; exit 1; }
 [ -f "$fixture/.worktrees/landed-log/results/audit.log" ] || { echo 'scripts-test: cleanup-landed removed the log-holding worktree' >&2; exit 1; }
 pass 'cleanup-landed --apply --discard-ignored' in_dir "$fixture/.worktrees/runner" env PATH="$fixture/bin:$PATH" FIXTURE_MERGED="$merged" bash "$cleanup" --apply --discard-ignored
 [ ! -d "$fixture/.worktrees/landed-record" ] || { echo 'scripts-test: --discard-ignored kept the record-holding worktree' >&2; exit 1; }
@@ -950,14 +962,21 @@ cat .docket/change.md >> .docket/expected-message
 git cat-file commit main | sed '1,/^$/d' > .docket/actual-message
 cmp .docket/expected-message .docket/actual-message
 [ -d "$local_wt" ] || { echo 'scripts-test: landing removed review worktree early' >&2; exit 1; }
+printf 'local evidence\n' > "$local_wt/ignored.txt"
 pass 'local cleanup retains ignored evidence' env PATH="$local_env" bash "$local_cleanup" --apply
 expect 'local evidence was not retained' 'not known caches and would be lost'
+expect 'local evidence was not named' 'ignored.txt'
+[ "$(cat "$local_wt/ignored.txt")" = 'local evidence' ] || exit 1
 [ -f "$local_wt/.docket/change-local-task.md" ] || exit 1
+mv "$local_wt/ignored.txt" .docket/reviewed-evidence.txt
 mv "$local_wt/.docket/change-local-task.md" .docket/reviewed-change.md
-rmdir "$local_wt/.docket"
+# Preserve review records before cleanup; disposable .docket files may stay.
+echo scratch > "$local_wt/.docket/scratch.md"
 pass 'local cleanup dry run' env PATH="$local_env" bash "$local_cleanup"
 expect 'local receipt was not recognized' 'locally squash-landed'
+expect 'local dry run did not plan removal with docket working files' 'and branch todo/local-task (locally squash-landed'
 [ -d "$local_wt" ] || { echo 'scripts-test: cleanup dry run removed local worktree' >&2; exit 1; }
+[ "$(cat "$local_wt/.docket/scratch.md")" = scratch ] || exit 1
 printf '%s\n' "$local_base" > "$(git -C "$local_wt" rev-parse --git-path MERGE_HEAD)"
 pass 'local cleanup retains in-progress operation' env PATH="$local_env" bash "$local_cleanup" --apply
 expect 'active operation was not retained' 'in-progress Git operation'
@@ -1001,6 +1020,8 @@ chmod +x bin/git
 pass 'cleanup retains concurrent tip at deletion' env PATH="$local_env" REAL_GIT="$real_git" RACE_HEAD="$race_head" RACE_OLD="$local_head" bash "$local_cleanup" --apply
 [ "$(git rev-parse refs/heads/todo/local-task)" = "$race_head" ] || { echo 'scripts-test: cleanup deleted concurrent work' >&2; exit 1; }
 expect 'concurrent branch advance was not reported' 'branch moved during cleanup'
+[ ! -d "$local_wt" ] || { echo 'scripts-test: local cleanup kept docket working files' >&2; exit 1; }
+[ -f .docket/reviewed-change.md ] && [ "$(cat .docket/reviewed-evidence.txt)" = 'local evidence' ] || { echo 'scripts-test: local cleanup lost preserved evidence' >&2; exit 1; }
 rm bin/git
 git update-ref refs/heads/todo/local-task "$local_head" "$race_head"
 pass 'local cleanup apply' env PATH="$local_env" bash "$local_cleanup" --apply
