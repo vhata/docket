@@ -278,10 +278,10 @@ bash docket/scripts/cleanup-landed.sh --apply          # removes clean worktrees
 bash docket/scripts/cleanup-landed.sh --apply --empty  # also deletes placeholder branches with no commits, no PR, no worktree
 ```
 
-The script deletes a branch only when a merged PR or a verified local
-landing receipt proves its exact tip landed; later commits are kept and
-reported. Deletion succeeds only if the branch still points to the
-verified tip, so a concurrently advanced branch is retained. Cleanup
+Ordinary discovery deletes a branch only when a merged PR or a verified
+local landing receipt proves its exact tip landed; later commits are
+kept and reported. Deletion succeeds only if the branch still points to
+the verified tip, so a concurrently advanced branch is retained. Cleanup
 leaves branch-specific Git configuration in place to avoid deleting
 settings another worker may be using. When creating a branch,
 `start-work.sh` clears stale upstream tracking but preserves other
@@ -307,6 +307,41 @@ for days that nobody knew about. Rebase stacked children onto the new
 main as part of the same cleanup. In hosted mode check the push CI run
 on main (`gh run list --branch main --limit 3`); in local mode run
 main's local gates. Apply the red-main policy if needed.
+
+Workers cherry-picked or squashed into a shared parent need explicit
+integration proof because they have no merged PR of their own. Use the
+worker branch and full head recorded in the integration report, and
+the parent's full landing commit from its merged PR or local receipt:
+
+```bash
+bash docket/scripts/cleanup-landed.sh \
+  --integrated "$worker_branch" "$worker_head" "$landed_commit"
+bash docket/scripts/cleanup-landed.sh --apply \
+  --integrated "$worker_branch" "$worker_head" "$landed_commit"
+```
+
+Repeat `--integrated` to supply several workers. This mode selects only
+those branches, makes no forge calls or fetches, and does not prune
+unrelated worktree registrations. It cannot be combined with `--empty`.
+Before any removal, every branch must still point to its supplied full
+head, and every landing must be reachable from the selected local base.
+In target mode, branches must be marked as Docket's and the base is the
+configured remote-tracking base; `--local` uses the local base instead.
+Fetch the base beforehand when needed. An invalid mapping stops the
+whole run without deleting anything.
+
+For a worker already in the landing's ancestry, that ancestry is proof.
+Otherwise the script requires one common ancestor, a nonempty net
+change, and an exact match at the landing for every path the worker
+changed from that ancestor. This includes deleted and renamed paths,
+file modes, binary files, symlinks and submodule commits. It compares
+against the historical landing, so subsequent edits on main do not
+invalidate the proof. A title, branch name, reflog or matching patch
+alone is insufficient. If integration edited the worker's result or
+its history has multiple common ancestors, cleanup refuses the mapping;
+inspect it rather than supplying a guessed replacement commit. Keep
+the branch and explain unresolved proof in the handoff. The ordinary
+dirty, active, locked and ignored-evidence safeguards still apply.
 
 ## Releases
 

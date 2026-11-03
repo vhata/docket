@@ -4,10 +4,15 @@
 # pass --apply to act.
 #
 # Usage: docket/scripts/cleanup-landed.sh [--apply] [--base main] [--empty] [--discard-ignored] [--local] [--no-target]
+#        [--integrated BRANCH EXPECTED_HEAD LANDED_COMMIT]...
 #   A branch is "landed" only when gh finds a merged PR whose head was this
 #   branch AND the branch's current tip is the commit that PR merged. A branch
 #   with commits after the merged head is kept and reported. A verified local
 #   squash receipt from land-local.sh also proves landing without a forge.
+#   --integrated selects only the named workers. Both commits must be full
+#   object IDs. The landing must be in base history and contain the worker's
+#   exact changed files (or its history). All mappings are checked before
+#   any removal. This mode makes no forge calls, fetches or global prunes.
 #   --local skips forge queries and fetches; automatic without remotes.
 #   --empty also removes branches with no commits beyond the base, no PR and no
 #   worktree (harness placeholders such as worktree-agent-*).
@@ -33,7 +38,8 @@
 #   requests in the target have all closed: "resolve" when one merged (remove
 #   the entry in a direct sidecar commit), "release" when none did (confirm
 #   first that it did not land some other way). It never edits the queues.
-#   --no-target ignores the target file.
+#   --no-target ignores the target file. Integrated proof uses the target's
+#   remote base, or its local base with --local; ownership still applies.
 set -euo pipefail
 
 # Ignored paths whose last component matches this are discarded with the
@@ -54,6 +60,8 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 orig="$(pwd)"
 git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "cleanup-landed: not in a git repository" >&2; exit 2; }
 apply=0; base=""; empty=0; discard_ignored=0; local_only=0; no_target=""
+integrated_count=0; integrated_branches=(); integrated_heads=(); integrated_landings=()
+die() { echo "cleanup-landed: $*" >&2; exit 2; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --local) local_only=1; shift ;;
@@ -62,7 +70,13 @@ while [ $# -gt 0 ]; do
     --base) base="$2"; shift 2 ;;
     --empty) empty=1; shift ;;
     --discard-ignored) discard_ignored=1; shift ;;
-    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+    --integrated)
+      [ $# -ge 4 ] || die '--integrated requires BRANCH EXPECTED_HEAD LANDED_COMMIT'
+      integrated_branches[$integrated_count]="$2"
+      integrated_heads[$integrated_count]="$3"
+      integrated_landings[$integrated_count]="$4"
+      integrated_count=$((integrated_count + 1)); shift 4 ;;
+    -h|--help) sed -n '2,/^set -/p' "$0" | sed '$d'; exit 0 ;;
     *) echo "cleanup-landed: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -91,11 +105,64 @@ docket_branch() {
 [ -n "$(git remote)" ] || local_only=1
 common="$(git rev-parse --git-common-dir)"
 common="$(cd "$common" && pwd -P)"
+# A worker may have been cherry-picked into a parent PR and then squashed.
+# An explicit mapping supplies that provenance; neither branch names nor
+# patch similarity can safely discover it. Compare the complete result on
+# each worker-changed path at the identified landing, not at today's base.
+if [ "$integrated_count" -gt 0 ]; then
+  [ "$empty" -eq 0 ] || die '--integrated cannot be combined with --empty'
+  integrated_base="refs/heads/$base"
+  if [ -n "$DOCKET_TARGET" ] && [ "$local_only" -eq 0 ]; then
+    integrated_base="refs/remotes/$remote/$base"
+  fi
+  git rev-parse --verify "$integrated_base^{commit}" >/dev/null 2>&1 || die "cannot read base $integrated_base"
+  proof_paths="$(mktemp)"
+  trap 'rm -f "$proof_paths"' EXIT
+  i=0
+  while [ "$i" -lt "$integrated_count" ]; do
+    worker="${integrated_branches[$i]}"
+    expected="${integrated_heads[$i]}"
+    landing="${integrated_landings[$i]}"
+    git check-ref-format "refs/heads/$worker" >/dev/null 2>&1 || die "invalid worker branch $worker"
+    j=0
+    while [ "$j" -lt "$i" ]; do
+      [ "${integrated_branches[$j]}" != "$worker" ] || die "duplicate worker branch $worker"
+      j=$((j + 1))
+    done
+    [ "$worker" != "$base" ] && [ "$worker" != main ] && [ "$worker" != master ] || die "protected base branch $worker"
+    [ -z "$DOCKET_TARGET" ] || [ "$worker" != "$TARGET_BASE" ] || die "protected base branch $worker"
+    docket_branch "$worker" || die "worker $worker is not marked as docket's in the managed repository"
+    if git symbolic-ref --quiet "refs/heads/$worker" >/dev/null 2>&1; then die "worker $worker is a symbolic ref"; fi
+    actual="$(git rev-parse --verify "refs/heads/$worker" 2>/dev/null)" || die "worker branch $worker does not exist"
+    for oid in "$expected" "$landing"; do
+      case "$oid" in ''|*[!0-9a-f]*) die '--integrated requires full commit object IDs' ;; esac
+      [ "${#oid}" -eq 40 ] || [ "${#oid}" -eq 64 ] || die '--integrated requires full commit object IDs'
+      [ "$(git rev-parse --verify "$oid^{commit}" 2>/dev/null)" = "$oid" ] || die "cannot read commit $oid"
+    done
+    [ "$actual" = "$expected" ] || die "worker $worker moved from expected head $expected (now $actual)"
+    git merge-base --is-ancestor "$landing" "$integrated_base" || die "landing $landing is not in $integrated_base history"
+    ancestor="$(git merge-base --all "$expected" "$landing")" || die "cannot find common ancestor for $worker and $landing"
+    case "$ancestor" in ''|*$'\n'*) die "worker $worker and $landing need one common ancestor" ;; esac
+    if [ "$ancestor" != "$expected" ]; then
+      git --literal-pathspecs diff --no-ext-diff --no-textconv --ignore-submodules=none --no-renames --name-only -z "$ancestor" "$expected" -- > "$proof_paths" || die "cannot list changed paths for $worker"
+      [ -s "$proof_paths" ] || die "worker $worker has no net changes to prove"
+      while IFS= read -r -d '' changed; do
+        if ! git --literal-pathspecs diff --quiet --no-ext-diff --no-textconv --ignore-submodules=none "$expected" "$landing" -- "$changed"; then
+          printf 'cleanup-landed: worker %s differs from landing %s at %q (or comparison failed)\n' "$worker" "$landing" "$changed" >&2
+          exit 2
+        fi
+      done < "$proof_paths"
+    fi
+    i=$((i + 1))
+  done
+fi
 have_gh=0
-if [ "$local_only" -eq 0 ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh repo view ${DOCKET_TARGET:+"$TARGET_REPO"} >/dev/null 2>&1; then have_gh=1; fi
+if [ "$integrated_count" -eq 0 ] && [ "$local_only" -eq 0 ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh repo view ${DOCKET_TARGET:+"$TARGET_REPO"} >/dev/null 2>&1; then have_gh=1; fi
 [ "$apply" -eq 1 ] && mode="APPLY" || mode="DRY RUN (changes nothing; pass --apply to act)"
 echo "cleanup-landed: $mode"
-if [ "$have_gh" -eq 0 ]; then
+if [ "$integrated_count" -gt 0 ]; then
+  echo "cleanup-landed: checking only explicitly mapped workers"
+elif [ "$have_gh" -eq 0 ]; then
   echo "cleanup-landed: merged-PR detection is OFF; checking verified local landing receipts"
 fi
 if [ -z "$DOCKET_TARGET" ]; then
@@ -116,14 +183,30 @@ wt_for() {
 
 removed=0; kept=0
 for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
+  selected=-1
+  if [ "$integrated_count" -gt 0 ]; then
+    i=0
+    while [ "$i" -lt "$integrated_count" ]; do
+      [ "${integrated_branches[$i]}" != "$br" ] || selected=$i
+      i=$((i + 1))
+    done
+    [ "$selected" -ge 0 ] || continue
+  fi
   [ "$br" = "$base" ] || [ "$br" = "main" ] || [ "$br" = "master" ] && continue
   [ -n "$DOCKET_TARGET" ] && [ "$br" = "$TARGET_BASE" ] && continue
   docket_branch "$br" || continue
   [ "$br" = "$current" ] && { echo "skip $br (checked out here)"; continue; }
   tip="$(git rev-parse "$br")"
   reason=""
+  if [ "$selected" -ge 0 ]; then
+    if [ "$tip" != "${integrated_heads[$selected]}" ]; then
+      echo "keep $br: branch moved since integration proof"
+      kept=$((kept + 1)); continue
+    fi
+    reason="integrated at ${integrated_landings[$selected]} from exact worker tip $tip"
+  fi
   receipt="$common/docket/landed/$br"
-  if [ -f "$receipt" ]; then
+  if [ -z "$reason" ] && [ -f "$receipt" ]; then
     recorded_base="$(sed -n '1p' "$receipt")"
     old_base="$(sed -n '2p' "$receipt")"
     approved="$(sed -n '3p' "$receipt")"
@@ -208,6 +291,10 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     fi
     echo "remove worktree $path and branch $br ($reason)"
     if [ "$apply" -eq 1 ]; then
+      if [ "$selected" -ge 0 ] && { git symbolic-ref --quiet "refs/heads/$br" >/dev/null 2>&1 || [ "$(git rev-parse --verify "refs/heads/$br" 2>/dev/null)" != "$tip" ]; }; then
+        echo "keep $br: branch moved since integration proof"
+        kept=$((kept + 1)); continue
+      fi
       if ! git worktree remove --force "$path"; then
         echo "keep $br: worktree removal failed; branch and receipt retained"
         kept=$((kept + 1)); continue
@@ -230,6 +317,9 @@ for br in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   removed=$((removed + 1))
 done
 echo "cleanup-landed: $removed branch(es) $( [ "$apply" -eq 1 ] && echo removed || echo 'would be removed'), $kept kept for inspection"
+# An explicit selection does not prune unrelated registrations, fetch refs,
+# or report claims in the sidecar's queues.
+[ "$integrated_count" -eq 0 ] || exit 0
 
 # Target mode: entries the sidecar's queues mark as claimed by PRs in the
 # target, and whether those PRs have finished. Reported only; the resolution

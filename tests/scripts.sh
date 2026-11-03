@@ -838,6 +838,161 @@ git branch --quiet -D landed-busy
 git worktree remove --force "$fixture/.worktrees/runner"
 git branch --quiet -D landed-dirty landed-main runner
 
+# Integrated workers have no PR of their own. Prove their changed paths at
+# the parent's landing, even after main has changed those paths again.
+integrated_repo="$external/integrated-repo"
+mkdir -p "$integrated_repo"
+cd "$integrated_repo"
+git init --quiet
+git symbolic-ref HEAD refs/heads/main
+git config user.name 'Integrated fixture'
+git config user.email 'integrated-fixture@example.invalid'
+git config core.hooksPath /dev/null
+printf 'base\n' > change.txt
+printf 'rename\n' > old-name.txt
+printf 'delete\n' > deleted.txt
+printf 'base\000bytes\n' > binary.dat
+printf 'mode\n' > executable
+ln -s change.txt link
+printf 'base\n' > ':(glob)*.txt'
+printf 'base\n' > $'line\nbreak.txt'
+git add .
+git commit --quiet -m 'Worker base'
+module_base="$(git rev-parse HEAD)"
+git update-index --add --cacheinfo "160000,$module_base,module"
+git commit --quiet -m 'Base submodule pointer'
+integrated_base="$(git rev-parse HEAD)"
+git checkout --quiet -b worker
+printf 'worker\n' > change.txt
+git mv old-name.txt 'new name.txt'
+git rm --quiet deleted.txt
+printf 'worker\000bytes\n' > binary.dat
+chmod +x executable
+rm link
+ln -s 'new name.txt' link
+printf 'worker\n' > ':(glob)*.txt'
+printf 'worker\n' > $'line\nbreak.txt'
+git add .
+git update-index --cacheinfo "160000,$integrated_base,module"
+git commit --quiet -m 'Worker changes with unusual paths and modes'
+worker_head="$(git rev-parse HEAD)"
+git checkout --quiet -b parent "$integrated_base"
+git cherry-pick --quiet "$worker_head"
+printf 'other worker\n' > sibling.txt
+git add sibling.txt
+git commit --quiet -m 'Other worker changes'
+git checkout --quiet main
+git merge --squash --quiet parent
+git commit --quiet -m 'Land combined parent'
+integrated_landing="$(git rev-parse HEAD)"
+printf 'later main\n' > change.txt
+git add change.txt
+git commit --quiet -m 'Main evolves after landing'
+main_after="$(git rev-parse HEAD)"
+git branch worker-copy "$worker_head"
+git branch empty-worker "$integrated_base"
+git commit --quiet --allow-empty -m 'Later main metadata'
+empty_head="$(git commit-tree -p "$integrated_base" -m 'Net empty worker' "$(git rev-parse "$integrated_base^{tree}")")"
+git branch net-empty "$empty_head"
+git worktree add --quiet "$integrated_repo/worker-wt" worker
+git worktree add --quiet --detach "$integrated_repo/stale-wt" main
+rm -rf "$integrated_repo/stale-wt"
+printf 'worker-wt/\n.docket-records/\n' >> .git/info/exclude
+# Neither repository settings nor text conversion may hide object changes.
+git config diff.ignoreSubmodules all
+git config submodule.module.ignore all
+pass 'integrated worker dry run after main evolves' bash "$cleanup" --integrated worker "$worker_head" "$integrated_landing"
+expect 'integrated worker was not recognized' "integrated at $integrated_landing from exact worker tip $worker_head"
+[ -d worker-wt ] && [ "$(git rev-parse worker)" = "$worker_head" ] || { echo 'scripts-test: integrated dry run changed the worker' >&2; exit 1; }
+git diff --quiet worker main && { echo 'scripts-test: integrated fixture lacks later changes' >&2; exit 1; }
+reject 'incomplete integrated arguments' 'requires BRANCH EXPECTED_HEAD LANDED_COMMIT' bash "$cleanup" --integrated worker "$worker_head"
+reject 'abbreviated integration ID' 'full commit object IDs' bash "$cleanup" --integrated worker "${worker_head:0:8}" "$integrated_landing"
+reject 'integrated worker missing' 'does not exist' bash "$cleanup" --integrated missing-worker "$worker_head" "$integrated_landing"
+reject 'integrated worker advanced' 'moved from expected head' bash "$cleanup" --integrated worker "$integrated_base" "$integrated_landing"
+reject 'landing outside selected base' 'is not in refs/heads/main history' bash "$cleanup" --integrated worker "$worker_head" "$worker_head"
+reject 'partial incorporation' 'differs from landing' bash "$cleanup" --integrated worker "$worker_head" "$main_after"
+reject 'net empty worker' 'has no net changes to prove' bash "$cleanup" --integrated net-empty "$empty_head" "$integrated_landing"
+reject 'explicit integration and empty discovery' 'cannot be combined with --empty' bash "$cleanup" --empty --integrated worker "$worker_head" "$integrated_landing"
+reject 'duplicate integrated mapping' 'duplicate worker branch' bash "$cleanup" --integrated worker "$worker_head" "$integrated_landing" --integrated worker "$worker_head" "$integrated_landing"
+git symbolic-ref refs/heads/worker-alias refs/heads/worker
+reject 'symbolic worker alias' 'is a symbolic ref' bash "$cleanup" --integrated worker-alias "$worker_head" "$integrated_landing"
+git symbolic-ref --delete refs/heads/worker-alias
+# An invalid later mapping cannot follow a destructive first mapping.
+reject 'all integrated mappings validate before apply' 'does not exist' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing" --integrated missing-worker "$worker_head" "$integrated_landing"
+[ -d worker-wt ] && git show-ref --verify --quiet refs/heads/worker || { echo 'scripts-test: integrated preflight partially removed workers' >&2; exit 1; }
+printf 'uncommitted\n' >> worker-wt/change.txt
+pass 'integrated worker retains dirty worktree' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing"
+expect 'integrated dirty worktree was not kept' 'has modified or untracked files'
+git -C worker-wt checkout --quiet -- change.txt
+mkdir worker-wt/.docket-records
+printf 'evidence\n' > worker-wt/.docket-records/review.txt
+pass 'integrated worker retains ignored evidence' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing"
+expect 'integrated ignored evidence was not kept' 'not known caches and would be lost'
+rm worker-wt/.docket-records/review.txt
+rmdir worker-wt/.docket-records
+worker_git="$(git -C worker-wt rev-parse --absolute-git-dir)"
+mkdir "$worker_git/rebase-merge"
+pass 'integrated worker retains active operation' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing"
+expect 'integrated active worktree was not kept' 'in-progress Git operation'
+rmdir "$worker_git/rebase-merge"
+git worktree lock worker-wt
+pass 'integrated worker retains locked worktree' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing"
+expect 'integrated locked worktree was not kept' 'worktree removal failed'
+git worktree unlock worker-wt
+# Each omitted kind must fail even when all other worker paths match.
+for omitted in mode rename-source deletion binary symlink module magic-path newline-path; do
+  git checkout --quiet -B incomplete "$integrated_landing"
+  case "$omitted" in
+    mode) chmod -x executable; git add executable ;;
+    rename-source) git show "$integrated_base:old-name.txt" > old-name.txt; git add old-name.txt ;;
+    deletion) git show "$integrated_base:deleted.txt" > deleted.txt; git add deleted.txt ;;
+    binary) printf 'different\000bytes\n' > binary.dat; git add binary.dat ;;
+    symlink) rm link; ln -s change.txt link; git add link ;;
+    module) git update-index --cacheinfo "160000,$module_base,module" ;;
+    magic-path) printf 'different\n' > ':(glob)*.txt'; git --literal-pathspecs add ':(glob)*.txt' ;;
+    newline-path) printf 'different\n' > $'line\nbreak.txt'; git add $'line\nbreak.txt' ;;
+  esac
+  git commit --quiet -m "Worker $omitted missing"
+  incomplete="$(git rev-parse HEAD)"
+  git checkout --quiet main
+  reject "missing worker $omitted" 'differs from landing' bash "$cleanup" --base incomplete --integrated worker "$worker_head" "$incomplete"
+done
+# A criss-cross history has no unambiguous common base for path proof.
+base_tree="$(git rev-parse "$integrated_base^{tree}")"
+left="$(git commit-tree -p "$integrated_base" -m 'Left' "$base_tree")"
+right="$(git commit-tree -p "$integrated_base" -m 'Right' "$base_tree")"
+cross_worker="$(git commit-tree -p "$left" -p "$right" -m 'Worker merge' "$(git rev-parse "$worker_head^{tree}")")"
+cross_landing="$(git commit-tree -p "$right" -p "$left" -m 'Landing merge' "$(git rev-parse "$integrated_landing^{tree}")")"
+git branch cross-worker "$cross_worker"
+git branch cross-base "$cross_landing"
+reject 'ambiguous integrated common ancestor' 'need one common ancestor' bash "$cleanup" --base cross-base --integrated cross-worker "$cross_worker" "$cross_landing"
+# Advance the worker after proof and after the loop snapshots its tip, while
+# inspecting its worktree. Identical trees ensure only the tip guard saves it.
+mkdir bin
+real_git="$(command -v git)"
+race_head="$(git commit-tree -p "$worker_head" -m 'Concurrent worker commit' "$(git rev-parse "$worker_head^{tree}")")"
+cat > bin/git <<'GIT'
+#!/usr/bin/env bash
+if [ "$1" = -C ] && [ "${3:-}" = status ]; then
+  "$REAL_GIT" update-ref refs/heads/worker "$RACE_HEAD" "$RACE_OLD" || exit 2
+fi
+exec "$REAL_GIT" "$@"
+GIT
+chmod +x bin/git
+pass 'integrated worker moves before worktree removal' env PATH="$integrated_repo/bin:$PATH" REAL_GIT="$real_git" RACE_HEAD="$race_head" RACE_OLD="$worker_head" bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing"
+expect 'concurrent integrated worker change was not reported' 'branch moved since integration proof'
+[ -d worker-wt ] && [ "$(git rev-parse worker)" = "$race_head" ] || { echo 'scripts-test: integrated cleanup discarded concurrent work' >&2; exit 1; }
+git update-ref refs/heads/worker "$worker_head" "$race_head"
+rm bin/git
+rmdir bin
+pass 'multiple integrated workers apply' bash "$cleanup" --apply --integrated worker "$worker_head" "$integrated_landing" --integrated worker-copy "$worker_head" "$integrated_landing"
+[ ! -d worker-wt ] && ! git show-ref --verify --quiet refs/heads/worker && ! git show-ref --verify --quiet refs/heads/worker-copy || { echo 'scripts-test: integrated workers were not removed' >&2; exit 1; }
+git show-ref --verify --quiet refs/heads/parent && git show-ref --verify --quiet refs/heads/net-empty || { echo 'scripts-test: explicit integrated cleanup removed an unselected branch' >&2; exit 1; }
+git worktree list --porcelain > worktrees.txt
+grep -q '^prunable' worktrees.txt || { echo 'scripts-test: explicit integration cleanup pruned an unrelated registration' >&2; exit 1; }
+pass 'direct ancestor worker is already included' bash "$cleanup" --apply --integrated empty-worker "$integrated_base" "$integrated_landing"
+! git show-ref --verify --quiet refs/heads/empty-worker || { echo 'scripts-test: integrated ancestor worker was kept' >&2; exit 1; }
+
 # Remote-less lifecycle: even an installed gh and inherited GH_REPO must not
 # cause any forge calls. Keep these fixtures isolated from hosted test state.
 local_repo="$external/local-repo"
@@ -1647,6 +1802,17 @@ git -C "$managed" rev-parse --verify --quiet refs/heads/todo/tgt-one >/dev/null 
 git -C "$managed" rev-parse --verify --quiet refs/heads/main >/dev/null && git -C "$managed" rev-parse --verify --quiet refs/heads/personal >/dev/null || { echo 'scripts-test: target cleanup deleted the base or a personal branch' >&2; exit 1; }
 git -C "$managed" rev-parse --verify --quiet refs/remotes/origin/todo/tgt-stale >/dev/null && { echo 'scripts-test: target cleanup did not prune the remote' >&2; exit 1; }
 git -C "$managed" rev-parse --verify --quiet refs/heads/me/tgt-two >/dev/null || { echo 'scripts-test: target cleanup removed an unlanded branch' >&2; exit 1; }
+# Explicit integration proof retains target ownership and measures against
+# the remote base; --local deliberately uses the lagging local base instead.
+target_landing="$(git -C "$managed" rev-parse refs/remotes/origin/main)"
+git -C "$managed" branch todo/tgt-integrated "$target_landing"
+reject 'unmarked integrated target branch' "not marked as docket's" tgh bash "$tclean" --integrated todo/tgt-integrated "$target_landing" "$target_landing"
+git -C "$managed" config branch.todo/tgt-integrated.docket true
+reject 'local integrated target base lags' 'is not in refs/heads/main history' tgh bash "$tclean" --local --integrated todo/tgt-integrated "$target_landing" "$target_landing"
+cp "$tgt_log" "$tgt/integrated-gh.before"
+pass 'integrated target uses remote base' tgh bash "$tclean" --apply --integrated todo/tgt-integrated "$target_landing" "$target_landing"
+! git -C "$managed" show-ref --verify --quiet refs/heads/todo/tgt-integrated || { echo 'scripts-test: integrated target branch was not removed' >&2; exit 1; }
+cmp -s "$tgt_log" "$tgt/integrated-gh.before" || { echo 'scripts-test: explicit integrated cleanup queried the forge' >&2; exit 1; }
 pass 'target cleanup --no-target' tgh bash "$tclean" --no-target
 grep -q 'managed-repository target' "$fixture/result.log" && { echo 'scripts-test: cleanup --no-target used the target' >&2; exit 1; }
 
