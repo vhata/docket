@@ -873,7 +873,7 @@ ln -s 'new name.txt' link
 printf 'worker\n' > ':(glob)*.txt'
 printf 'worker\n' > $'line\nbreak.txt'
 git add .
-git update-index --cacheinfo "160000,$integrated_base,module"
+git update-index --add --cacheinfo "160000,$integrated_base,module"
 git commit --quiet -m 'Worker changes with unusual paths and modes'
 worker_head="$(git rev-parse HEAD)"
 git checkout --quiet -b parent "$integrated_base"
@@ -898,7 +898,7 @@ git worktree add --quiet "$integrated_repo/worker-wt" worker
 git worktree add --quiet --detach "$integrated_repo/stale-wt" main
 rm -rf "$integrated_repo/stale-wt"
 printf 'worker-wt/\n.docket-records/\n' >> .git/info/exclude
-# Neither repository settings nor text conversion may hide object changes.
+# Repository ignore settings must not hide submodule object changes.
 git config diff.ignoreSubmodules all
 git config submodule.module.ignore all
 pass 'integrated worker dry run after main evolves' bash "$cleanup" --integrated worker "$worker_head" "$integrated_landing"
