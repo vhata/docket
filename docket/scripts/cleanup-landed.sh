@@ -38,7 +38,7 @@ set -euo pipefail
 
 # Ignored paths whose last component matches this are reproducible build or
 # tool output and are discarded with the worktree without asking.
-cache_re='^(node_modules|target|dist|build|out|coverage|\.venv|venv|\.tox|\.nox|__pycache__|\.pytest_cache|\.hypothesis|\.mypy_cache|\.ruff_cache|\.cache|\.parcel-cache|\.turbo|\.next|\.nuxt|\.svelte-kit|\.wrangler|\.gradle|\.eslintcache|[^/]*\.tsbuildinfo|test-results|playwright-report|\.nyc_output|\.DS_Store|[^/]*\.pyc)$'
+cache_re='^(node_modules|target|dist|build|out|coverage|\.docket|\.venv|venv|\.tox|\.nox|__pycache__|\.pytest_cache|\.hypothesis|\.mypy_cache|\.ruff_cache|\.cache|\.parcel-cache|\.turbo|\.next|\.nuxt|\.svelte-kit|\.wrangler|\.gradle|\.eslintcache|[^/]*\.tsbuildinfo|test-results|playwright-report|\.nyc_output|\.DS_Store|[^/]*\.pyc)$'
 # Reads a successful status snapshot and prints ignored non-cache entries.
 # --ignored=matching reports the path that matched an ignore rule (for example
 # src/pkg/__pycache__/) rather than collapsing it to the first directory that
