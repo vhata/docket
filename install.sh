@@ -22,7 +22,8 @@
 #   --self: install into, or with --check audit, the skill's own repository,
 #           which is otherwise refused. Valid only there, from the checkout
 #           whose root holds this install.sh. docket/VERSION is then the fixed
-#           line 'self' (templates/docket/ at the same commit is the source),
+#           line 'self <repository-url>' (templates/docket/ at the same commit
+#           is the source),
 #           and --check requires that line and skips the commit comparison.
 #           Any other checkout of the skill (a root holding install.sh,
 #           templates/docket/ and templates/AGENTS.md) is refused as a target,
@@ -77,6 +78,7 @@ set -euo pipefail
 
 skill="$(cd "$(dirname "$0")" && pwd)"
 src="$skill/templates/docket"
+repository_url='https://github.com/vhata/docket'
 
 # Drift is shown with colordiff when it is installed and the output is a
 # terminal; otherwise with diff, so logs and pipes stay plain. Either way the
@@ -242,9 +244,12 @@ dst="$top/docket"
 # subtree's prefix names the upstream commit, so that is used when the skill
 # lives in a subdirectory of a larger repository, and HEAD otherwise. The
 # prefix (computed above) comes from git so a path reached through a symlink
-# still resolves. In the skill's own repository (--self) VERSION is the fixed
-# line 'self' instead: a sha there would change, and usually be -dirty, on
-# every branch, and says nothing templates/docket/ at that commit does not.
+# still resolves. The repository URL follows the revision and date on the
+# same line, leaving the revision as the first token for existing readers.
+# In the skill's own repository (--self) VERSION is the fixed line
+# 'self <repository-url>' instead: a sha there would change, and usually be
+# -dirty, on every branch, and says nothing templates/docket/ at that commit
+# does not.
 # Newest git-subtree-split for prefix $2 in repository $1. The trailers sit on
 # the squash commit, whose tree holds the skill at its root and so never
 # touches the prefix, so the whole history is read (no path filter); exact
@@ -478,8 +483,8 @@ if [ "$check" -eq 1 ]; then
     echo "installed: $(cat "$dst/VERSION")"
     installed="$(cut -d' ' -f1 "$dst/VERSION")"
     installed="${installed%-dirty}"
-    if [ "$self" -eq 1 ] && ! printf 'self\n' | cmp -s - "$dst/VERSION"; then
-      echo "install: $dst/VERSION is not the line 'self' that the skill's own repository records; rerun install.sh --self" >&2
+    if [ "$self" -eq 1 ] && ! printf 'self %s\n' "$repository_url" | cmp -s - "$dst/VERSION"; then
+      echo "install: $dst/VERSION is not the line 'self $repository_url' that the skill's own repository records; rerun install.sh --self" >&2
       status=1
     fi
   else
@@ -592,9 +597,9 @@ while IFS= read -r rel; do
 done < <(cd "$src" && find . -type f | sort)
 chmod +x "$dst"/scripts/*.sh
 if [ "$self" -eq 1 ]; then
-  printf 'self\n' >"$dst/VERSION"
+  printf 'self %s\n' "$repository_url" >"$dst/VERSION"
 else
-  printf '%s %s\n' "$sha" "$(date -u +%Y-%m-%d)" >"$dst/VERSION"
+  printf '%s %s %s\n' "$sha" "$(date -u +%Y-%m-%d)" "$repository_url" >"$dst/VERSION"
 fi
 
 # Local, uncommitted docket state lives in .docket/; keep it out of git. The

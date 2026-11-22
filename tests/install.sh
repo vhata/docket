@@ -12,10 +12,11 @@
 # and absent; the stale .feral/ exclude line; hand-copied layout, missing
 # Review inputs and docs/superpowers (directory, and a bullet inside but not
 # outside the Docket section or past a missing end marker) warnings; VERSION
-# newer than, behind, or unknown to the checkout; a template with blank lines
+# source URL and older files without it, newer than, behind, or unknown to
+# the checkout; a template with blank lines
 # inside the markers; self-install refused without --self; --self into the
-# skill's own clone (VERSION 'self', --self --check passing, failing on an
-# unsynced templates/docket/ edit and on a VERSION other than 'self'), refused
+# skill's own clone (VERSION 'self <repository-url>', --self --check passing,
+# failing on an unsynced templates/docket/ edit or a different VERSION), refused
 # for another repository, a sibling worktree and a subtree host; any install
 # into a separate clone of the skill refused, --self and --check included, and
 # into a repository whose docket/ is the skill; a normal --check of a copied
@@ -101,6 +102,10 @@ expect 'first install did not list the settings to fill in' 'settings to fill in
 [ -f "$p/AGENTS.md" ] || fail 'AGENTS.md was not created'
 [ ! -e "$p/CLAUDE.md" ] || fail 'CLAUDE.md was created although none existed'
 [ -f "$p/docket/VERSION" ] || fail 'VERSION was not written'
+grep -qxE '[0-9a-f]{12} [0-9]{4}-[0-9]{2}-[0-9]{2} https://github\.com/vhata/docket' "$p/docket/VERSION" \
+  || fail 'VERSION does not contain the revision, date and source URL on one line'
+[ "$(cut -d' ' -f1 "$p/docket/VERSION")" = "$(printf '%.12s' "$snapshot")" ] \
+  || fail 'the source URL changed the revision token in VERSION'
 for f in "$p"/docket/scripts/*.sh; do [ -x "$f" ] || fail "$f is not executable after install"; done
 grep -qxF '.docket/' "$p/.git/info/exclude" || fail '.docket/ was not added to the exclude file'
 refute 'install warned about docs/superpowers in a project without it' 'docs/superpowers'
@@ -114,6 +119,9 @@ fill "$p"
 run 0 '--check after filling' bash "$inst" --check "$p"
 expect '--check did not report a match' 'match the skill'
 refute '--check warned about docs/superpowers in a project without it' 'docs/superpowers'
+printf '%s 2026-10-11\n' "$(printf '%.12s' "$snapshot")" > "$p/docket/VERSION"
+run 0 '--check with a legacy VERSION without the source URL' bash "$inst" --check "$p"
+expect 'legacy VERSION did not report a match' 'match the skill'
 cp "$p/AGENTS.md" "$work/one-agents.before"
 run 0 'idempotent rerun' bash "$inst" "$p"
 expect 'rerun did not report the section as current' 'is current'
@@ -256,12 +264,16 @@ run 1 '--check from a checkout behind the installed commit' bash "$inst" --check
 expect 'newer installed copy was not reported' "the installed copy ($newer) is newer than this skill checkout"
 refute 'a file diff was printed although the checkout is behind' 'rerun install.sh to resync'
 refute 'files were compared although the checkout is behind' 'Only in'
+printf '%s 2026-10-11 https://github.com/vhata/docket\n' "$newer" > "$p/docket/VERSION"
+run 1 '--check from a stale checkout with the source URL in VERSION' bash "$inst" --check "$p"
+expect 'the source URL hid a newer installed commit' "the installed copy ($newer) is newer than this skill checkout"
+refute 'files were compared despite the newer revision and source URL' 'Only in'
 behind="$(git -C "$skill" rev-parse --short=12 "$snapshot~1")"
-printf '%s 2026-10-11\n' "$behind" > "$p/docket/VERSION"
+printf '%s 2026-10-11 https://github.com/vhata/docket\n' "$behind" > "$p/docket/VERSION"
 run 0 '--check with VERSION behind HEAD and matching files' bash "$inst" --check "$p"
 expect 'behind VERSION with matching files was not noted' "VERSION names $behind, behind this checkout"
 expect 'behind VERSION did not still report a match' 'match the skill'
-printf '%s-dirty 2026-10-11\n' "$behind" > "$p/docket/VERSION"
+printf '%s-dirty 2026-10-11 https://github.com/vhata/docket\n' "$behind" > "$p/docket/VERSION"
 run 0 '--check with a -dirty VERSION behind HEAD' bash "$inst" --check "$p"
 expect 'dirty suffix was not stripped before the comparison' "VERSION names $behind, behind this checkout"
 printf '0123456789ab 2026-01-01\n' > "$p/docket/VERSION"
@@ -303,7 +315,7 @@ git -C "$me" config core.hooksPath /dev/null
 git -C "$me" rm -rq --ignore-unmatch docket AGENTS.md CLAUDE.md
 git -C "$me" commit --quiet --allow-empty -m 'Remove the self installation'
 run 0 '--self install' bash "$me/install.sh" --self "$me"
-printf 'self\n' | cmp -s - "$me/docket/VERSION" || fail "--self wrote VERSION '$(cat "$me/docket/VERSION")', expected the line 'self'"
+printf 'self https://github.com/vhata/docket\n' | cmp -s - "$me/docket/VERSION" || fail "--self wrote VERSION '$(cat "$me/docket/VERSION")', expected self and the source URL"
 grep -qxF "$begin" "$me/AGENTS.md" || fail '--self did not write the Docket section of AGENTS.md'
 for f in "$me"/docket/scripts/*.sh; do [ -x "$f" ] || fail "$f is not executable after --self"; done
 grep -qxF '.docket/' "$me/.git/info/exclude" || fail '--self did not add .docket/ to the exclude file'
@@ -327,13 +339,19 @@ printf '\n' >> "$me/templates/docket/README.md"
 run 1 '--self --check after editing templates/docket' bash "$me/install.sh" --self --check "$me"
 expect '--self --check did not report the unsynced template edit' 'rerun install.sh --self to resync'
 run 0 '--self resync after editing templates/docket' sh -c 'cd "$1" && bash install.sh --self' sh "$me"
-printf 'self\n' | cmp -s - "$me/docket/VERSION" || fail "--self resync wrote VERSION '$(cat "$me/docket/VERSION")'"
+printf 'self https://github.com/vhata/docket\n' | cmp -s - "$me/docket/VERSION" || fail "--self resync wrote VERSION '$(cat "$me/docket/VERSION")'"
 refute '--self resync with a dirty tree warned' 'dirty'
 run 0 '--self --check after the resync' bash "$me/install.sh" --self --check "$me"
-# VERSION must be exactly 'self'.
+# Self VERSION must match the generated line, including its source URL.
+printf 'self\n' > "$me/docket/VERSION"
+run 1 '--self --check with a legacy VERSION' bash "$me/install.sh" --self --check "$me"
+expect '--self --check did not report the missing source URL' "VERSION is not the line 'self https://github.com/vhata/docket'"
+printf 'self https://example.invalid/other\n' > "$me/docket/VERSION"
+run 1 '--self --check with a different source URL' bash "$me/install.sh" --self --check "$me"
+expect '--self --check did not report the wrong source URL' "VERSION is not the line 'self https://github.com/vhata/docket'"
 printf '%s 2026-10-11\n' "$(git -C "$me" rev-parse --short=12 HEAD)" > "$me/docket/VERSION"
 run 1 '--self --check with a sha VERSION' bash "$me/install.sh" --self --check "$me"
-expect '--self --check did not reject a sha VERSION' "VERSION is not the line 'self'"
+expect '--self --check did not reject a sha VERSION' "VERSION is not the line 'self https://github.com/vhata/docket'"
 refute '--self --check compared a sha VERSION with the checkout' 'newer than'
 rm "$me/docket/VERSION"
 run 1 '--self --check without VERSION' bash "$me/install.sh" --self --check "$me"
