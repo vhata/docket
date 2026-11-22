@@ -1,12 +1,17 @@
 # Code review
 
+> **For human readers:** these are instructions for agents conducting and
+> recording reviews. The detailed procedure makes their evidence and
+> findings available for your review; agent approval does not authorise
+> landing. See the [directory README](README.md) for the other guides.
+
 Read when asked for a full or incremental codebase review, when a change
 resolves a review finding, or when delegating and reviewing agent work.
 Change review checks one change; codebase review checks accumulated
 interactions and maintains the finding inventory in
 [review/](../review/). The project's review inputs (focus areas,
 baseline commands, drift checks, source paths) live under [Review
-inputs](../docs/QUALITY.md#review-inputs) in `docs/QUALITY.md`. That
+inputs](../docs/QUALITY.md#review-inputs) in [docs/QUALITY.md](../docs/QUALITY.md). That
 section is required; every pointer in this guide goes to it.
 
 ## Change review (every change)
@@ -43,23 +48,23 @@ codebase reviews. The comment reads:
 Independent review by <agent> at <commit>: <verdict>. Verified: <claims and how>. Findings: <n> (<fixed in <commit> | disposition>). Not checked: <gaps>.
 ```
 
-The focus areas the reviewer concentrates on are listed under [Review inputs](../docs/QUALITY.md#review-inputs) in `docs/QUALITY.md`.
+The focus areas the reviewer concentrates on are listed under [Review inputs](../docs/QUALITY.md#review-inputs) in [docs/QUALITY.md](../docs/QUALITY.md).
 
 ## Ledger
 
-- `review/README.md` indexes snapshots newest first with type, reviewed commit (a commit on `main`) and open count at close. The top row is the next incremental review's baseline; the newest Full row is the baseline for cumulative churn.
+- [review/README.md](../review/README.md) indexes snapshots newest first with type, reviewed commit (a commit on `main`) and open count at close. The top row is the next incremental review's baseline; the newest Full row is the baseline for cumulative churn.
 - `review/YYYY-MM-DD-HHMM-full.md` / `-incremental.md` (UTC) are
   immutable once merged, except for factual corrections to the review
   itself. Status changes are recorded by the next snapshot, never by the
   change that fixes a finding.
-- `review/BACKLOG.md` is the mutable queue of findings promoted into separate work; see [TODO_GUIDE.md](TODO_GUIDE.md).
+- [review/BACKLOG.md](../review/BACKLOG.md) is the mutable queue of findings promoted into separate work; see [TODO_GUIDE.md](TODO_GUIDE.md).
 - The reviewed commit must be reachable from `main`, or the delta since
   the review cannot be read from history once the branch is squashed.
   When a review has to happen on a branch before it lands, preserve the
   reviewed tree (a bundle or the PR head), record the branch commit in
   the snapshot, and in the next change that touches the index record the
   squash commit on `main` it corresponds to after comparing the two
-  trees exactly. Until then `review-due.sh` reports the baseline as lost
+  trees exactly. Until then [review-due.sh](scripts/review-due.sh) reports the baseline as lost
   and its merge-base figures are approximations.
 
 ### Snapshot skeleton
@@ -106,7 +111,7 @@ One finding is one independently fixable, verifiable problem; repeated instances
 
 ## Baseline checks
 
-Run `bash scripts/check.sh` and the baseline commands listed under [Review inputs](../docs/QUALITY.md#review-inputs) in `docs/QUALITY.md` at the reviewed commit, and record exact results in the header.
+Run `bash scripts/check.sh` and the baseline commands listed under [Review inputs](../docs/QUALITY.md#review-inputs) in [docs/QUALITY.md](../docs/QUALITY.md) at the reviewed commit, and record exact results in the header.
 
 A check that passed at the previous review and fails now is a finding.
 
@@ -118,7 +123,7 @@ A check that passed at the previous review and fails now is a finding.
 4. Review-close triage (below).
 5. Write the snapshot, amend the invariants, add the index row.
 6. Present the review as its own reviewed change from a `task/<slug>`
-   branch (for example `task/review-2026-03-01`); a `review/` branch
+   branch (for example `task/review-2026-03-01`); a [review/](../review/) branch
    would claim a backlog entry. Use a PR or local review according to
    the contract. It carries no code fixes; small factual documentation
    fixes may be separate commits on the review branch, recorded as
@@ -147,7 +152,7 @@ Base is the newest snapshot's reviewed commit.
    git ls-files                                        # read for committed strays, against the extension list under Review inputs
    ```
 
-   Language-specific checks (lint-suppression counts, documented flags or controls against the code, and the rest) are the drift checks listed under [Review inputs](../docs/QUALITY.md#review-inputs) in `docs/QUALITY.md`. Compare every number with the previous snapshot and record it even when unchanged.
+   Language-specific checks (lint-suppression counts, documented flags or controls against the code, and the rest) are the drift checks listed under [Review inputs](../docs/QUALITY.md#review-inputs) in [docs/QUALITY.md](../docs/QUALITY.md). Compare every number with the previous snapshot and record it even when unchanged.
 5. Re-read files touched by most changes in the delta.
 6. Review-close triage, snapshot, index row, reviewed change (from a
    `task/` branch, as above).
@@ -160,7 +165,7 @@ For every Open or Moved finding at close, exactly one decision, recorded in the 
 
 ## Fixing a finding
 
-Select by explicit assignment first, otherwise from `review/BACKLOG.md`
+Select by explicit assignment first, otherwise from [review/BACKLOG.md](../review/BACKLOG.md)
 by priority. Raw findings without a backlog entry are inventory, not a
 queue. The fix description claims its backlog slug and each finding in
 scope, opens with `## Why`, and includes in `## Validation` a
@@ -169,7 +174,7 @@ corrected result (or, for tooling and docs, the command or inspection
 and its success condition). "Tests pass" alone is not a scenario. The
 independent reviewer verifies the fix against the original failure
 before the change is ready. When the fix lands, add the finding to the
-Pending reconciliation list in `review/README.md` (finding, fix commit
+Pending reconciliation list in [review/README.md](../review/README.md) (finding, fix commit
 and PR when present, reviewer, evidence), adding that section below the
 index table if the file lacks one. The next incremental review owns
 closure and clears that list.

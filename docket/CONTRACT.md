@@ -1,6 +1,11 @@
 # Docket: workflow contract
 
-Docket is a working discipline for repositories where agents do most of the work: staged queues for deferred work, a branch and worktree per unit of work, an independent reviewer for every change, and gates that hooks, CI and agents all run the same way. This file is the authoritative workflow; every agent reads it before any work. Project-specific settings (queue areas, concurrency cap, merge delegation, optional pieces, environment rules) live in the Docket section of the project's `AGENTS.md`. Nothing under `docket/` is edited in the project; it is vendored verbatim and resynced from the skill (see [README.md](README.md)).
+> **For human readers:** this is the operating contract for coding agents.
+> The instructions address the agent doing the work; their detail makes
+> ownership, checks and approval boundaries explicit. See the
+> [directory README](README.md) for an overview of these files.
+
+Docket is a working discipline for repositories where agents do most of the work: staged queues for deferred work, a branch and worktree per unit of work, an independent reviewer for every change, and gates that hooks, CI and agents all run the same way. This file is the authoritative workflow; every agent reads it before any work. Project-specific settings (queue areas, concurrency cap, merge delegation, optional pieces, environment rules) live in the Docket section of the project's [AGENTS.md](../AGENTS.md). Nothing under `docket/` is edited in the project; it is vendored verbatim and resynced from the skill (see [README.md](README.md)).
 
 ## Review mode
 
@@ -10,7 +15,7 @@ no remote, or a remote that does not provide pull requests, use local
 review: keep the branch and worktree for the user, then squash-land
 after their explicit approval. No hosting service, `gh`, push or CI is
 required for local review. Record the chosen mode in the handoff; use
-`--local` on `claim-check.sh`, `start-work.sh` and `cleanup-landed.sh`
+`--local` on [claim-check.sh](scripts/claim-check.sh), [start-work.sh](scripts/start-work.sh) and [cleanup-landed.sh](scripts/cleanup-landed.sh)
 for a non-PR remote. With no remotes these helpers use local mode
 automatically.
 
@@ -24,24 +29,24 @@ publication.
 
 A sidecar repository holds docket, the queues and plans for work in a
 separate managed repository that docket cannot be installed in. Its
-tracked `.docket-target` file (format in `docket/scripts/target.sh`)
-names the managed repository and its local clone. `claim-check.sh`,
-`start-work.sh` and `cleanup-landed.sh` then work on branches and
+tracked `.docket-target` file (format in [docket/scripts/target.sh](scripts/target.sh))
+names the managed repository and its local clone. [claim-check.sh](scripts/claim-check.sh),
+[start-work.sh](scripts/start-work.sh) and [cleanup-landed.sh](scripts/cleanup-landed.sh) then work on branches and
 worktrees in that clone and PRs in that repository, matched by head
-branch; `review-due.sh` resolves commits there, and `pr-health.sh`
+branch; [review-due.sh](scripts/review-due.sh) resolves commits there, and [pr-health.sh](scripts/pr-health.sh)
 reports on its PRs against the sidecar's `PR:` lines. From a managed
 worktree, run the sidecar's scripts by absolute path. Pass `--no-target`
 for work on the sidecar itself, and set `DOCKET_TARGET_FILE` only per
 command. The managed repository's template, CI and merge process govern
 its PRs. Their descriptions still follow the future `git log` reader
 rules, but markers and the `Type:` line stay out of them, in the
-sidecar's `.docket/state-<slug>.md`; `check-pr-markers.sh` and
-`pr-labels.sh` stand down there. The sidecar entry is the claim: once
+sidecar's `.docket/state-<slug>.md`; [check-pr-markers.sh](scripts/check-pr-markers.sh) and
+[pr-labels.sh](scripts/pr-labels.sh) stand down there. The sidecar entry is the claim: once
 the PR is open, add `PR: owner/repo#N` to it as a direct commit to the
 sidecar's main. When the PR merges, remove the entry the same way, with
 `Resolves TODO: <slug>` (or `Resolves review backlog: <slug>`) and the
 PR in the commit message; a remainder kept in the same entry drops that
-`PR:` line. `cleanup-landed.sh` lists entries ready for this. Roadmap
+`PR:` line. [cleanup-landed.sh](scripts/cleanup-landed.sh) lists entries ready for this. Roadmap
 claims are out of scope in a sidecar. Push branches to the
 managed repository itself, or to a fork when `.docket-target` names its
 remote as `push_remote`, and never to the managed repository's base.
@@ -54,7 +59,7 @@ until the PR merges or the merge fails.
 - Branch `<queue>/<slug>` for queued work (`todo/`, `review/`,
   `roadmap/`); `task/<slug>` or `fix/<slug>` for direct requests,
   including review snapshots. A `review/<slug>` branch claims a
-  `review/BACKLOG.md` entry and needs its marker. Worktrees live in
+  [review/BACKLOG.md](../review/BACKLOG.md) entry and needs its marker. Worktrees live in
   `.worktrees/` (ignored) or the harness's own location.
 - Two things may go straight to `main` without a branch or review:
   documentation recording work to be done (queue entries, triage, plans,
@@ -101,7 +106,7 @@ until the PR merges or the merge fails.
   with disjoint file ownership. Shared interfaces land or are explicitly
   stacked before dependents start. The coordinator integrates,
   serialises queue edits and holds push, landing and release gates. The
-  heavy-run concurrency cap is in `AGENTS.md`. The coordinator also owns
+  heavy-run concurrency cap is in [AGENTS.md](../AGENTS.md). The coordinator also owns
   cleanup of workers folded into a shared parent after it lands.
 - Every code-writing agent, including the coordinator, gets a separate
   reviewer before work is ready. The reviewer verifies the change's
@@ -132,7 +137,7 @@ until the PR merges or the merge fails.
 - Landing requires the current `main` base, green applicable gates,
   landed stack parents and every acceptance gate from the original queue
   entry. A remainder cannot waive one. Hosted merging remains the user's
-  unless delegated in the turn or `AGENTS.md`. In local mode the agent
+  unless delegated in the turn or [AGENTS.md](../AGENTS.md). In local mode the agent
   lands after the user explicitly approves landing the reviewed head;
   keep the approval in the state file. Rebase and revalidate if main
   moved; obtain approval for the resulting head before landing. Use
@@ -153,7 +158,7 @@ until the PR merges or the merge fails.
   preserve other unique content before cleanup. Ignored `.docket/`
   directories are allowed to be discarded with a landed worktree;
   cleanup does not archive them or check that records were preserved.
-  Run `cleanup-landed.sh` as a dry run, then with `--apply`; local landing
+  Run [cleanup-landed.sh](scripts/cleanup-landed.sh) as a dry run, then with `--apply`; local landing
   receipts and retained audit refs let it verify the exact landed tip
   without a forge. Ordinary cleanup also discovers workers folded into
   a parent by comparing their changed paths with reachable merged-PR
@@ -172,7 +177,7 @@ until the PR merges or the merge fails.
   identity before the first commit; sub-agents never change git config.
 - Update documentation in the same change when behaviour makes it
   inaccurate. Give each rule one authoritative home and link to it.
-- Environment rules are in the Docket section of `AGENTS.md`.
+- Environment rules are in the Docket section of [AGENTS.md](../AGENTS.md).
 
 ## Process guides
 
