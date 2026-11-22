@@ -1,6 +1,11 @@
 # Deferred work: capture, triage, claim, resolve
 
-Read when an idea surfaces during work, or when adding, selecting, claiming, moving or resolving an entry in [TODO.md](../TODO.md) or [review/BACKLOG.md](../review/BACKLOG.md). `bash docket/scripts/check-queues.sh` validates both files and runs in CI.
+> **For human readers:** this guide instructs coding agents on maintaining
+> and working from the queues. If you are looking for something to do,
+> start with [`TODO.md`](../TODO.md#ready-for-separate-work); the detailed
+> rules here explain how entries become ready and how work is claimed.
+
+Read when an idea surfaces during work, or when adding, selecting, claiming, moving or resolving an entry in [`TODO.md`](../TODO.md) or [`review/BACKLOG.md`](../review/BACKLOG.md). `bash docket/scripts/check-queues.sh` validates both files and runs in CI.
 
 ## Scope decision
 
@@ -16,7 +21,7 @@ the user's. An unrelated P0 (data loss, security exposure, release
 blocker) is recorded, reported prominently, and work pauses for
 direction.
 
-Discoveries go to `TODO.md`, bugs included. `review/BACKLOG.md` holds only findings a codebase review promoted.
+Discoveries go to [`TODO.md`](../TODO.md), bugs included. [`review/BACKLOG.md`](../review/BACKLOG.md) holds only findings a codebase review promoted.
 
 A discovery that belongs to another repository goes in that repository's
 queue, not this one's, because that is where its work is picked up. For
@@ -61,13 +66,13 @@ any discovery.
   - PR: owner/repo#N, owner/repo#M (sidecar only: the managed repository's PRs that claim the entry)
 ```
 
-`Source` is required. Slugs are unique across all queues and never change when an entry moves. `Blocked by:` and `Related:` may name an entry in another repository as `` `repo:slug` `` (or `` `owner/repo:slug` ``), which the validator does not resolve; `Depends on:` names only slugs in these queues. One area per entry, from the list in the Docket section of `AGENTS.md`. A sidecar records claims with one `PR:` line (see [CONTRACT.md](CONTRACT.md#managed-repository)); the validator checks its `owner/repo#N` format, and warns when the repository is not the one in `.docket-target`. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
+`Source` is required. Slugs are unique across all queues and never change when an entry moves. `Blocked by:` and `Related:` may name an entry in another repository as `` `repo:slug` `` (or `` `owner/repo:slug` ``), which the validator does not resolve; `Depends on:` names only slugs in these queues. One area per entry, from the list in the Docket section of `AGENTS.md`. A sidecar records claims with one `PR:` line (see [`CONTRACT.md`](CONTRACT.md#managed-repository)); the validator checks its `owner/repo#N` format, and warns when the repository is not the one in `.docket-target`. Add free-form indented lines for evidence. Search both queues before adding; update an existing entry instead of duplicating it.
 
 Review backlog entries additionally carry a `Findings:` line naming every raw review finding they cover, each slug in backticks (``Findings: `finding-slug`, `finding-slug` ``), and `Source` names the review file. Each finding maps to at most one backlog entry.
 
 ## Stages and priorities
 
-TODO stages: **Needs triage** (outcome, value or dependencies unclear), **Needs proof of concept** (a focused experiment is needed first), **Waiting** (understood well enough to implement and verify, but blocked by a `Depends on:` or `Blocked by:` line), **Ready for separate work** (understood well enough to implement and verify, and unblocked). Priorities within each stage: **P0 Critical** (active data loss, security exposure or release blocker; the Docket section of `AGENTS.md` may extend this definition), **P1 High**, **P2 Normal**, **P3 Low**, **Unprioritized**. New entries are Unprioritized unless the user assigned a priority or the item objectively qualifies as P0. The review backlog has priority sections only; its entries are ready by construction.
+TODO stages: **Needs triage** (outcome, value or dependencies unclear), **Needs proof of concept** (a focused experiment is needed first), **Waiting** (understood well enough to implement and verify, but blocked by a `Depends on:` or `Blocked by:` line), **Ready for separate work** (understood well enough to implement and verify, and unblocked). Priorities within each stage: **P0 Critical** (active data loss, security exposure or release blocker; the Docket section of [`AGENTS.md`](../AGENTS.md) may extend this definition), **P1 High**, **P2 Normal**, **P3 Low**, **Unprioritized**. New entries are Unprioritized unless the user assigned a priority or the item objectively qualifies as P0. The review backlog has priority sections only; its entries are ready by construction.
 
 An entry with a `Depends on:` naming unresolved queued work, or any
 `Blocked by:` line, is not ready whatever its section; once nothing else
@@ -76,7 +81,7 @@ entries that still need a decision. A Waiting entry with neither line is
 either ready or not yet understood, and the validator warns. When the
 dependency lands or the blocker clears, the resolving change drops the
 line and moves the entry from Waiting to Ready if nothing else blocks
-it. A `TODO.md` written before Waiting existed has no such section; add
+it. A [`TODO.md`](../TODO.md) written before Waiting existed has no such section; add
 it, with its priority subsections, between Needs proof of concept and
 Ready for separate work the first time an entry needs it. A blocker in
 another repository is cleared by triage here, since the change that
@@ -105,15 +110,15 @@ Triage runs when the user asks, when Needs triage holds more than about a dozen 
    hosted mode open a draft PR; in local mode save the title,
    description, review and state files, then leave the branch/worktree
    for user review and approval as
-   [CONTRACT.md](CONTRACT.md#review-mode) specifies. With a non-PR
+   [`CONTRACT.md`](CONTRACT.md#review-mode) specifies. With a non-PR
    remote use `--local` on claim/start helpers; no remote selects local
    mode automatically. Validate local markers with `--body <file> --base
    main --head HEAD --strict`.
 5. In a sidecar the managed PR carries no marker: once it is open, add
    `PR: <repo>#<number>` to the entry in a direct commit to the
-   sidecar's `main`, and push it (`start-work.sh` prints the line for
+   sidecar's `main`, and push it ([`start-work.sh`](scripts/start-work.sh) prints the line for
    `todo` and `review` work; roadmap claims are out of scope in a
-   sidecar). `claim-check.sh` treats an entry with a `PR:` line as
+   sidecar). [`claim-check.sh`](scripts/claim-check.sh) treats an entry with a `PR:` line as
    claimed, except on the worker's own `--self` recheck, where it is a
    note when gh confirms every listed PR is the worker's own open PR,
    or when gh is unavailable.
@@ -143,7 +148,7 @@ Type: <feature | fix | refactor | perf | docs | test | tooling | review>
 
 `review` is for codebase review snapshots; `tooling` covers scripts, CI, hooks and dependencies. The validator warns when the line is missing and fails a malformed or repeated one. `bash docket/scripts/pr-labels.sh --pr <number> --apply` turns the branch, the `Type:` line and the claimed or resolved entries into the PR's labels: `docket`, `type:<kind>`, `queue:<todo | review | roadmap>`, `area:<area>` and `priority:<p0-p3>`.
 
-Directly requested work needs no invented entry and no marker. A `todo/`, `review/` or `roadmap/` branch is a claim: the validator fails a PR from such a branch unless the body carries a `Claims`, `Resolves` or `Partially resolves` marker in that queue's namespace for the branch's slug (`review/` means a `review/BACKLOG.md` entry). Other prefixes need no marker. A review batch claims its backlog slug and each finding actually in scope; a raw finding taken by explicit assignment claims only the finding and says why. `bash docket/scripts/check-pr-markers.sh --body <file>` validates markers against the queues.
+Directly requested work needs no invented entry and no marker. A `todo/`, `review/` or `roadmap/` branch is a claim: the validator fails a PR from such a branch unless the body carries a `Claims`, `Resolves` or `Partially resolves` marker in that queue's namespace for the branch's slug (`review/` means a [`review/BACKLOG.md`](../review/BACKLOG.md) entry). Other prefixes need no marker. A review batch claims its backlog slug and each finding actually in scope; a raw finding taken by explicit assignment claims only the finding and says why. `bash docket/scripts/check-pr-markers.sh --body <file>` validates markers against the queues.
 
 ## Resolving
 
@@ -162,7 +167,7 @@ change ready.
   to the sidecar's `main` whose message carries the marker, such as
   `Resolves TODO: <slug>` or `Resolves review backlog: <slug>`, and the
   PR reference. If the merged PR leaves a remainder in the same entry,
-  drop that PR from its `PR:` line. `cleanup-landed.sh` lists entries
+  drop that PR from its `PR:` line. [`cleanup-landed.sh`](scripts/cleanup-landed.sh) lists entries
   whose PRs have all closed: "resolve" when one merged, "release" when
   none did. A PR closed without GitHub's merged state may still have
   landed, since some merge processes close after squashing; confirm it
@@ -170,19 +175,19 @@ change ready.
 
 Landing a fix removes the backlog entry but does not close a review
 finding; the next incremental review verifies and records closure (see
-[CODE_REVIEW_GUIDE.md](CODE_REVIEW_GUIDE.md)). Implementation changes
+[`CODE_REVIEW_GUIDE.md`](CODE_REVIEW_GUIDE.md)). Implementation changes
 never edit review snapshots.
 
 ## Roadmap queue (when in force)
 
-When the Docket section of `AGENTS.md` lists the roadmap queue, the
+When the Docket section of [`AGENTS.md`](../AGENTS.md) lists the roadmap queue, the
 roadmap file (`docs/ROADMAP.md` by default) is a third queue of
 vision-sized themes. Its items are prose sections, not entries; the slug
 is the kebab-case form of the section heading. Claim one with branch
 `roadmap/<slug>` and `Claims roadmap: <slug>`, checked and created with
 the same scripts. Landing updates the roadmap section in the same change
 and changes the marker to `Resolves roadmap: <slug>`. A follow-up spun
-off a theme is an ordinary `TODO.md` entry whose `Source` names the
-theme. `check-queues.sh` does not read the roadmap, and the marker
+off a theme is an ordinary [`TODO.md`](../TODO.md) entry whose `Source` names the
+theme. [`check-queues.sh`](scripts/check-queues.sh) does not read the roadmap, and the marker
 validator accepts roadmap markers without checking them against the
 file.
