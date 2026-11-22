@@ -52,20 +52,24 @@ refreshes the Docket section of [`AGENTS.md`](../AGENTS.md), and reports (but do
 delete) files here that the skill no longer ships. Commit the result.
 
 `VERSION` holds the skill commit the files came from, the install date
-(UTC), and the source repository URL on one line:
+(UTC), and a URL for the source at that commit on one line:
 
 ```text
-<sha> <date> https://github.com/vhata/docket
+<sha> <date> https://github.com/vhata/docket/tree/<full-sha>
 ```
 
 The revision stays in the first field so tools can read it independently
-of the URL. It is always a commit of the docket repository: when the skill is
+of the URL. The link resolves once that commit is available in the docket
+repository. The revision names the skill's commit: when the skill is
 installed as a squashed subtree of another repository, the installer reads the
 upstream commit from the subtree's `git-subtree-split` trailer rather than
 recording the host repository's own commit. A `-dirty` suffix means the
 skill's `install.sh` or `templates/` differed from that commit when it was
-installed (uncommitted changes, or committed local edits in a subtree host);
-resync from a clean checkout before relying on it.
+installed (uncommitted changes, or committed local edits in a subtree host).
+The URL still points to the base commit, so it does not include those local
+edits; resync from a clean checkout before relying on it. The skill's own
+`self` installation, or an `unknown` revision, links to the repository
+instead because neither names a fixed commit.
 
 `--check` compares `VERSION` with the skill commit of the checkout it runs
 from (`HEAD` in a clone of the skill, the subtree's upstream commit in a
@@ -136,7 +140,7 @@ tracking when creating a branch and preserves its other settings.
 | [`CONTRACT.md`](CONTRACT.md) | The workflow rules every agent reads first. |
 | [`TODO_GUIDE.md`](TODO_GUIDE.md) | Capture, triage, claim and resolve deferred work in [`TODO.md`](../TODO.md) and [`review/BACKLOG.md`](../review/BACKLOG.md). |
 | [`CODE_REVIEW_GUIDE.md`](CODE_REVIEW_GUIDE.md) | Change review and codebase review, and the review ledger under [`review/`](../review/). |
-| `VERSION` | The skill commit, installation date and source repository URL. |
+| `VERSION` | The skill commit, installation date and a link to its source. |
 | [`scripts/ci.sh`](scripts/ci.sh) | The single entry point CI calls; runs `check-queues.sh --strict`, then [`check-links.sh`](scripts/check-links.sh), then `check-pr-markers.sh --no-target` when `PR` is set, and stops at the first failure. In a sidecar it checks the sidecar's own PRs and needs no managed clone. On pull requests it reads the PR body from the event payload (`GITHUB_EVENT_PATH`, with `jq`) and falls back to `gh pr view`, which needs `pull-requests: read`. |
 | [`scripts/check-queues.sh`](scripts/check-queues.sh) | Validates the structure of [`TODO.md`](../TODO.md) and [`review/BACKLOG.md`](../review/BACKLOG.md): entry format, unique slugs, `Source` lines, cross-references and dependencies, that each Waiting entry names what it waits on, and the format of `PR:` claim lines (in a sidecar, that they name the managed repository). |
 | [`scripts/check-pr-markers.sh`](scripts/check-pr-markers.sh) | Validates a change description's markers against the queues at the base and head commits, its `Type:` line, and its line length (prose wrapped at 72 columns). In a sidecar it stands down for the managed repository's PRs; `--no-target` checks the sidecar's own. |

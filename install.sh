@@ -244,8 +244,9 @@ dst="$top/docket"
 # subtree's prefix names the upstream commit, so that is used when the skill
 # lives in a subdirectory of a larger repository, and HEAD otherwise. The
 # prefix (computed above) comes from git so a path reached through a symlink
-# still resolves. The repository URL follows the revision and date on the
-# same line, leaving the revision as the first token for existing readers.
+# still resolves. A source URL pinned to that full commit follows the revision
+# and date, leaving the revision as the first token for existing readers.
+# Dirty copies link to their base commit, without the -dirty suffix.
 # In the skill's own repository (--self) VERSION is the fixed line
 # 'self <repository-url>' instead: a sha there would change, and usually be
 # -dirty, on every branch, and says nothing templates/docket/ at that commit
@@ -599,7 +600,9 @@ chmod +x "$dst"/scripts/*.sh
 if [ "$self" -eq 1 ]; then
   printf 'self %s\n' "$repository_url" >"$dst/VERSION"
 else
-  printf '%s %s %s\n' "$sha" "$(date -u +%Y-%m-%d)" "$repository_url" >"$dst/VERSION"
+  source_url="$repository_url"
+  [ "$head_sha" = unknown ] || source_url="$repository_url/tree/$head_sha"
+  printf '%s %s %s\n' "$sha" "$(date -u +%Y-%m-%d)" "$source_url" >"$dst/VERSION"
 fi
 
 # Local, uncommitted docket state lives in .docket/; keep it out of git. The
