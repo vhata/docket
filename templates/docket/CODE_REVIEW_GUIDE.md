@@ -123,7 +123,7 @@ A check that passed at the previous review and fails now is a finding.
 4. Review-close triage (below).
 5. Write the snapshot, amend the invariants, add the index row.
 6. Present the review as its own reviewed change from a `task/<slug>`
-   branch (for example `task/review-2026-03-01`); a [review/](../review/) branch
+   branch (for example `task/review-2026-03-01`); a `review/` branch
    would claim a backlog entry. Use a PR or local review according to
    the contract. It carries no code fixes; small factual documentation
    fixes may be separate commits on the review branch, recorded as
